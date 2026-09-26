@@ -99,3 +99,47 @@
   prospect business name; GET /api/media/hero-dining.jpg → 200 image/jpeg (726 KB).
 - Note: data/media/ is gitignored (generated assets are reproducible via scripts/gen-media-library.py).
 - Gate: PASS for local dev scope.
+
+## Phase 4 — Content Architect + Design Universe diversification — PASS (local dev scope)
+- Date: 2026-09-26
+- Canonical flow advanced (manual line 2190): business input → research/evidence → content/site
+  architecture → design → generation → QA → preview. Phase 4 implements the content/site
+  architecture and design stages.
+- Content Architect (server/services/contentEngine.js): dedicated content banks for all 33 scan
+  industries (services with descriptions, differentiators, FAQs, hero angles, audiences, buyer
+  journeys, conversion goals, keywords); every content item carries a Master_Content_Engine_v2
+  provenance class; verified facts flow through as VERIFIED_FACT (badge + JSON-LD); an
+  anti-fabrication guard throws on invented awards/ratings/tenure (§17.13.9). No fabricated
+  testimonials anywhere — the v3 fake-quote block was removed.
+- Design Universe registry (server/services/designUniverses.js): 12 universes, each with a UNIQUE
+  font pairing (Google Fonts), palette, shape language (button/card geometry) and one of 8 motion
+  personalities (rise, drift, cascade, reveal, orbit, marquee, magnetic, term). Selection is
+  deterministic per site seed: same project always rebuilds identically; different sites diverge.
+- Honest inspiration mapping (user-referenced GitHub orgs, verified 2026-09-26):
+  - github.com/lovablelabs — actually infrastructure OSS (oj Rust React build tool, a Kubernetes
+    operator for self-hosted Neon Postgres, Valv KMS, honeycomb-style wide events, Maglev hashing).
+    Incorporated as CAPABILITY DNA: wide-event telemetry (server/services/telemetry.js — one
+    self-contained JSON line per build/scan lifecycle, honeycomb-style), deterministic fast builds,
+    and content-addressed artifacts. Not a visual-design source; no visual mimicry claimed.
+  - github.com/AtomsDevs — actually a terminal-first desktop app for persistent Linux environments
+    (Vala). Incorporated as the 'term' motion personality (typewriter headline, scanlines) plus the
+    persistent per-project build environment concept. Not a website-design source.
+  All visual uniqueness (fonts/palettes/animations) comes from the 12-universe registry.
+- Media uniqueness (server/services/mediaEngine.js): 9 new alternate 4K heroes generated
+  (28 JPGs total: 21 heroes + 6 gallery textures + 1 legacy); hero/gallery selection is seeded per
+  site (FNV-1a + integer finalizer — replaced a polynomial hash that collided on similar seeds);
+  every site gets unique procedural accent art. Different sites in the same industry receive
+  different picture selections; a subtle seeded hue grade differentiates shared base heroes.
+- Scaffold v4 (server/services/siteTemplate.js): Google Fonts + Tailwind config per universe,
+  motion-personality CSS/JS engines, FAQ accordions, journey strips, verified-fact badges,
+  count-up stats (honest numbers only), marquee tickers, magnetic buttons, terminal typewriter —
+  all with prefers-reduced-motion kill switches.
+- Tests: `node scripts/test-phase4.js` — 39/39 PASS (content packs ×33 industries, anti-fabrication
+  guard, universe uniqueness + deterministic spread, per-site media divergence, per-motion render
+  checks, telemetry). Phase 3 suite re-run: 58/58 PASS (v3 assertions updated to the v4 contract).
+- E2E through :7100 (clean single server instance; killed orphaned Vite processes that had been
+  serving stale code on [::1]:7100): register → scan (Restaurant/Ontario) → opportunity → project →
+  build → Harvest Bistro = UV-PASTEL-STUDIO/magnetic, Bright Smile Dental = UV-MINIMAL-ARCH/cascade;
+  both previews carry JSON-LD LocalBusiness, Google Fonts, reduced-motion, seeded 4K alternates
+  (hero-dining-3, hero-clinic-2 → 200 image/jpeg); build.completed wide events in data/telemetry.log.
+- Gate: PASS for local dev scope.

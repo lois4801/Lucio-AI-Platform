@@ -4,14 +4,22 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { runMarketScan, listScans, getScan, resolveWebsitePresence } from '../services/discovery/pipeline.js';
 import { generateWebsiteOpportunity, createProjectFromOpportunity, listOpportunities } from '../services/opportunity.js';
 import { INDUSTRIES, REGIONS } from '../services/discovery/providers.js';
+import { wideEvent } from '../services/telemetry.js';
 
 export const marketScansRouter = Router();
 marketScansRouter.use(requireAuth);
 
 // Start a scan (§17.13.18 operator controls -> pipeline)
 marketScansRouter.post('/', requireRole('member'), async (req, res) => {
+  const t0 = Date.now();
   try {
     const result = await runMarketScan(req.user.orgId, req.user, req.body || {}, req.ip);
+    wideEvent('scan.completed', {
+      orgId: req.user.orgId, industry: result.coverage?.requested_industry,
+      geography: result.coverage?.requested_geography, unique: result.coverage?.unique_businesses,
+      gapCandidates: result.coverage?.website_gap_candidates, budgetUsed: result.coverage?.request_budget_used,
+      durationMs: Date.now() - t0,
+    });
     res.status(201).json(result);
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });

@@ -28,7 +28,7 @@ builderRouter.post('/project/:projectId/plan', requireRole('member'), (req, res)
   const { goal } = req.body || {};
   if (!goal) return res.status(400).json({ error: 'goal is required' });
   const { styleId, creationMode, siteName, industry, tagline, verifiedFacts } = req.body || {};
-  res.json({ plan: makePlan(goal, withProjectSiteName(p, { styleId, creationMode, siteName, industry, tagline, verifiedFacts })) });
+  res.json({ plan: makePlan(goal, withProjectSiteName(p, { styleId, creationMode, siteName, industry, tagline, verifiedFacts, projectId: p.id })) });
 });
 
 // Step 2 — Build: scaffold the site from a goal + options

@@ -146,17 +146,20 @@ console.log('== LD styles + creation modes (companion docs integration) ==');
   ok(plan2.creationMode === 'CUSTOM_AI', 'default creation mode is CUSTOM_AI');
 }
 
-console.log('== Scaffold v3: Tailwind, cinematic hero, luxury media ==');
+console.log('== Scaffold v4: Tailwind, universe design, luxury media ==');
 {
   const { mediaSet, mediaFilePath, proceduralArt } = await import('../server/services/mediaEngine.js');
   const plan = makePlan('Build a cinematic website for a fine dining restaurant called Maison Lumiere', { styleId: 'LD-13', creationMode: 'CINEMATIC_UNIVERSE', industry: 'Restaurant' });
   const html = scaffoldSite(plan);
   ok(html.includes('cdn.tailwindcss.com') && html.includes('tailwind.config'), 'Tailwind applied automatically via Play CDN + inline config');
-  ok(html.includes('kenburns') && html.includes('class="hero'), 'cinematic full-screen hero with ken-burns motion');
-  ok(html.includes('btn-lux') && html.includes('shine'), 'animated luxury buttons (shine sweep)');
-  ok(html.includes('rise') && html.includes('IntersectionObserver'), 'staggered headline text + scroll reveals');
+  ok(html.includes('kenburns') && html.includes('hero-img'), 'cinematic full-screen hero with ken-burns motion');
+  ok(html.includes('btn-u') && html.includes('rise-w'), 'animated buttons + staggered headline text');
+  ok(html.includes('fonts.googleapis.com'), 'unique Google Fonts loaded per design universe');
+  ok(html.includes('application/ld+json'), 'JSON-LD structured data present');
   ok(html.includes('prefers-reduced-motion'), 'reduced-motion disables animation');
-  const media = mediaSet('Restaurant');
+  ok(html.includes('aurora'), 'cinematic mode adds motion scene');
+  ok(!html.includes('Impeccable from start to finish'), 'no fabricated testimonials');
+  const media = mediaSet('Restaurant', plan.universeSeed);
   ok(media.hero.kind === 'generated-4k' && html.includes(media.hero.src), 'generated 4K hero referenced in scaffold');
   ok(!!mediaFilePath('hero-dining.jpg'), '4K hero file exists on disk');
   ok(media.gallery.length === 3 && media.gallery.every((g) => g.src.startsWith('/api/media/')), 'gallery uses generated media set');

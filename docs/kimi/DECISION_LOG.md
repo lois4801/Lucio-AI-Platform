@@ -37,3 +37,16 @@
   resolution-independent and palette-matched — so no paid API is ever required for core flows ("no credits" rule).
   Animated cinematic scaffolding (ken-burns hero, shine-sweep buttons, staggered headline, scroll reveals) always
   ships with a prefers-reduced-motion kill switch per the Component Universe contract.
+
+## D7 — Design Universe system + honest capability borrowing (lovablelabs, AtomsDevs)
+- Date: 2026-09-26
+- Decision: generated sites are composed inside one of 12 Design Universes — unique font pairing,
+  palette, shape language and motion personality — selected deterministically per site seed. This
+  guarantees the user's "no two designs alike" requirement structurally rather than by prompt
+  discipline. GitHub references were verified before borrowing: lovablelabs ships build/control-plane
+  infrastructure (oj, a Neon Postgres operator, Valv KMS, wide events, Maglev) and AtomsDevs ships a
+  terminal-first Linux environments app — neither is a UI design library, so the platform borrows
+  their ACTUAL capabilities (wide-event telemetry; terminal-first motion personality + persistent
+  per-project build environments) and generates all visual diversity from its own universe registry.
+- Consequence: no claims of visual inspiration from those orgs are made in user-facing copy; the
+  generator meta tag records the universe id + motion personality for traceability.

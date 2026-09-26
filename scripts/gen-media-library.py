@@ -38,6 +38,19 @@ HEROES = {
     'hero-automotive': LUX + "premium auto detailing studio, gleaming classic car under studio spotlights, dark polished floor, reflections",
 }
 
+# Alternate heroes — give same-industry sites distinct pictures (seeded selection).
+ALTERNATES = {
+    'hero-dining-2': LUX + "moody chef's table dining room, open kitchen fire glow, dark timber and leather, candlelit luxury restaurant at night",
+    'hero-dining-3': LUX + "artisan patisserie counter, croissants and layered cakes under warm display light, marble and brass interior, elegant cafe-bakery atmosphere",
+    'hero-trade-2': LUX + "master tradesperson's bench, gleaming chrome wrenches and brass fittings on dark walnut, workshop jewel lighting, precision tools still life",
+    'hero-beauty-2': LUX + "luxury barbershop lounge, emerald velvet chairs, brass-framed mirrors, marble counters, warm Edison bulb glow",
+    'hero-clinic-2': LUX + "serene physiotherapy studio, warm minimal interior, treatment table with linen, soft morning light through sheer curtains",
+    'hero-retail-2': LUX + "high-end florist boutique interior, dramatic flower wall, brass shelving, marble floor, warm gallery spotlights",
+    'hero-professional-2': LUX + "modern accountant's office at dawn, walnut conference table, soft fog outside floor-to-ceiling glass, muted sage and brass palette",
+    'hero-hospitality-2': LUX + "boutique inn bedroom suite at twilight, layered linen bedding, reading lamps, garden view through tall windows, calm luxury",
+    'hero-fitness-2': LUX + "private training studio, sunrise light across maple floor, premium kettlebells and ropes neatly arranged, plants, airy premium athletic space",
+}
+
 TEXTURES = {
     'gallery-marble': LUX + "macro of white calacatta marble with gold veining, soft studio light, luxury material study",
     'gallery-aurora': LUX + "abstract aurora light ribbons over dark navy, silky long-exposure gradients, premium digital art",
@@ -81,6 +94,8 @@ def main():
     items = []
     if which in ('heroes', 'all'):
         items += list(HEROES.items())
+    if which in ('alternates', 'all'):
+        items += list(ALTERNATES.items())
     if which in ('textures', 'all'):
         items += list(TEXTURES.items())
     with cf.ThreadPoolExecutor(max_workers=6) as ex:

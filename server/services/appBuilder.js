@@ -8,6 +8,9 @@ import { db, audit } from '../db.js';
 import { parseGoal } from './modelGateway.js';
 import { getStyle, recommendStyles, CREATION_MODES } from './ldStyles.js';
 import { scaffoldSite } from './siteTemplate.js';
+import { pickUniverse, getUniverse } from './designUniverses.js';
+import { buildContentPack } from './contentEngine.js';
+import { wideEvent } from './telemetry.js';
 export { scaffoldSite };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -61,6 +64,17 @@ export function makePlan(goal, opts = {}) {
     };
     styleSource = 'recommended';
   }
+  // Phase 4: Content Architect + Design Universe. The universe is chosen
+  // deterministically per site seed so a project always rebuilds identically,
+  // and two different sites get different typography/palette/motion.
+  const universeSeed = opts.projectId || `${goal}::${name}`;
+  const chosenUniverse = (opts.universeId && getUniverse(opts.universeId)) || pickUniverse(`${universeSeed}|${style.id}`);
+  const contentPack = buildContentPack({
+    businessName: name,
+    industry: opts.industry || parsed.industry,
+    location: parsed.location,
+    verifiedFacts: opts.verifiedFacts || [],
+  });
   return {
     goal,
     parsed,
@@ -72,6 +86,9 @@ export function makePlan(goal, opts = {}) {
     style: { id: style.id, name: style.name, source: styleSource },
     recommendedStyles: recommendStyles(goal, opts.industry),
     creationMode,
+    universe: chosenUniverse,
+    universeSeed,
+    contentPack,
     palette: style.palette,
     styleTokens: { fontHeading: style.fontHeading, fontBody: style.fontBody, radius: style.radius, button: style.button, motion: style.motion },
     services: copy.services,
@@ -83,7 +100,7 @@ export function makePlan(goal, opts = {}) {
       verifiedFacts: opts.verifiedFacts || [],
       industrySuggestions: ['Services list', 'About copy', 'Section structure'].map((s) => ({ item: s, classification: 'INFERRED_INDUSTRY_SUGGESTION' })),
     },
-    recipe: { engine: 'lucio-app-builder', version: 2, styleId: style.id, creationMode, locked: true },
+    recipe: { engine: 'lucio-app-builder', version: 4, styleId: style.id, creationMode, universe: chosenUniverse.id, locked: true },
     seo: { title: `${name} — ${parsed.industry}${parsed.location ? ' in ' + parsed.location : ''}`, description: `${copy.hero} ${parsed.industry} services${parsed.location ? ' in ' + parsed.location : ''}.` },
   };
 }
@@ -105,12 +122,21 @@ export function saveArtifact(projectId, kind, filename, content) {
 }
 
 export function buildFromGoal(projectId, goal, opts = {}, user, ip = '') {
-  const plan = makePlan(goal, opts);
+  const t0 = Date.now();
+  const plan = makePlan(goal, { ...opts, projectId });
   const html = scaffoldSite(plan);
   const artifact = saveArtifact(projectId, 'site', 'index.html', html);
   db.prepare(`UPDATE projects SET status = 'preview', updated_at = datetime('now') WHERE id = ?`).run(projectId);
   audit(user.orgId, user.id, 'builder.scaffold', 'project', projectId,
     { goal: String(goal).slice(0, 120), version: artifact.version, style: plan.style.id, creationMode: plan.creationMode }, ip);
+  // honeycomb-style wide event: one self-contained JSON line per build lifecycle
+  wideEvent('build.completed', {
+    projectId, version: artifact.version, style: plan.style.id, creationMode: plan.creationMode,
+    universe: plan.universe.id, motion: plan.universe.motion, industry: plan.industry,
+    pages: plan.contentPack.sitemap.length, sections: plan.contentPack.sitemap.reduce((n, s) => n + s.sections.length, 0),
+    provenance: plan.contentPack.provenanceSummary, media: plan.contentPack ? undefined : undefined,
+    bytes: html.length, durationMs: Date.now() - t0,
+  });
   return { plan, artifact };
 }
 
