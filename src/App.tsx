@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Component, type ReactNode, useEffect, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router';
 import { api, type User } from '@/lib/api';
 import AppShell from '@/components/AppShell';
@@ -13,6 +13,34 @@ import JobsPage from '@/pages/JobsPage';
 import AuditPage from '@/pages/AuditPage';
 import GatewayPage from '@/pages/GatewayPage';
 import MarketScanPage from '@/pages/MarketScanPage';
+import { Button } from '@/components/ui/button';
+
+// A page crash must never leave the user staring at a blank screen — show the
+// error and a way back (previously a single render error unmounted the whole app).
+class RouteErrorBoundary extends Component<{ children: ReactNode }, { message: string | null }> {
+  state = { message: null as string | null };
+  static getDerivedStateFromError(error: unknown) {
+    return { message: error instanceof Error ? error.message : String(error) };
+  }
+  render() {
+    if (this.state.message !== null) {
+      return (
+        <div className="space-y-4 max-w-xl">
+          <h1 className="text-2xl font-bold tracking-tight">Something broke on this page</h1>
+          <p className="text-sm text-muted-foreground">
+            The error has been contained — the rest of the platform is unaffected. You can retry or head back.
+          </p>
+          <pre className="text-xs bg-muted rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{this.state.message}</pre>
+          <div className="flex gap-2">
+            <Button onClick={() => this.setState({ message: null })}>Retry</Button>
+            <Button variant="outline" onClick={() => { location.href = '/dashboard'; }}>Go to dashboard</Button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -27,20 +55,22 @@ export default function App() {
 
   if (loading) return <div className="min-h-screen grid place-items-center text-muted-foreground">Starting Lucio…</div>;
 
+  const page = (el: ReactNode) => <RouteErrorBoundary key={location.pathname}>{el}</RouteErrorBoundary>;
+
   return (
     <Routes>
       <Route path="/" element={user ? <Navigate to="/dashboard" replace /> : <AuthPage onAuth={setUser} />} />
       <Route element={user ? <AppShell user={user} onLogout={() => setUser(null)} /> : <Navigate to="/" replace />}>
-        <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/builder" element={<BuilderPage />} />
-        <Route path="/scanner" element={<MarketScanPage />} />
-        <Route path="/projects" element={<ProjectsPage />} />
-        <Route path="/prospects" element={<ProspectsPage />} />
-        <Route path="/research" element={<ResearchPage />} />
-        <Route path="/files" element={<FilesPage />} />
-        <Route path="/jobs" element={<JobsPage />} />
-        <Route path="/audit" element={<AuditPage />} />
-        <Route path="/gateway" element={<GatewayPage />} />
+        <Route path="/dashboard" element={page(<DashboardPage />)} />
+        <Route path="/builder" element={page(<BuilderPage />)} />
+        <Route path="/scanner" element={page(<MarketScanPage />)} />
+        <Route path="/projects" element={page(<ProjectsPage />)} />
+        <Route path="/prospects" element={page(<ProspectsPage />)} />
+        <Route path="/research" element={page(<ResearchPage />)} />
+        <Route path="/files" element={page(<FilesPage />)} />
+        <Route path="/jobs" element={page(<JobsPage />)} />
+        <Route path="/audit" element={page(<AuditPage />)} />
+        <Route path="/gateway" element={page(<GatewayPage />)} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

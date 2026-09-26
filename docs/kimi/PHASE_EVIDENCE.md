@@ -261,3 +261,17 @@
   completes via fixture-directory only; with a deliberately bad key, google-places
   failure is recorded in source_errors and the fixture fallback still serves.
 - Gate: PASS — pending the owner's real GOOGLE_PLACES_API_KEY for true live data.
+
+## Hotfix — builder page crashed to a blank screen (2026-09-26)
+- Symptom: clicking Build on any project card (or the App Builder nav) left a blank
+  page — "nothing appears".
+- Root cause: BuilderPage's LD-style Select used <SelectItem value=""> for
+  "Auto-recommend". Radix Select forbids empty-string item values and THROWS at
+  render; with no error boundary the whole React root unmounted. Type-check and
+  build pass because the constraint is runtime-only.
+- Fix: sentinel value 'auto' mapped back to '' for the API call.
+- Prevention: RouteErrorBoundary in App.tsx now contains per-page render errors —
+  a crash shows the error message with Retry/Dashboard actions instead of a
+  white screen.
+- Verified in the user's own tab on :7101: card click -> /builder?project=<id>
+  renders; full build runs; preview iframe + Design QA card appear; tsc + build clean.

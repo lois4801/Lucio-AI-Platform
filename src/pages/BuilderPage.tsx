@@ -153,10 +153,10 @@ export default function BuilderPage() {
               <SelectContent>{MODES.map((m) => <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>)}</SelectContent>
             </Select>
             <span className="text-sm text-muted-foreground whitespace-nowrap">LD style</span>
-            <Select value={styleId} onValueChange={setStyleId}>
+            <Select value={styleId || 'auto'} onValueChange={(v) => setStyleId(v === 'auto' ? '' : v)}>
               <SelectTrigger className="w-56"><SelectValue placeholder="Auto-recommend" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Auto-recommend</SelectItem>
+                <SelectItem value="auto">Auto-recommend</SelectItem>
                 {plan?.recommendedStyles?.map((sid) => <SelectItem key={sid} value={sid}>{sid}</SelectItem>)}
                 {plan?.style && !plan.recommendedStyles?.includes(plan.style.id) && <SelectItem value={plan.style.id}>{plan.style.id} {plan.style.name}</SelectItem>}
               </SelectContent>
