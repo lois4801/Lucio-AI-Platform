@@ -46,19 +46,25 @@ export function runDesignQA(plan, html) {
   score += add('WCAG AA contrast', (bodyOk ? 9 : Math.max(0, (bodyRatio || 0) * 2)) + (accentOk ? 6 : 0), 15,
     `body ${bodyRatio?.toFixed(2)}:1 (${bodyOk ? 'AA' : 'below AA'}) · accent ${accentRatio?.toFixed(2)}:1 (${accentOk ? 'AA-large' : 'low'})`);
 
-  // 3. Reduced-motion coverage (12)
+  // 3. Reduced-motion coverage + scroll-scene contract (12)
   const rm = html.includes('prefers-reduced-motion');
   const keyframes = (html.match(/@keyframes\s+([a-zA-Z0-9_-]+)/g) || []).map((k) => k.replace('@keyframes ', ''));
-  const rmBlock = (html.split('prefers-reduced-motion').pop() || '').slice(0, 900);
+  // combine every reduced-motion block (template + motion engine ship separate @media blocks)
+  const rmBlock = html.split('prefers-reduced-motion').slice(1).join(' ').slice(0, 2200);
   const killsAll = /animation:\s*none/.test(rmBlock) && /transition:\s*none/.test(rmBlock);
   // animated selectors are neutralized either by name in the reduced-motion block
   // or wholesale by animation:none — count distinct animation-driven selectors
   const animatedSelectors = [...new Set([...html.matchAll(/([.#][a-zA-Z0-9_-]+)\s*\{[^}]*animation:/g)].map((m) => m[1]))];
   const coveredSelectors = animatedSelectors.filter((sel) => rmBlock.includes(sel) || killsAll).length;
   const coverage = animatedSelectors.length ? coveredSelectors / animatedSelectors.length : (killsAll ? 1 : 0);
-  checks.reducedMotion = { keyframes: keyframes.length, animatedSelectors: animatedSelectors.length, covered: coveredSelectors, killsAll };
-  score += add('Reduced-motion kill switch', rm ? Math.round(4 + 8 * coverage) : 0, 12,
-    `${coveredSelectors}/${animatedSelectors.length} animated selectors neutralized${killsAll ? ' (wholesale animation:none)' : ''} · ${keyframes.length} keyframes`);
+  // Phase 6: scroll scenes must ship their reveal driver AND a static fallback
+  const scrollScenes = (html.match(/data-scene="/g) || []).length;
+  const revealDriver = html.includes("classList.add('in')");
+  const storyFallback = rmBlock.includes('story-moment') || rmBlock.includes('hgal-track') || killsAll;
+  const contractOk = scrollScenes > 0 ? (revealDriver && storyFallback) : rm;
+  checks.reducedMotion = { keyframes: keyframes.length, animatedSelectors: animatedSelectors.length, covered: coveredSelectors, killsAll, scrollScenes, contractOk };
+  score += add('Reduced-motion kill switch', (rm ? 2 : 0) + Math.round(6 * coverage) + (contractOk ? 4 : scrollScenes > 0 && revealDriver ? 2 : 0), 12,
+    `${coveredSelectors}/${animatedSelectors.length} animated selectors neutralized${killsAll ? ' (wholesale animation:none)' : ''} · ${keyframes.length} keyframes · ${scrollScenes} scroll scenes, contract ${contractOk ? 'ok' : 'INCOMPLETE'}`);
 
   // 4. Structured data + SEO hygiene (12)
   let jsonLdOk = false, jsonLdType = '';

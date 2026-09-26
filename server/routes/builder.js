@@ -27,8 +27,8 @@ builderRouter.post('/project/:projectId/plan', requireRole('member'), (req, res)
   const p = ownProject(req, res); if (!p) return;
   const { goal } = req.body || {};
   if (!goal) return res.status(400).json({ error: 'goal is required' });
-  const { styleId, creationMode, siteName, industry, tagline, verifiedFacts } = req.body || {};
-  res.json({ plan: makePlan(goal, withProjectSiteName(p, { styleId, creationMode, siteName, industry, tagline, verifiedFacts, projectId: p.id })) });
+  const { styleId, creationMode, siteName, industry, tagline, verifiedFacts, motionIntensity } = req.body || {};
+  res.json({ plan: makePlan(goal, withProjectSiteName(p, { styleId, creationMode, siteName, industry, tagline, verifiedFacts, motionIntensity, projectId: p.id })) });
 });
 
 // Step 2 — Build: scaffold the site from a goal + options
@@ -36,8 +36,8 @@ builderRouter.post('/project/:projectId/build', requireRole('member'), (req, res
   const p = ownProject(req, res); if (!p) return;
   const { goal } = req.body || {};
   if (!goal) return res.status(400).json({ error: 'goal is required' });
-  const { styleId, creationMode, siteName, industry, tagline, verifiedFacts } = req.body || {};
-  res.status(201).json(buildFromGoal(req.params.projectId, goal, withProjectSiteName(p, { styleId, creationMode, siteName, industry, tagline, verifiedFacts }), req.user, req.ip));
+  const { styleId, creationMode, siteName, industry, tagline, verifiedFacts, motionIntensity } = req.body || {};
+  res.status(201).json(buildFromGoal(req.params.projectId, goal, withProjectSiteName(p, { styleId, creationMode, siteName, industry, tagline, verifiedFacts, motionIntensity }), req.user, req.ip));
 });
 
 builderRouter.get('/project/:projectId/artifacts', (req, res) => {

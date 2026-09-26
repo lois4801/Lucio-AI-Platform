@@ -77,3 +77,13 @@ Maps canonical manual requirements to concrete files in this repository.
 - Build-time QA + 'qa' artifact + wide-event fields → server/services/appBuilder.js
 - GET /builder/project/:id/qa → server/routes/builder.js
 - QA card in builder → src/pages/BuilderPage.tsx
+
+## Phase 6 — Motion Engine / Cinematic expansion
+- LUCIO_SCENE_REGISTRY, MOTION INTENSITY, deterministic selection, loop/scroll/story/micro
+  CSS+JS emitters, per-scene reduced-motion fallbacks → server/services/motionEngine.js
+- Scaffold v5 (scene markup, story chapters from pack copy, sweep/particles/parallax
+  layers, tilt/spotlight/colorway attributes, meta + RM wiring) → server/services/siteTemplate.js
+- Plan recipe v5 + motionIntensity pass-through + wide-event fields → server/services/appBuilder.js
+- Route forwards motionIntensity (plan + build) → server/routes/builder.js
+- QA scroll-scene contract check (reveal driver + static fallback) → server/services/designQA.js
+- Tests → scripts/test-phase6.js (55 deterministic assertions)

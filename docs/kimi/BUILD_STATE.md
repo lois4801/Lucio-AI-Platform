@@ -20,7 +20,8 @@ Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 | 4 Content Architect + Design Universes | DONE | 33-industry content packs with provenance; 12 unique universes; 8 motion personalities; per-site media; wide-event telemetry |
 | 5 Design Intelligence | DONE | Automatic design QA (score/grade, 8 explainable factors) + responsive audit on every build; report in builder UI; discrimination verified (weak HTML → 15/F) |
 | Assistant layer | DONE (ships immediately) | 18-agent v9.6 squad embedded verbatim; journey-aware tips + chat panel on every authenticated page for all roles |
-| 6–17 | PENDING | Phase 6 next (motion/cinematic engine expansion) |
+| 6 Motion Engine / Cinematic expansion | DONE | LUCIO_SCENE_REGISTRY (10 scenes: loop/scroll/story/micro), MOTION INTENSITY tiers, deterministic seeded selection, device-aware fallbacks, CINEMA-STORY-01 chapters, QA contract check |
+| 7–17 | PENDING | Phase 7 next |
 
 ## Session-resume notes
 - Backend: Express + better-sqlite3 (data/lucio.db), serves /api on port 8787; Vite dev proxies /api.

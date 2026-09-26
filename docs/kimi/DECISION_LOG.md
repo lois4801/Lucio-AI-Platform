@@ -73,3 +73,15 @@
   credit) rather than keyframe-name matching, which failed on real v4 HTML.
 - Consequence: every generated site carries an inspectable quality report; weak output is visibly
   penalized (verified: 15/F on stripped HTML), keeping the score honest.
+====
+## D10 — Motion Engine v2: scene registry + intensity tiers instead of random animation
+- Date: 2026-09-26
+- Decision: Phase 6 implements the Component Universe contract as a deterministic scene
+  system rather than ad-hoc effects. MOTION INTENSITY (MINIMAL/BALANCED/CINEMATIC/
+  IMMERSIVE) gates which LUCIO_SCENE_REGISTRY scenes a build receives; EXTREME is never
+  automatic; CINEMATIC_UNIVERSE mode floors at CINEMATIC. Each scene declares a
+  PERFORMANCE_CLASS, mobile behavior and a reduced-motion fallback, and kill-switch CSS
+  is emitted only for selected scenes. The renderer rule (CSS/IO/rAF/Canvas by complexity)
+  is honored with zero external animation libraries to keep the runtime sovereign.
+- Consequence: builds stay reproducible per seed, MINIMAL pages carry no dead motion
+  code, and Design QA can verify the scroll-scene contract objectively.

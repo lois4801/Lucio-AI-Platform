@@ -1,10 +1,13 @@
-// Cinematic site template (scaffold v4) — Phase 4 Content Architect + Design Universe.
+// Cinematic site template (scaffold v5) — Phase 4 universes + Phase 6 Motion Engine v2.
 // Each build composes: content pack (industry-specific copy, provenance-classified),
 // ONE design universe (unique fonts/palette/shape), ONE motion personality,
+// Phase 6: MOTION INTENSITY + LUCIO_SCENE_REGISTRY scenes (loop/scroll/story) with
+// device-aware fallbacks and prefers-reduced-motion static equivalents,
 // seeded luxury media (4K library + unique procedural accents), JSON-LD, SEO.
 // Every animation ships a prefers-reduced-motion kill switch (Component Universe mandate).
 import { mediaSet } from './mediaEngine.js';
 import { pickUniverse } from './designUniverses.js';
+import { motionPack } from './motionEngine.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const hash = (str) => { let h = 2166136261; for (const c of String(str)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
@@ -127,6 +130,8 @@ export function scaffoldSite(plan) {
 
   const headlineWords = esc(pack.headline.text).split(/\s+/);
   const headlineId = 'hd-' + hash(siteKey).toString(36);
+  // Phase 6: motion intensity + deterministic scene selection (loop/scroll/story/micro)
+  const mx = motionPack(plan, { headlineId });
   const headlineHtml = motion === 'term'
     ? `<span id="${headlineId}" data-text="${esc(pack.headline.text)}">${esc(pack.headline.text)}</span>`
     : headlineWords.map((w, i) => `<span class="rise-w" style="animation-delay:${0.2 + i * 0.08}s">${w}&nbsp;</span>`).join('');
@@ -134,7 +139,7 @@ export function scaffoldSite(plan) {
   const ctaLabel = (pack.conversionGoals?.[0]?.text || 'Get in touch').replace(/^(Primary|Secondary):\s*/i, '');
 
   const serviceCards = pack.services.map((s, i) => `
-    <div class="card-u rv p-8 relative overflow-hidden" style="transition-delay:${i * 0.06}s">
+    <div class="card-u rv p-8 relative overflow-hidden" ${mx.hasTilt ? 'data-tilt ' : ''}style="transition-delay:${i * 0.06}s">
       <div class="absolute -right-4 -top-6 text-8xl font-black select-none" style="color:color-mix(in srgb,var(--ink) 6%,transparent)">0${i + 1}</div>
       <div class="h-1 w-10 rounded-full mb-6" style="background:linear-gradient(90deg,var(--accent),var(--accent2))"></div>
       <h3 class="font-display text-xl font-bold mb-2">${esc(s.title)}</h3>
@@ -155,7 +160,7 @@ export function scaffoldSite(plan) {
       <h2 class="font-display text-3xl md:text-4xl font-bold mb-12">From first hello to done</h2>
       <div class="grid grid-cols-2 md:grid-cols-${Math.min(pack.journey.length, 5)} gap-5">
         ${pack.journey.map((j, i) => `
-          <div class="rv" style="transition-delay:${i * 0.08}s">
+          <div class="rv blurv" style="transition-delay:${i * 0.08}s">
             <div class="text-4xl font-black mb-2" style="color:var(--accent)">${String(i + 1).padStart(2, '0')}</div>
             <p class="font-semibold">${esc(j.text)}</p>
           </div>`).join('')}
@@ -184,7 +189,21 @@ export function scaffoldSite(plan) {
       </div>
     </section>` : '';
 
-  const galleryBlock = plan.features.includes('gallery') ? `
+  const galleryBlock = plan.features.includes('gallery') ? (mx.hasHGallery ? `
+    <section id="gallery" data-scene="story-gallery" class="hgal-wrap">
+      <div class="hgal-sticky">
+        <div class="mx-auto max-w-7xl px-6 w-full mb-10">
+          <p class="text-xs font-bold tracking-[.3em] uppercase mb-3" style="color:var(--accent)">Portfolio</p>
+          <h2 class="font-display text-3xl md:text-5xl font-bold">Recent work</h2>
+        </div>
+        <div class="hgal-track px-6">
+          ${galleryImgs.concat(galleryImgs).slice(0, 6).map((g, i) => `
+            <div class="hgal-card unmask rv relative overflow-hidden" style="border-radius:var(--radius);transition-delay:${i * 0.06}s">
+              <img src="${g.src}" alt="${esc(plan.siteName)} portfolio ${i + 1}" loading="lazy" class="aspect-[4/3] w-full object-cover"/>
+            </div>`).join('')}
+        </div>
+      </div>
+    </section>` : `
     <section id="gallery" class="mx-auto max-w-7xl px-6 py-24 rv">
       <p class="text-xs font-bold tracking-[.3em] uppercase mb-3" style="color:var(--accent)">Portfolio</p>
       <h2 class="font-display text-3xl md:text-5xl font-bold mb-12">Recent work</h2>
@@ -193,6 +212,43 @@ export function scaffoldSite(plan) {
           <div class="unmask rv relative overflow-hidden" style="border-radius:var(--radius);transition-delay:${i * 0.06}s">
             <img src="${g.src}" alt="${esc(plan.siteName)} portfolio ${i + 1}" loading="lazy" class="aspect-[4/3] w-full object-cover"/>
           </div>`).join('')}
+      </div>
+    </section>`) : '';
+
+  // Phase 6 — CINEMA-STORY-01: sticky chapter narrative built ONLY from pack copy
+  // (verified/about/differentiators/journey + CTA) — nothing is invented.
+  const storyMoments = [
+    pack.about[0] ? {
+      kicker: esc(plan.industry), title: esc(plan.siteName),
+      body: esc(pack.about[0].text), badge: pack.about[0].classification === 'VERIFIED_FACT',
+    } : null,
+    pack.differentiators?.length ? {
+      kicker: 'Why clients choose us', title: esc(pack.differentiators[0].text),
+      body: esc((pack.differentiators[1] || pack.differentiators[0]).text), badge: pack.differentiators[0].classification === 'VERIFIED_FACT',
+    } : null,
+    {
+      kicker: 'What happens next', title: esc(pack.journey?.[0]?.text || (pack.conversionGoals?.[0]?.text || 'Get in touch').replace(/^(Primary|Secondary):\s*/i, '')),
+      body: esc(pack.journey?.[1]?.text || pack.subline.text), badge: false, cta: true,
+    },
+  ].filter(Boolean).slice(0, 3);
+  const storyBlock = mx.hasStory && storyMoments.length >= 2 ? `
+    <section class="story" data-scene="story-chapter" aria-label="Our story in three chapters">
+      <div class="story-track">
+        <div class="story-sticky">
+          <div class="story-bar" aria-hidden="true"></div>
+          <div class="story-zoom" style="background-image:url('${heroImg}')" aria-hidden="true"></div>
+          <div class="absolute inset-0 z-[2]" style="background:linear-gradient(180deg,color-mix(in srgb,var(--bg) 88%,transparent),color-mix(in srgb,var(--bg) 72%,transparent))" aria-hidden="true"></div>
+          <div class="story-rail" aria-hidden="true">${storyMoments.map(() => '<span class="story-dot"></span>').join('')}</div>
+          ${storyMoments.map((m, i) => `
+            <div class="story-moment" data-active="${i === 0 ? 'true' : 'false'}">
+              <div class="mx-auto max-w-4xl px-6 md:px-16 w-full relative z-10">
+                <p class="text-xs font-bold tracking-[.35em] uppercase mb-4" style="color:var(--accent)">${m.kicker}</p>
+                <h2 class="font-display text-3xl md:text-6xl font-black leading-[1.06] max-w-3xl mb-6">${m.title}</h2>
+                <p class="max-w-xl text-base md:text-lg leading-relaxed" style="color:var(--muted)">${m.badge ? '<span class="text-[10px] font-bold uppercase tracking-[.18em] px-2 py-1 rounded-full mr-2" style="background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)">Verified</span>' : ''}${m.body}</p>
+                ${m.cta ? `<a href="#contact" class="btn-u magnet mt-8">${esc((pack.conversionGoals?.[0]?.text || 'Get in touch').replace(/^(Primary|Secondary):\s*/i, ''))}</a>` : ''}
+              </div>
+            </div>`).join('')}
+        </div>
       </div>
     </section>` : '';
 
@@ -210,7 +266,7 @@ export function scaffoldSite(plan) {
 <title>${esc(pack.seo.title || plan.seo.title)}</title>
 <meta name="description" content="${esc(pack.seo.description || plan.seo.description)}">
 <meta name="keywords" content="${esc((pack.seo.keywords || []).join(', '))}">
-<meta name="generator" content="Lucio AI Platform — ${esc(universe.id)} ${esc(universe.name)} / ${esc(motion)} / ${mode} / media:${esc(media.hero?.kind || 'none')}">
+<meta name="generator" content="Lucio AI Platform — ${esc(universe.id)} ${esc(universe.name)} / ${esc(motion)} / ${mode} / intensity:${esc(mx.intensity)} / scenes:${esc(mx.scenes.join('+'))} / media:${esc(media.hero?.kind || 'none')}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=${esc(universe.fonts.google)}&display=swap" rel="stylesheet">
@@ -247,12 +303,14 @@ input,textarea{background:color-mix(in srgb,var(--panel) 80%,transparent);border
 input:focus,textarea:focus{outline:none;border-color:var(--accent)}
 ${shapeCss(universe)}
 ${motionCss(motion)}
+${mx.css}
 @media (prefers-reduced-motion:reduce){
   .hero-img,.aurora,.grad-text,.scroll-hint,.rise-w,.orb,.orbit-aura,.marquee-track,.caret{animation:none!important}
   .rv,.wipe{opacity:1!important;transform:none!important;clip-path:none!important;transition:none!important}
   .rv.in>*{animation:none!important}
   .unmask img{transform:none!important;transition:none!important}
 }
+${mx.rmCss}
 </style>
 </head>
 <body class="font-body antialiased ${motion === 'term' ? 'scanlines relative' : ''}">
@@ -272,6 +330,9 @@ ${motionCss(motion)}
   <div class="hero-vignette absolute inset-0 z-[2]"></div>
   <div class="hero-overlay absolute inset-0 z-[2]"></div>
   ${cinematic ? '<div class="aurora"></div>' : ''}
+  ${mx.hasParticles ? '<canvas id="fx-particles" aria-hidden="true"></canvas>' : ''}
+  ${mx.hasSweep ? '<div class="sweep-band" aria-hidden="true"></div>' : ''}
+  ${mx.hasParallax ? '<div data-parallax="0.5" class="absolute inset-x-0 -inset-y-[12%] z-[1] pointer-events-none" style="background:radial-gradient(60% 50% at 70% 30%,color-mix(in srgb,var(--accent) 20%,transparent),transparent 70%)" aria-hidden="true"></div>' : ''}
   ${motion === 'drift' ? `<div class="orb h-96 w-96 -left-20 top-1/4" style="background:var(--accent)"></div><div class="orb h-80 w-80 right-0 bottom-1/4" style="background:var(--accent2);animation-delay:-6s"></div>` : ''}
   ${motion === 'orbit' ? '<div class="orbit-aura h-[36rem] w-[36rem] -right-40 -top-40"></div><div class="orbit-aura h-96 w-96 -left-24 bottom-0" style="animation-direction:reverse"></div>' : ''}
   <div class="relative z-10 mx-auto max-w-6xl px-6 pt-28 pb-20 w-full">
@@ -287,8 +348,9 @@ ${motionCss(motion)}
 </header>
 
 ${marqueeBand}
+${storyBlock}
 
-<section id="services" class="mx-auto max-w-7xl px-6 py-24 rv">
+<section id="services" ${mx.hasColorway ? 'data-colorway="true" ' : ''}class="chapter mx-auto max-w-7xl px-6 py-24 rv">
   <p class="text-xs font-bold tracking-[.3em] uppercase mb-3" style="color:var(--accent)">What we do</p>
   <h2 class="font-display text-3xl md:text-5xl font-bold mb-4">Signature <span class="grad-text">services</span></h2>
   <p class="max-w-xl mb-12" style="color:var(--muted)">${esc(pack.differentiators?.map((d) => d.text).join(' — ') || pack.subline.text)}</p>
@@ -300,7 +362,7 @@ ${journeyStrip}
 ${galleryBlock}
 ${faqBlock}
 
-<section id="about" class="mx-auto max-w-7xl px-6 py-24 rv">
+<section id="about" ${mx.hasColorway ? 'data-colorway="true" ' : ''}class="chapter mx-auto max-w-7xl px-6 py-24 rv">
   <div class="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
     <div class="unmask rv relative overflow-hidden" style="border-radius:var(--radius)">
       <img src="${aboutImg}" alt="About ${esc(plan.siteName)}" loading="lazy" class="aspect-[4/3] w-full object-cover"/>
@@ -315,7 +377,7 @@ ${faqBlock}
 </section>
 
 <section id="contact" class="mx-auto max-w-4xl px-6 py-24 rv">
-  <div class="card-u p-8 md:p-14 relative overflow-hidden">
+  <div class="card-u ${mx.hasSpotlight ? 'spot-host ' : ''}p-8 md:p-14 relative overflow-hidden">
     <div class="absolute -top-24 -right-24 h-72 w-72 rounded-full opacity-20 blur-3xl" style="background:var(--accent)"></div>
     <h2 class="font-display text-3xl md:text-4xl font-bold mb-2 relative">${esc(contactCta)}</h2>
     <p class="mb-8 relative" style="color:var(--muted)">We reply within one business day.</p>
@@ -333,7 +395,8 @@ ${faqBlock}
   <span>Crafted with Lucio AI Platform &middot; ${esc(universe.name)} universe &middot; ${esc(universe.motion)} motion</span>
 </footer>
 
-<script>${motionJs(motion, headlineId)}</script>
+<script>${motionJs(motion, headlineId)}
+${mx.js}</script>
 </body>
 </html>`;
 }

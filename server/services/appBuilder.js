@@ -12,6 +12,7 @@ import { pickUniverse, getUniverse } from './designUniverses.js';
 import { buildContentPack } from './contentEngine.js';
 import { wideEvent } from './telemetry.js';
 import { runDesignQA } from './designQA.js';
+import { resolveIntensity, selectScenes } from './motionEngine.js';
 export { scaffoldSite };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -87,6 +88,7 @@ export function makePlan(goal, opts = {}) {
     style: { id: style.id, name: style.name, source: styleSource },
     recommendedStyles: recommendStyles(goal, opts.industry),
     creationMode,
+    motionIntensity: opts.motionIntensity,
     universe: chosenUniverse,
     universeSeed,
     contentPack,
@@ -101,7 +103,7 @@ export function makePlan(goal, opts = {}) {
       verifiedFacts: opts.verifiedFacts || [],
       industrySuggestions: ['Services list', 'About copy', 'Section structure'].map((s) => ({ item: s, classification: 'INFERRED_INDUSTRY_SUGGESTION' })),
     },
-    recipe: { engine: 'lucio-app-builder', version: 4, styleId: style.id, creationMode, universe: chosenUniverse.id, locked: true },
+    recipe: { engine: 'lucio-app-builder', version: 5, styleId: style.id, creationMode, universe: chosenUniverse.id, locked: true },
     seo: { title: `${name} — ${parsed.industry}${parsed.location ? ' in ' + parsed.location : ''}`, description: `${copy.hero} ${parsed.industry} services${parsed.location ? ' in ' + parsed.location : ''}.` },
   };
 }
@@ -137,6 +139,7 @@ export function buildFromGoal(projectId, goal, opts = {}, user, ip = '') {
   wideEvent('build.completed', {
     projectId, version: artifact.version, style: plan.style.id, creationMode: plan.creationMode,
     universe: plan.universe.id, motion: plan.universe.motion, industry: plan.industry,
+    motionIntensity: resolveIntensity(plan), scenes: selectScenes(plan.universeSeed, resolveIntensity(plan)),
     pages: plan.contentPack.sitemap.length, sections: plan.contentPack.sitemap.reduce((n, s) => n + s.sections.length, 0),
     provenance: plan.contentPack.provenanceSummary, qaScore: qa.score, qaGrade: qa.grade,
     bytes: html.length, durationMs: Date.now() - t0,

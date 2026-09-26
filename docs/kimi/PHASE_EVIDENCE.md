@@ -185,3 +185,40 @@
 - E2E through :7100: project "QA E2E Salon" → build "Velvet & Vine" (luxury hair salon) →
   qa {score 100, grade A, 8 factors}; GET /project/:id/qa returns the same report.
 - Gate: PASS for local dev scope.
+
+## Phase 6 — Motion Engine / Cinematic expansion (Component Universe canonical)
+- Canonical contract taken from Multi_Mode_Cinematic_Component_Universe_v1_FINAL.docx:
+  LUCIO_SCENE_REGISTRY (§27), MOTION INTENSITY (§40: MINIMAL|BALANCED|CINEMATIC|IMMERSIVE,
+  EXTREME never automatic), PERFORMANCE_CLASS tiers (§41), reduced-motion + JS-failure (§42),
+  cinematic renderer rule (§46: CSS for loops, IO+CSS for reveals, rAF for scroll timelines,
+  Canvas for particles).
+- server/services/motionEngine.js: 10 registered scenes spanning loop (LOOP-AURORA,
+  LOOP-SWEEP, LOOP-PARTICLES), scroll (SCROLL-REVEAL, SCROLL-PARALLAX, SCROLL-COLORWAY),
+  story (STORY-CHAPTER = CINEMA-STORY-01 sticky chapters, STORY-GALLERY = horizontal
+  gallery scrub) and micro (MICRO-TILT, MICRO-SPOTLIGHT) — every scene carries
+  performance_class, desktop/mobile behavior and an explicit reduced-motion fallback.
+- MOTION INTENSITY gating: default BALANCED; CINEMATIC_UNIVERSE creation mode floors at
+  CINEMATIC; invalid/EXTREME input falls back to BALANCED. Scene selection is seeded per
+  site (same seed -> identical rebuild; different seeds diverge).
+- Device-aware performance: particle field is gated behind (min-width:1024px) and
+  (pointer:fine) with CSS wash fallback; single canvas, seeded mulberry32 PRNG, rAF loop,
+  IntersectionObserver lazy-init and offscreen pause. No external animation library —
+  CSS/WAAPI-grade effects + IO + rAF only (sovereign runtime).
+- Progressive enhancement: story chapters and gallery content live in markup (readable
+  with JS disabled); the JS engine reads prefers-reduced-motion first and every scene
+  ships a static equivalent; per-scene kill-switch CSS is emitted only for scenes actually
+  selected (no dead references on MINIMAL pages).
+- Story honesty: CINEMA-STORY-01 chapters are composed ONLY from the content pack
+  (about/differentiators/journey + CTA) — no invented narrative.
+- Scaffold v5 (siteTemplate.js) + plan recipe v5: generator meta records intensity + full
+  scene list; build.completed wide events carry motionIntensity + scenes (verified in
+  data/telemetry.log); designQA factor 3 extended with a scroll-scene contract check
+  (reveal driver + static fallback) — weak HTML still scores 15/F.
+- Tests: node scripts/test-phase6.js — 55/55 PASS. Regressions: phase3 58/58,
+  phase4 39/39, assistant 34/34, tsc clean, npm run build clean.
+- E2E through :7100 (single clean listener; killed stale preview-owned server + orphan
+  Vite first): CINEMATIC_UNIVERSE + IMMERSIVE build "Velvet & Vine" -> QA 100/A, preview
+  200 with 4 scroll-scene hooks, story chapters, particles canvas, tilt/spotlight,
+  9 scenes in meta, hero-professional-2.jpg served 200 (707KB); default (BALANCED) build
+  gates scene hooks to zero. Builder route now forwards motionIntensity (plan + build).
+- Gate: PASS for local dev scope.
