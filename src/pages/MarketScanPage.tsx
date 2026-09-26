@@ -159,28 +159,55 @@ export default function MarketScanPage() {
         }),
       }).addTo(map);
       m.bindTooltip(esc(p.business_name), { permanent: true, direction: 'top', offset: [0, -8], className: 'lucio-label' });
-      const detail = `<div style="min-width:220px">
-        <div style="font-weight:700">${esc(p.business_name)}</div>
-        <div style="font-size:12px;opacity:.7">${esc(p.city)}, ${esc(p.province_state)} · ${esc(p.industry)}</div>
-        <div style="font-size:12px;margin-top:4px">${esc(GAP_LABEL[p.website_gap_signal] || p.website_gap_signal)} · score <b>${Math.round(p.lead_score)}</b></div>
-        <div style="font-size:11px;opacity:.7;margin-top:2px">${esc(p.recommended_offer || '')}</div>
-        <div style="margin-top:6px;display:flex;gap:6px">
-          <button id="gen-${p.id}" style="font-size:11px;padding:3px 8px;border:1px solid #57534e;border-radius:6px;background:#0c0a09;color:#fafaf9;cursor:pointer">Generate opportunity</button>
-          <button id="bw-${p.id}" style="font-size:11px;padding:3px 8px;border:0;border-radius:6px;background:#22c55e;color:#052e16;font-weight:700;cursor:pointer">Build website →</button>
-          ${meta.mapsEmbedKey ? `<button id="sv-${p.id}" style="font-size:11px;padding:3px 8px;border:1px solid #57534e;border-radius:6px;background:#292524;color:#fafaf9;cursor:pointer">Street view</button>` : ''}
+
+      // Rich business card popup (pindrop-style, cream theme)
+      const gapKey = p.website_gap_signal;
+      const badge = gapKey === 'GAP_NONE'
+        ? { bg: '#dcfce7', fg: '#166534', label: '● Has a website' }
+        : gapKey === 'GAP_NO_VERIFIED_WEBSITE'
+          ? { bg: '#fef3c7', fg: '#92400e', label: '● No website found' }
+          : { bg: '#fef3c7', fg: '#92400e', label: `● ${GAP_LABEL[gapKey] || 'Website gap'}` };
+      const confPct = Math.round((p.website_confidence || 0) * 100);
+      const confLabel = confPct >= 70 ? 'High confidence' : confPct >= 40 ? 'Medium confidence' : 'Low confidence';
+      const confNote = gapKey === 'GAP_NONE' ? 'Website on record — pitch a redesign'
+        : gapKey === 'GAP_SOCIAL_ONLY' ? 'Social media only — no real site'
+        : gapKey === 'GAP_NO_VERIFIED_WEBSITE' ? 'Likely has no website'
+        : GAP_LABEL[gapKey] || 'Website gap detected';
+      const googleCheck = `https://www.google.com/search?q=${encodeURIComponent(`${p.business_name} ${p.city}`)}`;
+      const detail = `<div style="width:250px;font-family:system-ui,-apple-system,sans-serif;color:#1c1917">
+        <div style="background:${badge.bg};color:${badge.fg};font-weight:700;font-size:11px;border-radius:9999px;padding:5px 10px;display:inline-block">${esc(badge.label)}</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:11px;color:#57534e">
+          <span style="display:inline-flex;gap:1.5px;align-items:flex-end;height:12px">
+            <span style="width:3px;height:5px;background:${confPct >= 40 ? '#f59e0b' : '#e7e5e4'};border-radius:1px"></span>
+            <span style="width:3px;height:8px;background:${confPct >= 70 ? '#f59e0b' : '#e7e5e4'};border-radius:1px"></span>
+            <span style="width:3px;height:12px;background:${confPct >= 70 ? '#f59e0b' : '#e7e5e4'};border-radius:1px"></span>
+          </span>
+          <b style="color:#1c1917">${confLabel}</b> · ${confPct}% — ${esc(confNote)}
+        </div>
+        <a href="${googleCheck}" target="_blank" rel="noreferrer" style="display:inline-block;margin-top:8px;background:#fff;border:1px solid #e7e5e4;border-radius:9999px;padding:4px 10px;font-size:11px;color:#1c1917;text-decoration:none;font-weight:600">Check for yourself ↗</a>
+        <div style="margin-top:12px;font-size:15px;font-weight:800;line-height:1.25">${esc(p.business_name)}</div>
+        <div style="font-size:10px;letter-spacing:.12em;color:#b45309;font-weight:700;margin-top:2px">${esc((p.industry || 'LOCAL BUSINESS').toUpperCase())}</div>
+        ${p.address ? `<div style="display:flex;gap:6px;margin-top:10px;font-size:11.5px;color:#44403c"><span>📍</span><span>${esc(p.address)}</span></div>` : `<div style="display:flex;gap:6px;margin-top:10px;font-size:11.5px;color:#44403c"><span>📍</span><span>${esc(p.city)}, ${esc(p.province_state)}</span></div>`}
+        ${p.public_phone ? `<div style="display:flex;gap:6px;align-items:center;margin-top:5px;font-size:11.5px;color:#44403c"><span>📞</span><span>${esc(p.public_phone)}</span><span id="cp-${p.id}" title="Copy number" style="cursor:pointer;opacity:.6">⧉</span></div>` : ''}
+        <button id="bw-${p.id}" style="width:100%;margin-top:12px;background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#451a03;font-weight:800;font-size:13px;border:0;border-radius:9999px;padding:11px;cursor:pointer;box-shadow:0 2px 8px rgba(245,158,11,.4)">Make website →</button>
+        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:10.5px">
+          <span id="gen-${p.id}" style="color:#78716c;cursor:pointer;text-decoration:underline">Generate opportunity brief</span>
+          ${meta.mapsEmbedKey ? `<span id="sv-${p.id}" style="color:#78716c;cursor:pointer;text-decoration:underline">Street view</span>` : ''}
         </div>
       </div>`;
-      m.bindPopup(L.popup({ maxWidth: 320, className: 'lucio-popup' }).setContent(detail));
+      m.bindPopup(L.popup({ maxWidth: 280, className: 'lucio-popup-cream' }).setContent(detail));
       m.on('popupopen', () => {
+        const bw = document.getElementById(`bw-${p.id}`);
+        if (bw) bw.onclick = () => { map.closePopup(); openBuild(p); };
         const gen = document.getElementById(`gen-${p.id}`);
         if (gen) gen.onclick = () => generateOpportunity(p);
-        const bw = document.getElementById(`bw-${p.id}`);
-        if (bw) bw.onclick = () => openBuild(p);
+        const cp = document.getElementById(`cp-${p.id}`);
+        if (cp) cp.onclick = () => { try { navigator.clipboard?.writeText(p.public_phone); cp.textContent = '✓'; } catch {} };
         const sv = document.getElementById(`sv-${p.id}`);
         if (sv) sv.onclick = () => {
           const embed = `<div style="width:300px"><iframe width="300" height="200" style="border:0;border-radius:8px" loading="lazy"
             src="https://www.google.com/maps/embed/v1/streetview?location=${p.lat},${p.lng}&key=${encodeURIComponent(meta.mapsEmbedKey || '')}"></iframe>
-            <div style="font-size:11px;opacity:.7;margin-top:4px">${esc(p.business_name)} — <span style="cursor:pointer;text-decoration:underline" id="sv-back-${p.id}">back</span></div></div>`;
+            <div style="font-size:11px;color:#666;margin-top:4px">${esc(p.business_name)} — <span style="cursor:pointer;text-decoration:underline" id="sv-back-${p.id}">back</span></div></div>`;
           m.getPopup().setContent(embed).update();
           const back = document.getElementById(`sv-back-${p.id}`);
           if (back) back.onclick = () => { m.getPopup().setContent(detail).update(); };
@@ -190,6 +217,10 @@ export default function MarketScanPage() {
     });
     if (pts.length) map.flyToBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lng])).pad(0.2));
   }, [results, mapReady]);
+
+  // Green-dot insight tip (dismissible, remembered)
+  const [showTip, setShowTip] = useState(() => { try { return !localStorage.getItem('lucio-green-tip-dismissed'); } catch { return true; } });
+  const dismissTip = () => { setShowTip(false); try { localStorage.setItem('lucio-green-tip-dismissed', '1'); } catch {} };
 
   // Overlay search bar: geocode a city/address (OpenStreetMap Nominatim, no key)
   // then pin-drop scan there.
@@ -325,6 +356,24 @@ export default function MarketScanPage() {
               ? <Badge className="shadow-lg">● LIVE · Google Places</Badge>
               : <Badge variant="secondary" className="shadow-lg">dev data — add GOOGLE_PLACES_API_KEY for live</Badge>}
           </div>
+
+          {/* Insight tip — "Don't sleep on the green dots" */}
+          {showTip && (
+            <div className="absolute bottom-20 left-3 z-[1001] w-72 rounded-xl bg-background/95 shadow-xl border border-border/60 p-3.5 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="text-sm font-bold flex items-center gap-1.5"><span className="text-base">💡</span> Don't sleep on the green dots</div>
+                <button onClick={dismissTip} className="text-muted-foreground hover:text-foreground text-sm leading-none" aria-label="Dismiss tip">×</button>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                A green dot already pays for a website, so they already believe they need one. Most of those sites are years old —
+                show the owner a better one side by side and let them convince themselves.
+              </p>
+              <button onClick={() => { dismissTip(); setNotice('Green-dot businesses are in your results below — pitch them a redesign, not a first site.'); }}
+                className="text-xs font-semibold text-primary hover:underline">
+                Show me the green dots
+              </button>
+            </div>
+          )}
 
           {/* Legend, bottom left */}
           <div className="absolute bottom-20 left-3 z-[1000] rounded-lg bg-background/95 shadow-lg px-3 py-2 text-xs space-y-1">

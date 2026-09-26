@@ -108,3 +108,15 @@
   border-bottom: 1px solid #44403c;
 }
 #prospect-map .leaflet-bar a:hover { background: #292524; }
+
+/* Cream business-card popup (pindrop-style marker card) */
+.lucio-popup-cream .leaflet-popup-content-wrapper {
+  background: #fffdf5;
+  color: #1c1917;
+  border-radius: 18px;
+  border: 1px solid #fde68a;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45), 0 0 0 4px rgba(253, 230, 138, 0.25);
+}
+.lucio-popup-cream .leaflet-popup-content { margin: 14px 16px; line-height: 1.35; }
+.lucio-popup-cream .leaflet-popup-tip { background: #fffdf5; border: 1px solid #fde68a; box-shadow: none; }
+.lucio-popup-cream .leaflet-popup-close-button { color: #a8a29e; font-size: 18px; top: 4px; right: 6px; }
