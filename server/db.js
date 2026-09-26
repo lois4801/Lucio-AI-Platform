@@ -301,6 +301,33 @@ CREATE TABLE IF NOT EXISTS leads (
 CREATE INDEX IF NOT EXISTS idx_leads_site ON leads(published_site_id);
 CREATE INDEX IF NOT EXISTS idx_deals_org ON client_deals(org_id);
 CREATE INDEX IF NOT EXISTS idx_pub_proj ON published_sites(project_id);
+
+-- ---- Phase 7: cinematic component universe (component library + recipe persistence) ----
+CREATE TABLE IF NOT EXISTS component_assets (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  component_id TEXT NOT NULL,
+  component_version TEXT NOT NULL DEFAULT '1.0.0',
+  family TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'imported',  -- imported|normalized|tested|classified|approved|rejected|deprecated
+  similarity_to TEXT NOT NULL DEFAULT '',
+  similarity_score REAL NOT NULL DEFAULT 0,
+  performance_class TEXT NOT NULL DEFAULT 'STANDARD',
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS site_recipes (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL DEFAULT 1,
+  recipe_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_comp_assets_org ON component_assets(org_id, status);
+CREATE INDEX IF NOT EXISTS idx_recipes_proj ON site_recipes(project_id, version);
 `);
 
 // Lightweight migrations: add columns to pre-existing tables when missing.
@@ -308,6 +335,10 @@ CREATE INDEX IF NOT EXISTS idx_pub_proj ON published_sites(project_id);
   const cols = db.prepare('PRAGMA table_info(prospects)').all().map((c) => c.name);
   if (!cols.includes('lat')) db.exec('ALTER TABLE prospects ADD COLUMN lat REAL');
   if (!cols.includes('lng')) db.exec('ALTER TABLE prospects ADD COLUMN lng REAL');
+}
+{
+  const cols = db.prepare('PRAGMA table_info(component_assets)').all().map((c) => c.name);
+  if (!cols.includes('performance_class')) db.exec(`ALTER TABLE component_assets ADD COLUMN performance_class TEXT NOT NULL DEFAULT 'STANDARD'`);
 }
 
 // Seed provider registry: local-first, external disabled by default (manual §7, §14)

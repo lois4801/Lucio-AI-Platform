@@ -112,12 +112,168 @@ function shapeCss(u) {
 ${cards[u.shape.card] || cards.framed}`;
 }
 
+// ---- Phase 7 — Cinematic Universe additions (gated behind plan.cinematic) ---------
+// Every addition below renders ONLY when plan.cinematic is set (CINEMATIC_UNIVERSE
+// builds); non-cinematic output stays byte-identical to the Phase 6 template. All
+// layers are progressively enhanced (static markup ships first, JS enhances) and
+// honor prefers-reduced-motion with an equivalent static layout.
+const CINE_EASE = 'power2.out';
+// §21 scroll-timeline contract attributes for story/scroll scenes (+ pin/snap when
+// pinned, and entry/active/exit state hooks: each hook names the scroll position range
+// where the scene is in that state; the runtime drives data-phase between them).
+const scrollSceneAttrs = (pin, snap) =>
+  ` data-scroll-start="top bottom" data-scroll-end="bottom top" data-trigger="scroll" data-scrub="true" data-ease="${CINE_EASE}" data-pin="${pin}" data-snap="${snap}" data-entry="top bottom" data-active="center center" data-exit="bottom top" data-phase="entry"`;
+const clamp01 = (n) => Math.min(1, Math.max(0, Number(n) || 0));
+
+// §21 pacing: page sections adopt the cinematic pacing sequence
+// (impact -> calm -> story -> proof -> impact -> information -> conversion),
+// stable-sorted so same-intent sections keep their content order.
+function orderByPacing(items, pacing) {
+  const seq = Array.isArray(pacing) && pacing.length ? pacing : [];
+  const rank = (intent) => { const i = seq.indexOf(intent); return i === -1 ? 999 : i; };
+  return items
+    .map((item, i) => ({ ...item, i }))
+    .sort((a, b) => (rank(a.intent) - rank(b.intent)) || (a.i - b.i));
+}
+
+// §24 ambient shader / gradient layer — CSS-only transform+opacity animation on
+// color-mix tokens. Honors shader.fallback (static gradient vs hidden) and
+// shader.mobile_support (animation gated off below md width when unsupported).
+const SHADER_SPIN = new Set(['iridescent', 'holographic', 'refraction', 'metallic', 'neon', 'conic', 'energy', 'plasma']);
+const SHADER_FLOW = new Set(['fluid', 'liquid', 'water', 'fire', 'distortion']);
+const SHADER_GRAIN = new Set(['noise', 'grain']);
+const SHADER_GLASS = new Set(['glass']);
+
+function ambientCss(cine) {
+  const shader = cine.shader || null;
+  const gradient = cine.gradient || null;
+  let recipe = '';
+  if (shader) {
+    const category = String(shader.category || 'aurora').toLowerCase();
+    const speed = typeof shader.speed === 'number' && isFinite(shader.speed) ? shader.speed : 0.5;
+    const dur = Math.max(8, Math.round(30 - speed * 16));
+    const op = (0.3 + 0.35 * clamp01(shader.intensity)).toFixed(2);
+    const base = '.shader-bg{position:absolute;inset:0;z-index:1;pointer-events:none;will-change:transform,opacity';
+    if (SHADER_SPIN.has(category)) {
+      recipe = `${base};opacity:${op};filter:blur(70px);background:conic-gradient(from 0deg at 50% 45%,color-mix(in srgb,var(--accent) 48%,transparent),color-mix(in srgb,var(--accent2) 40%,transparent),color-mix(in srgb,var(--bg) 70%,transparent),color-mix(in srgb,var(--accent) 48%,transparent));animation:lucSpin ${dur}s linear infinite}
+@keyframes lucSpin{to{transform:rotate(360deg)}}`;
+    } else if (SHADER_FLOW.has(category)) {
+      recipe = `${base};opacity:${op};filter:blur(60px);background:radial-gradient(58% 70% at 30% 62%,color-mix(in srgb,var(--accent) 46%,transparent),transparent 72%),radial-gradient(50% 60% at 74% 38%,color-mix(in srgb,var(--accent2) 42%,transparent),transparent 72%);animation:lucFlow ${dur}s ease-in-out infinite alternate}
+@keyframes lucFlow{from{transform:translate3d(-3%,2%,0) scale(1.02)}to{transform:translate3d(3%,-2%,0) scale(1.12)}}`;
+    } else if (SHADER_GRAIN.has(category)) {
+      recipe = `${base};opacity:${op};background:repeating-linear-gradient(0deg,color-mix(in srgb,var(--ink) 6%,transparent) 0 1px,transparent 1px 3px),repeating-linear-gradient(90deg,color-mix(in srgb,var(--accent) 5%,transparent) 0 1px,transparent 1px 4px);animation:lucGrain ${Math.max(4, Math.round(dur / 3))}s ease-in-out infinite}
+@keyframes lucGrain{0%,100%{opacity:${op}}50%{opacity:${(op * 0.55).toFixed(2)}}}`;
+    } else if (SHADER_GLASS.has(category)) {
+      recipe = `${base};opacity:${op};background:linear-gradient(115deg,color-mix(in srgb,var(--ink) 7%,transparent),transparent 32%,color-mix(in srgb,var(--accent) 8%,transparent) 55%,transparent 80%);animation:lucSheen ${dur}s ease-in-out infinite alternate}
+@keyframes lucSheen{from{transform:translateX(-4%)}to{transform:translateX(4%)}}`;
+    } else { // drift family: aurora, cloud, fog, gradient, mesh, lighting + defaults
+      recipe = `${base};opacity:${op};filter:blur(60px);background:radial-gradient(40% 48% at 24% 28%,color-mix(in srgb,var(--accent) 52%,transparent),transparent 70%),radial-gradient(44% 52% at 78% 24%,color-mix(in srgb,var(--accent2) 46%,transparent),transparent 72%),radial-gradient(50% 58% at 55% 80%,color-mix(in srgb,var(--accent) 32%,transparent),transparent 75%);animation:lucDrift ${dur}s ease-in-out infinite alternate}
+@keyframes lucDrift{from{transform:translate3d(-2.5%,-1%,0) scale(1)}to{transform:translate3d(2.5%,2.5%,0) scale(1.1)}}`;
+    }
+  } else if (gradient) {
+    const type = String(gradient.type || 'linear').toLowerCase();
+    const base = '.shader-bg{position:absolute;inset:0;z-index:1;pointer-events:none;will-change:transform,opacity';
+    const backgrounds = {
+      linear: 'linear-gradient(135deg,color-mix(in srgb,var(--accent) 34%,transparent),color-mix(in srgb,var(--accent2) 26%,transparent) 55%,transparent)',
+      radial: 'radial-gradient(60% 80% at 50% 40%,color-mix(in srgb,var(--accent) 36%,transparent),transparent 75%)',
+      conic: 'conic-gradient(from 0deg at 50% 45%,color-mix(in srgb,var(--accent) 30%,transparent),color-mix(in srgb,var(--accent2) 24%,transparent),transparent)',
+    };
+    const bg = backgrounds[type] ||
+      'radial-gradient(40% 48% at 24% 28%,color-mix(in srgb,var(--accent) 34%,transparent),transparent 70%),radial-gradient(44% 52% at 78% 24%,color-mix(in srgb,var(--accent2) 30%,transparent),transparent 72%),radial-gradient(50% 58% at 55% 80%,color-mix(in srgb,var(--accent) 20%,transparent),transparent 75%)';
+    const animate = gradient.animated === true || type === 'animated-mesh' || type === 'aurora';
+    recipe = animate
+      ? `${base};opacity:.5;filter:blur(50px);background:${bg};animation:lucDrift 22s ease-in-out infinite alternate}
+@keyframes lucDrift{from{transform:translate3d(-2%,-1%,0) scale(1)}to{transform:translate3d(2%,2%,0) scale(1.09)}}`
+      : `${base};opacity:.5;background:${bg}}`;
+  }
+  const fb = String((shader && shader.fallback) || '').toLowerCase();
+  const hidden = /none|hidden|off/.test(fb);
+  const mobileGate = shader && shader.mobile_support === false
+    ? `\n@media (max-width:767px){.shader-bg{animation:none${hidden ? ';display:none' : ''}}}` : '';
+  const rmShader = recipe
+    ? `\n@media (prefers-reduced-motion:reduce){.shader-bg{animation:none!important${hidden ? ';display:none!important' : ''}}}` : '';
+  return `${recipe}${mobileGate}${rmShader}`;
+}
+
+// §47 image-sequence section — the static <img> frame ships in the markup so the
+// section is complete with JS disabled; the canvas sequence driver is progressive
+// enhancement (lazy init via IntersectionObserver, lazy preload, scroll scrub) and
+// never runs under prefers-reduced-motion (the static frame stays).
+function imageSequenceBlock(cine, plan, pack, media) {
+  const iseq = cine.imageSequence;
+  if (!iseq || iseq.enabled === false) return '';
+  let urls = Array.isArray(iseq.frames) ? iseq.frames.filter((f) => typeof f === 'string' && f.length) : [];
+  if (!urls.length && Number.isInteger(iseq.frames) && iseq.frames > 0) {
+    // frames requested as a count — sample that many frames from the site's own
+    // seeded media set (cycled), never from fabricated URLs.
+    const pool = [...media.gallery, media.hero, media.about].filter((m) => m && typeof m.src === 'string' && m.src);
+    if (!pool.length) return '';
+    urls = Array.from({ length: Math.min(iseq.frames, 16) }, (_, i) => pool[i % pool.length].src);
+  }
+  if (!urls.length) return '';
+  const caption = pack.differentiators?.[0]?.text || pack.subline.text;
+  return `
+<section class="imgseq" data-scene="image-sequence"${scrollSceneAttrs(false, false)} data-frames="${esc(JSON.stringify(urls))}" aria-label="${esc(plan.siteName)} showcase">
+  <div class="imgseq-stage">
+    <img class="imgseq-static" src="${esc(urls[0])}" alt="${esc(plan.siteName)} showcase" loading="lazy" decoding="async"/>
+    <canvas class="imgseq-canvas" aria-hidden="true"></canvas>
+  </div>
+  <p class="imgseq-caption">${esc(caption)}</p>
+</section>`;
+}
+
+// Cinematic client-side drivers: §49 nav solid-on-scroll, §21 data-phase
+// entry/active/exit hooks for scroll scenes, §47 image-sequence canvas driver.
+// RM is defined by the motion engine block emitted before this code.
+function imageSequenceJs() {
+  return `(function(){var host=document.querySelector('[data-scene="image-sequence"]');if(!host||RM)return;var cv=host.querySelector('.imgseq-canvas');if(!cv)return;var urls;try{urls=JSON.parse(host.getAttribute('data-frames')||'[]')}catch(e){urls=[]}if(!urls.length)return;var frames=new Array(urls.length);var started=false;var queued=false;
+var fit=function(){cv.width=Math.max(1,Math.round(cv.offsetWidth*devicePixelRatio));cv.height=Math.max(1,Math.round(cv.offsetHeight*devicePixelRatio))};
+var pick=function(){var r=host.getBoundingClientRect();var k=(innerHeight-r.top)/(r.height+innerHeight);k=Math.min(1,Math.max(0,k));return Math.min(urls.length-1,Math.floor(k*urls.length))};
+var draw=function(){var f=frames[pick()];if(!f||!f.complete||!f.naturalWidth)return;var ctx=cv.getContext('2d');var W=cv.width,H=cv.height;var s=Math.max(W/f.naturalWidth,H/f.naturalHeight);var w=f.naturalWidth*s,h=f.naturalHeight*s;ctx.clearRect(0,0,W,H);ctx.drawImage(f,(W-w)/2,(H-h)/2,w,h);cv.classList.add('on')};
+var onScroll=function(){if(queued)return;queued=true;requestAnimationFrame(function(){queued=false;draw()})};
+var begin=function(){if(started)return;started=true;fit();urls.forEach(function(u,i){var im=new Image();im.decoding='async';im.onload=draw;im.src=u;frames[i]=im});addEventListener('scroll',onScroll,{passive:true});addEventListener('resize',function(){fit();draw()});draw()};
+new IntersectionObserver(function(es,obs){es.forEach(function(e){if(e.isIntersecting){begin();obs.disconnect()}})},{rootMargin:'250px'}).observe(host);})();`;
+}
+
+function cinematicJs(withImgSeq) {
+  const parts = [
+    `(function(){var nav=document.querySelector('.cine-nav');if(!nav)return;var tick=false;var upd=function(){tick=false;nav.classList.toggle('nav-solid',(window.pageYOffset||0)>48)};addEventListener('scroll',function(){if(!tick){tick=true;requestAnimationFrame(upd)}},{passive:true});upd();})();`,
+    `(function(){if(RM)return;var sc=document.querySelectorAll('[data-scroll-start]');if(!sc.length)return;var tick=false;var upd=function(){tick=false;var vh=innerHeight;for(var i=0;i<sc.length;i++){var el=sc[i];var r=el.getBoundingClientRect();var ph=r.top>vh*.2?'entry':(r.bottom<vh*.25?'exit':'active');if(el.getAttribute('data-phase')!==ph)el.setAttribute('data-phase',ph)}};addEventListener('scroll',function(){if(!tick){tick=true;requestAnimationFrame(upd)}},{passive:true});upd();})();`,
+  ];
+  if (withImgSeq) parts.push(imageSequenceJs());
+  return parts.join('\n');
+}
+
+function cinematicCss(cine, opts = {}) {
+  const parts = [`
+/* Phase 7 cinematic additions */
+.cine-nav{background:color-mix(in srgb,var(--bg) 82%,transparent);border-bottom:1px solid var(--line)}
+html.cine-on .cine-nav{background:transparent;border-bottom-color:transparent;transition:background-color .45s ease,border-color .45s ease}
+html.cine-on .cine-nav.nav-solid{background:color-mix(in srgb,var(--bg) 82%,transparent);border-bottom-color:var(--line)}`];
+  const ambient = ambientCss(cine);
+  if (ambient) parts.push(ambient);
+  if (opts.imgseq) parts.push(`
+.imgseq{position:relative}
+.imgseq-stage{position:relative;overflow:hidden;background:color-mix(in srgb,var(--panel) 65%,var(--bg))}
+.imgseq-static{display:block;width:100%;aspect-ratio:16/9;object-fit:cover}
+.imgseq-canvas{position:absolute;inset:0;width:100%;height:100%;opacity:0;transition:opacity .45s ease}
+.imgseq-canvas.on{opacity:1}
+.imgseq-caption{max-width:56rem;margin:1.25rem auto 0;padding:0 1.5rem;font-size:.9rem;color:var(--muted)}`);
+  parts.push(`
+@media (prefers-reduced-motion:reduce){
+  html.cine-on .cine-nav{transition:none!important}${opts.imgseq ? '\n  .imgseq-canvas{display:none!important}' : ''}
+}`);
+  return parts.filter(Boolean).join('\n');
+}
+
 export function scaffoldSite(plan) {
   const pack = plan.contentPack || legacyPack(plan);
   const universe = plan.universe || pickUniverse(plan.siteName + plan.industry);
   const p = universe.palette;
   const mode = plan.creationMode || 'CUSTOM_AI';
   const cinematic = mode === 'CINEMATIC_UNIVERSE';
+  const cine = plan.cinematic || null; // Phase 7: cinematic plan (CINEMATIC_UNIVERSE only)
+  const sAttrs = (pin, snap) => (cine ? scrollSceneAttrs(pin, snap) : '');
   const motion = universe.motion;
   const year = new Date().getFullYear();
   const siteKey = plan.universeSeed || plan.siteName || 'lucio';
@@ -190,7 +346,7 @@ export function scaffoldSite(plan) {
     </section>` : '';
 
   const galleryBlock = plan.features.includes('gallery') ? (mx.hasHGallery ? `
-    <section id="gallery" data-scene="story-gallery" class="hgal-wrap">
+    <section id="gallery" data-scene="story-gallery"${sAttrs(true, true)} class="hgal-wrap">
       <div class="hgal-sticky">
         <div class="mx-auto max-w-7xl px-6 w-full mb-10">
           <p class="text-xs font-bold tracking-[.3em] uppercase mb-3" style="color:var(--accent)">Portfolio</p>
@@ -204,7 +360,7 @@ export function scaffoldSite(plan) {
         </div>
       </div>
     </section>` : `
-    <section id="gallery" class="mx-auto max-w-7xl px-6 py-24 rv">
+    <section id="gallery"${sAttrs(true, true)} class="mx-auto max-w-7xl px-6 py-24 rv">
       <p class="text-xs font-bold tracking-[.3em] uppercase mb-3" style="color:var(--accent)">Portfolio</p>
       <h2 class="font-display text-3xl md:text-5xl font-bold mb-12">Recent work</h2>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -232,7 +388,7 @@ export function scaffoldSite(plan) {
     },
   ].filter(Boolean).slice(0, 3);
   const storyBlock = mx.hasStory && storyMoments.length >= 2 ? `
-    <section class="story" data-scene="story-chapter" aria-label="Our story in three chapters">
+    <section class="story" data-scene="story-chapter"${sAttrs(true, false)} aria-label="Our story in three chapters">
       <div class="story-track">
         <div class="story-sticky">
           <div class="story-bar" aria-hidden="true"></div>
@@ -258,6 +414,89 @@ export function scaffoldSite(plan) {
 
   const contactCta = plan.features.includes('booking') ? 'Book an appointment' : ctaLabel;
 
+  // Phase 7: cinematic nav (§49) + section extraction so cinematic builds can
+  // reorder sections by plan.cinematic.pacing. Non-cinematic composition is
+  // byte-identical to the Phase 6 template.
+  const navInner = `
+  <a href="#top" class="font-display text-2xl font-black tracking-tight">${esc(plan.siteName)}<span style="color:var(--accent)">.</span></a>
+  <ul class="hidden md:flex items-center gap-8 text-sm" style="color:var(--muted)">
+    <li><a class="transition-colors hover:text-accent" href="#services">Services</a></li>
+    ${pack.faqs?.length ? '<li><a class="transition-colors hover:text-accent" href="#faq">FAQ</a></li>' : ''}
+    <li><a class="transition-colors hover:text-accent" href="#about">About</a></li>
+  </ul>
+  <a href="#contact" class="btn-u magnet text-sm">${esc(ctaLabel)}</a>`;
+  const navHtml = cine
+    ? `<nav class="cine-nav fixed top-0 inset-x-0 z-50 flex items-center justify-between px-6 md:px-12 py-5 backdrop-blur-md">${navInner}\n</nav>`
+    : `<nav class="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-6 md:px-12 py-5 backdrop-blur-md" style="background:color-mix(in srgb,var(--bg) 75%,transparent);border-bottom:1px solid var(--line)">${navInner}\n</nav>`;
+
+  const servicesSection = `<section id="services"${sAttrs(false, false)} ${mx.hasColorway ? 'data-colorway="true" ' : ''}class="chapter mx-auto max-w-7xl px-6 py-24 rv">
+  <p class="text-xs font-bold tracking-[.3em] uppercase mb-3" style="color:var(--accent)">What we do</p>
+  <h2 class="font-display text-3xl md:text-5xl font-bold mb-4">Signature <span class="grad-text">services</span></h2>
+  <p class="max-w-xl mb-12" style="color:var(--muted)">${esc(pack.differentiators?.map((d) => d.text).join(' — ') || pack.subline.text)}</p>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-5">${serviceCards}</div>
+</section>`;
+
+  const aboutSection = `<section id="about"${sAttrs(false, false)} ${mx.hasColorway ? 'data-colorway="true" ' : ''}class="chapter mx-auto max-w-7xl px-6 py-24 rv">
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+    <div class="unmask rv relative overflow-hidden" style="border-radius:var(--radius)">
+      <img src="${aboutImg}" alt="About ${esc(plan.siteName)}" loading="lazy" class="aspect-[4/3] w-full object-cover"/>
+    </div>
+    <div>
+      <p class="text-xs font-bold tracking-[.3em] uppercase mb-3" style="color:var(--accent)">About</p>
+      <h2 class="font-display text-3xl md:text-5xl font-bold mb-6">${esc(plan.siteName)}</h2>
+      ${aboutText}
+      ${accent ? `<img src="${accent}" alt="" aria-hidden="true" loading="lazy" class="mt-6 h-24 w-full object-cover opacity-70" style="border-radius:var(--radius)"/>` : ''}
+    </div>
+  </div>
+</section>`;
+
+  const contactSection = `<section id="contact" class="mx-auto max-w-4xl px-6 py-24 rv">
+  <div class="card-u ${mx.hasSpotlight ? 'spot-host ' : ''}p-8 md:p-14 relative overflow-hidden">
+    <div class="absolute -top-24 -right-24 h-72 w-72 rounded-full opacity-20 blur-3xl" style="background:var(--accent)"></div>
+    <h2 class="font-display text-3xl md:text-4xl font-bold mb-2 relative">${esc(contactCta)}</h2>
+    <p class="mb-8 relative" style="color:var(--muted)">We reply within one business day.</p>
+    <form class="relative grid gap-4 max-w-xl" data-enquire>
+      <input required placeholder="Your name" name="name" class="px-5 py-4"/>
+      <input required type="email" name="email" placeholder="Email" class="px-5 py-4"/>
+      <textarea required rows="4" name="message" placeholder="How can we help?" class="px-5 py-4"></textarea>
+      <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true"/>
+      <button type="submit" class="btn-u magnet">${esc(ctaLabel)}</button>
+    </form>
+    <script>
+    (function(){
+      var f=document.querySelector('[data-enquire]');if(!f)return;
+      var m=location.pathname.match(/^\\/live\\/([a-z0-9-]+)\\/?$/i);
+      if(!m)return; // preview mode — no lead capture
+      f.addEventListener('submit',function(ev){
+        ev.preventDefault();
+        var d={};new FormData(f).forEach(function(v,k){d[k]=v});
+        fetch('/api/live/'+m[1]+'/enquire',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)})
+          .then(function(){f.innerHTML='<p style="color:var(--accent)" class="font-bold text-lg">Thank you — we will be in touch shortly.</p>'})
+          .catch(function(){f.innerHTML='<p style="color:var(--accent)" class="font-bold text-lg">Thank you — we will be in touch shortly.</p>'});
+      });
+    })();
+    </script>
+  </div>
+</section>`;
+
+  const imgSeqBlock = cine ? imageSequenceBlock(cine, plan, pack, media) : '';
+  const bodySections = cine
+    ? orderByPacing([
+        { intent: 'impact', html: marqueeBand },
+        { intent: 'story', html: storyBlock },
+        { intent: 'story', html: imgSeqBlock },
+        { intent: 'information', html: servicesSection },
+        { intent: 'proof', html: statsBand },
+        { intent: 'information', html: journeyStrip },
+        { intent: 'proof', html: galleryBlock },
+        { intent: 'information', html: faqBlock },
+        { intent: 'calm', html: aboutSection },
+        { intent: 'conversion', html: contactSection },
+      ], cine.pacing).map((b) => b.html).filter(Boolean).join('\n\n')
+    : [marqueeBand, storyBlock].join('\n') + '\n\n' + servicesSection + '\n\n' +
+      [statsBand, journeyStrip, galleryBlock, faqBlock].join('\n') + '\n\n' +
+      aboutSection + '\n\n' + contactSection;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -277,7 +516,7 @@ tailwind.config = { theme: { extend: {
   colors: { bg: '${p.bg}', panel: '${p.panel}', ink: '${p.ink}', accent: '${p.accent}', accent2: '${p.accent2}', muted: '${p.muted}' },
   fontFamily: { display: [${JSON.stringify(universe.fonts.heading)}], body: [${JSON.stringify(universe.fonts.body)}] },
 } } };
-</script>
+</script>${cine ? '\n<script>document.documentElement.classList.add(\'cine-on\')</script>' : ''}
 <style>
 :root{--bg:${p.bg};--panel:${p.panel};--ink:${p.ink};--accent:${p.accent};--accent2:${p.accent2};--muted:${p.muted};--line:${p.line || p.ink + '22'};--radius:${universe.shape.radius}px}
 html{scroll-behavior:smooth}
@@ -310,26 +549,18 @@ ${mx.css}
   .rv.in>*{animation:none!important}
   .unmask img{transform:none!important;transition:none!important}
 }
-${mx.rmCss}
+${mx.rmCss}${cine ? cinematicCss(cine, { imgseq: !!imgSeqBlock }) : ''}
 </style>
 </head>
 <body class="font-body antialiased ${motion === 'term' ? 'scanlines relative' : ''}">
 
-<nav class="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-6 md:px-12 py-5 backdrop-blur-md" style="background:color-mix(in srgb,var(--bg) 75%,transparent);border-bottom:1px solid var(--line)">
-  <a href="#top" class="font-display text-2xl font-black tracking-tight">${esc(plan.siteName)}<span style="color:var(--accent)">.</span></a>
-  <ul class="hidden md:flex items-center gap-8 text-sm" style="color:var(--muted)">
-    <li><a class="transition-colors hover:text-accent" href="#services">Services</a></li>
-    ${pack.faqs?.length ? '<li><a class="transition-colors hover:text-accent" href="#faq">FAQ</a></li>' : ''}
-    <li><a class="transition-colors hover:text-accent" href="#about">About</a></li>
-  </ul>
-  <a href="#contact" class="btn-u magnet text-sm">${esc(ctaLabel)}</a>
-</nav>
+${navHtml}
 
 <header id="top" class="relative min-h-screen flex items-center overflow-hidden">
   <img src="${heroImg}" alt="${esc(plan.siteName)} hero" style="filter:hue-rotate(${hue}deg) saturate(1.05)" class="hero-img absolute inset-0 h-full w-full object-cover"/>
   <div class="hero-vignette absolute inset-0 z-[2]"></div>
   <div class="hero-overlay absolute inset-0 z-[2]"></div>
-  ${cinematic ? '<div class="aurora"></div>' : ''}
+  ${cine ? (cine.shader || cine.gradient ? '<div class="shader-bg" aria-hidden="true"></div>' : '') : (cinematic ? '<div class="aurora"></div>' : '')}
   ${mx.hasParticles ? '<canvas id="fx-particles" aria-hidden="true"></canvas>' : ''}
   ${mx.hasSweep ? '<div class="sweep-band" aria-hidden="true"></div>' : ''}
   ${mx.hasParallax ? '<div data-parallax="0.5" class="absolute inset-x-0 -inset-y-[12%] z-[1] pointer-events-none" style="background:radial-gradient(60% 50% at 70% 30%,color-mix(in srgb,var(--accent) 20%,transparent),transparent 70%)" aria-hidden="true"></div>' : ''}
@@ -347,6 +578,7 @@ ${mx.rmCss}
   <div class="scroll-hint absolute bottom-8 left-1/2 -translate-x-1/2 z-10 text-xs tracking-widest uppercase" style="color:color-mix(in srgb,var(--ink) 55%,transparent)">Scroll</div>
 </header>
 
+${cine ? bodySections : `
 ${marqueeBand}
 ${storyBlock}
 
@@ -404,6 +636,7 @@ ${faqBlock}
     </script>
   </div>
 </section>
+`}
 
 <footer class="px-6 md:px-12 py-10 flex flex-wrap items-center justify-between gap-4 text-sm" style="color:var(--muted);border-top:1px solid var(--line)">
   <span>&copy; ${year} ${esc(plan.siteName)}</span>

@@ -4,10 +4,10 @@ Canonical spec: Lucio_AI_Platform_Single_Master_Implementation_Manual_v28_MARKET
 Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 
 ## Current position
-- Phase: 0 PASS · 1 PASS · 2 PASS · 3 PASS + expansion · 4 PASS (Content Architect + Design Universes) — Phase 5 next
+- Phase: 0 PASS · 1 PASS · 2 PASS · 3 PASS + expansion · 4 PASS · 5 PASS · 6 PASS · 7 PASS — Phase 8 next
 - Branch: main
 - Last passing checkpoint: see git log
-- Next action: Phase 5 — Design Intelligence full build-out (remaining LD styles, design QA, responsive audit pipeline)
+- Next action: Phase 8 — per manual v28 phase list. Build contract: docs/kimi/PHASE7_CONTRACT.md (Phase 7, completed)
 - Release posture: local development build, not production
 
 ## Phase summary
@@ -21,7 +21,8 @@ Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 | 5 Design Intelligence | DONE | Automatic design QA (score/grade, 8 explainable factors) + responsive audit on every build; report in builder UI; discrimination verified (weak HTML → 15/F) |
 | Assistant layer | DONE (ships immediately) | 18-agent v9.6 squad embedded verbatim; journey-aware tips + chat panel on every authenticated page for all roles |
 | 6 Motion Engine / Cinematic expansion | DONE | LUCIO_SCENE_REGISTRY (10 scenes: loop/scroll/story/micro), MOTION INTENSITY tiers, deterministic seeded selection, device-aware fallbacks, CINEMA-STORY-01 chapters, QA contract check |
-| 7–17 | PENDING | Phase 7 next |
+| 7 Cinematic Component Universe | DONE | Component/shader/gradient/motion/template registries; component pipeline (import→…→approve, quality gate, duplicate prevention, growth gaps, library search); cinematic engine (§70 AUTO gating, EXTREME-never-auto, performance policy, scroll-timeline validation, §62 audit, §63 anti-gimmick); recipe v6 + site_recipes persistence; convert / change-component routes; /api/library browser; §57 PDF-ready export |
+| 8–17 | PENDING | Phase 8 next |
 | Sell architecture + map discovery (Pindrop parity) | DONE | Publish live links, owner portal with photo requests, deals/billing (manual default, Stripe-gated), leads inbox, enquiry-posting generated sites, pin-drop map discovery with street-view gating |
 
 ## Session-resume notes

@@ -6,7 +6,11 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CheckCircle2, XCircle, Hammer, ShieldCheck, Save, RotateCcw, Globe } from 'lucide-react';
+import CreationModePicker, {
+  CREATION_MODES, buildCreationPayload, defaultCreationOptions,
+  type CreationMode, type CreationOptions,
+} from '@/components/CreationModePicker';
+import { CheckCircle2, XCircle, Hammer, ShieldCheck, Save, RotateCcw, Globe, ScrollText, Clapperboard, FileDown } from 'lucide-react';
 
 const SAMPLE_GOALS = [
   'Build a warm cozy website for a cafe called Bluebird Coffee in Toronto with a menu, gallery and online booking',
@@ -20,6 +24,8 @@ type Cp = { id: string; label: string; created_at: string };
 type QAReport = {
   score: number; grade: string; summary: string;
   factors: { check: string; points: number; max: number; detail: string; pass: boolean }[];
+  styleAudit?: StyleAudit;
+  cinematicAudit?: CinematicAudit;
 };
 type Plan2 = Plan & {
   style?: { id: string; name: string; source: string };
@@ -27,20 +33,55 @@ type Plan2 = Plan & {
   creationMode?: string;
   recipe?: { version: number; styleId: string; creationMode: string; locked: boolean };
 };
-const MODES = [
-  { id: 'CUSTOM_AI', label: 'AI Custom Design' },
-  { id: 'COMPONENT_SYSTEM', label: 'Component System' },
-  { id: 'HYBRID', label: 'Hybrid' },
-  { id: 'CINEMATIC_UNIVERSE', label: 'Cinematic Universe' },
-];
+// Phase 7 — recipe v6 (§13): component@version per section, stored in site_recipes.
+type RecipeSection = { slot: string; component: string; componentVersion?: string; variant?: string };
+type RecipeV6 = {
+  engine?: string; version?: number; creationMode?: string; activeStyleId?: string; styleId?: string;
+  universe?: string; motionIntensity?: string; motionProfile?: string; shaderId?: string | null;
+  scenes?: unknown[]; seed?: number; sections?: RecipeSection[]; locks?: Record<string, boolean>;
+};
+type RecipeResponse = RecipeV6 & { recipe_json?: string };
+// Phase 7 — style audit (§61) + cinematic audit (§62) ride along in the QA artifact.
+type StyleAudit = {
+  dimensions?: Record<string, number> | { key?: string; name?: string; score?: number; points?: number }[];
+  overall?: number; pass?: boolean;
+};
+type CinematicAudit = {
+  score?: number; grade?: string;
+  factors?: { check?: string; name?: string; points?: number; max?: number; detail?: string; pass?: boolean }[];
+};
+type LibraryItem = {
+  component_id?: string; id?: string;
+  component_name?: string; name?: string;
+  component_family?: string; family?: string;
+  component_version?: string; performance_class?: string;
+  supported_styles?: string[]; variants?: { id: string; label: string }[];
+};
+
+function unwrapRecipe(d: { recipe?: RecipeResponse } | null | undefined): RecipeV6 | null {
+  const r = d?.recipe;
+  if (!r) return null;
+  if (typeof r.recipe_json === 'string' && r.recipe_json) {
+    try { return JSON.parse(r.recipe_json) as RecipeV6; } catch { return null; }
+  }
+  return r;
+}
+const itemId = (i: LibraryItem) => i.component_id || i.id || '';
+const itemName = (i: LibraryItem) => i.component_name || i.name || itemId(i);
+const itemFamily = (i: LibraryItem | null | undefined) => (i && (i.component_family || i.family)) || '';
+
+function normalizeDims(dimensions: StyleAudit['dimensions']): [string, number][] {
+  if (!dimensions) return [];
+  if (Array.isArray(dimensions)) return dimensions.map((d) => [String(d.key || d.name || ''), Number(d.score ?? d.points ?? 0)]);
+  return Object.entries(dimensions).map(([k, v]) => [k, Number(v)]);
+}
 
 export default function BuilderPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState('');
   const [goal, setGoal] = useState('');
   const [plan, setPlan] = useState<Plan2 | null>(null);
-  const [styleId, setStyleId] = useState('');
-  const [creationMode, setCreationMode] = useState('CUSTOM_AI');
+  const [creation, setCreation] = useState<CreationOptions>(defaultCreationOptions());
   const [built, setBuilt] = useState(false);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [validation, setValidation] = useState<Validation | null>(null);
@@ -49,6 +90,11 @@ export default function BuilderPage() {
   const [cpLabel, setCpLabel] = useState('');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [recipe, setRecipe] = useState<RecipeV6 | null>(null);
+  const [libItems, setLibItems] = useState<LibraryItem[]>([]);
+  const [changeSel, setChangeSel] = useState<Record<string, string>>({});
+  const [convertMode, setConvertMode] = useState<CreationMode>('CUSTOM_AI');
 
   const load = async () => {
     const { projects } = await api<{ projects: Project[] }>('/projects');
@@ -62,31 +108,88 @@ export default function BuilderPage() {
 
   useEffect(() => {
     if (!projectId) return;
-    setBuilt(false); setPlan(null); setValidation(null); setQa(null);
+    setBuilt(false); setPlan(null); setValidation(null); setQa(null); setNotice('');
     api<{ artifacts: Artifact[] }>(`/builder/project/${projectId}/artifacts`).then((d) => setArtifacts(d.artifacts)).catch(() => {});
     loadQa();
     loadCps();
+    loadRecipe();
   }, [projectId]);
 
   const loadQa = () => api<{ report: QAReport }>(`/builder/project/${projectId}/qa`).then((d) => setQa(d.report)).catch(() => setQa(null));
 
   const loadCps = () => api<{ checkpoints: Cp[] }>(`/checkpoints/project/${projectId}`).then((d) => setCheckpoints(d.checkpoints)).catch(() => {});
 
+  const loadRecipe = () =>
+    api<{ recipe?: RecipeResponse }>(`/builder/project/${projectId}/recipe`)
+      .then((d) => setRecipe(unwrapRecipe(d)))
+      .catch(() => setRecipe(null));
+
+  // Compatible alternatives for the Change-Component control come from the
+  // component library filtered by the section's current component family (§37).
+  useEffect(() => {
+    if (!recipe) return;
+    api<{ items?: LibraryItem[] }>('/library/components?pageSize=100')
+      .then((d) => setLibItems(d.items || []))
+      .catch(() => setLibItems([]));
+  }, [recipe]);
+
+  const alternativesFor = (section: RecipeSection): LibraryItem[] => {
+    const current = libItems.find((i) => itemId(i) === section.component) || null;
+    const family = itemFamily(current);
+    const pool = family ? libItems.filter((i) => itemFamily(i) === family) : [];
+    return pool.length ? pool : libItems;
+  };
+
   const run = async (step: 'plan' | 'build') => {
-    setError(''); setBusy(step);
-    const opts = { goal, styleId: styleId || undefined, creationMode };
+    setError(''); setNotice(''); setBusy(step);
+    const opts = { goal, ...buildCreationPayload(creation) };
     try {
       if (step === 'plan') {
         const d = await api<{ plan: Plan2 }>(`/builder/project/${projectId}/plan`, { method: 'POST', body: JSON.stringify(opts) });
         setPlan(d.plan);
-        if (!styleId && d.plan.style) setStyleId(d.plan.style.id);
+        if (!creation.styleId && d.plan.style) setCreation((c) => ({ ...c, styleId: d.plan.style!.id }));
       } else {
         await api(`/builder/project/${projectId}/build`, { method: 'POST', body: JSON.stringify(opts) });
         setBuilt(true);
         const d = await api<{ artifacts: Artifact[] }>(`/builder/project/${projectId}/artifacts`);
         setArtifacts(d.artifacts);
         loadQa();
+        loadRecipe();
       }
+    } catch (e: any) { setError(e.message); } finally { setBusy(''); }
+  };
+
+  // §37 — swap one recipe section to a compatible component; the server rebuilds
+  // from the SAME plan seed/content (content, STYLE_LOCK and universe preserved).
+  const changeComponent = async (slot: string) => {
+    const componentId = changeSel[slot];
+    if (!projectId || !componentId) return;
+    setError(''); setNotice(''); setBusy(`change:${slot}`);
+    try {
+      const d = await api<{ recipe?: RecipeResponse; qa?: QAReport }>(`/builder/project/${projectId}/change-component`, {
+        method: 'POST', body: JSON.stringify({ section: slot, componentId }),
+      });
+      const r = unwrapRecipe(d);
+      if (r) setRecipe(r);
+      if (d.qa) setQa(d.qa);
+      setBuilt(true);
+      setNotice(`Section “${slot.replaceAll('_', ' ')}” rebuilt with ${componentId} — only that section changed.`);
+      const a = await api<{ artifacts: Artifact[] }>(`/builder/project/${projectId}/artifacts`).catch(() => null);
+      if (a) setArtifacts(a.artifacts);
+    } catch (e: any) { setError(e.message); } finally { setBusy(''); }
+  };
+
+  // §38 — recompose the plan for another creation mode; does NOT rebuild or publish.
+  const convert = async () => {
+    if (!projectId) return;
+    setError(''); setNotice(''); setBusy('convert');
+    try {
+      const d = await api<{ plan: Plan2 }>(`/builder/project/${projectId}/convert`, {
+        method: 'POST', body: JSON.stringify({ creationMode: convertMode }),
+      });
+      setPlan(d.plan);
+      setCreation((c) => ({ ...c, creationMode: convertMode }));
+      setNotice(`Plan recomposed for ${CREATION_MODES.find((m) => m.id === convertMode)?.label}. Press “Build & preview” to apply — same seed, content pack and style lock.`);
     } catch (e: any) { setError(e.message); } finally { setBusy(''); }
   };
 
@@ -156,26 +259,16 @@ export default function BuilderPage() {
               <Badge key={s} variant="secondary" className="cursor-pointer max-w-full truncate" onClick={() => setGoal(s)}>Try: {s.slice(0, 60)}…</Badge>
             ))}
           </div>
-          <div className="flex flex-wrap gap-2 items-center">
-            <span className="text-sm text-muted-foreground whitespace-nowrap">Creation mode</span>
-            <Select value={creationMode} onValueChange={setCreationMode}>
-              <SelectTrigger className="w-52"><SelectValue /></SelectTrigger>
-              <SelectContent>{MODES.map((m) => <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>)}</SelectContent>
-            </Select>
-            <span className="text-sm text-muted-foreground whitespace-nowrap">LD style</span>
-            <Select value={styleId || 'auto'} onValueChange={(v) => setStyleId(v === 'auto' ? '' : v)}>
-              <SelectTrigger className="w-56"><SelectValue placeholder="Auto-recommend" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">Auto-recommend</SelectItem>
-                {plan?.recommendedStyles?.map((sid) => <SelectItem key={sid} value={sid}>{sid}</SelectItem>)}
-                {plan?.style && !plan.recommendedStyles?.includes(plan.style.id) && <SelectItem value={plan.style.id}>{plan.style.id} {plan.style.name}</SelectItem>}
-              </SelectContent>
-            </Select>
-          </div>
+          <CreationModePicker
+            value={creation}
+            onChange={setCreation}
+            recommended={plan?.recommendedStyles || []}
+            busy={busy === 'plan'}
+            disabled={!projectId || !goal || !!busy}
+            generateLabel="1 · Generate plan"
+            onGenerate={() => run('plan')}
+          />
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => run('plan')} disabled={!projectId || !goal || !!busy}>
-              {busy === 'plan' ? 'Planning…' : '1 · Generate plan'}
-            </Button>
             <Button onClick={() => run('build')} disabled={!projectId || !goal || !!busy}>
               {busy === 'build' ? 'Building…' : '2 · Build & preview'}
             </Button>
@@ -184,6 +277,11 @@ export default function BuilderPage() {
             </Button>
             <Button variant="outline" onClick={publish} disabled={!projectId || !built || !!busy}>
               <Globe className="h-4 w-4 mr-1" /> {busy === 'publish' ? 'Publishing…' : 'Publish live link'}
+            </Button>
+            <Button variant="outline" disabled={!projectId || !built || !!busy} title="Download a print-perfect single-file view — open it and use the browser's Save as PDF to produce the PDF">
+              <a href={`/api/builder/project/${projectId}/pdf`} target="_blank" rel="noreferrer" className="flex items-center">
+                <FileDown className="h-4 w-4 mr-1" /> Export PDF
+              </a>
             </Button>
           </div>
           {publishInfo && (
@@ -194,6 +292,7 @@ export default function BuilderPage() {
             </div>
           )}
           {error && <p className="text-sm text-destructive">{error}</p>}
+          {notice && <p className="text-sm text-green-600 dark:text-green-400">{notice}</p>}
         </CardContent>
       </Card>
 
@@ -218,6 +317,82 @@ export default function BuilderPage() {
               {Object.values(plan.palette).map((c) => <span key={c} className="inline-block h-4 w-4 rounded border" style={{ background: c }} />)}
             </div>
             <p className="text-xs text-muted-foreground">SEO title: {plan.seo.title}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {recipe && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><ScrollText className="h-5 w-5" /> Site recipe — v{recipe.version ?? '?'}{recipe.engine ? ` · ${recipe.engine}` : ''}</CardTitle>
+            <CardDescription>
+              Component@version per section (§13 Phase 7). Swap a section with a compatible alternative, or convert the whole plan to another creation mode.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-2 items-center text-xs text-muted-foreground">
+              <Badge variant="secondary">{recipe.creationMode?.replaceAll('_', ' ') || '—'}</Badge>
+              {recipe.styleId && <Badge variant="outline">style {recipe.styleId}</Badge>}
+              {recipe.motionProfile && <Badge variant="outline">{recipe.motionProfile}</Badge>}
+              {recipe.shaderId && <Badge variant="outline">shader {recipe.shaderId}</Badge>}
+              {typeof recipe.seed === 'number' && <span>seed {recipe.seed}</span>}
+              {recipe.locks?.style && <span>STYLE_LOCK</span>}
+            </div>
+            <ul className="space-y-2">
+              {(recipe.sections || []).map((s) => {
+                const alternatives = alternativesFor(s);
+                const selected = changeSel[s.slot] || s.component;
+                return (
+                  <li key={s.slot} className="border rounded-lg p-2.5 space-y-2">
+                    <div className="flex justify-between items-center gap-2">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium capitalize">{s.slot.replaceAll('_', ' ')}</div>
+                        <div className="text-xs text-muted-foreground font-mono truncate">
+                          {s.component}{s.componentVersion ? `@${s.componentVersion}` : ''}{s.variant ? ` · variant ${s.variant}` : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <Select value={selected} onValueChange={(v) => setChangeSel((cs) => ({ ...cs, [s.slot]: v }))}>
+                        <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {alternatives.map((i) => (
+                            <SelectItem key={itemId(i) || s.component} value={itemId(i) || s.component}>
+                              {itemName(i)} <span className="text-xs text-muted-foreground">({itemId(i)})</span>
+                            </SelectItem>
+                          ))}
+                          {!alternatives.length && <SelectItem value={s.component}>{s.component}</SelectItem>}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!projectId || !!busy || selected === s.component || !alternatives.length}
+                        onClick={() => changeComponent(s.slot)}
+                      >
+                        {busy === `change:${s.slot}` ? 'Applying…' : 'Change'}
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
+              {!recipe.sections?.length && <li className="text-sm text-muted-foreground">No sections recorded in this recipe.</li>}
+            </ul>
+            <div className="flex flex-wrap gap-2 items-end border-t pt-3">
+              <div>
+                <label className="text-xs text-muted-foreground">Convert mode (§38)</label>
+                <Select value={convertMode} onValueChange={(v) => setConvertMode(v as CreationMode)}>
+                  <SelectTrigger className="w-60"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CREATION_MODES.map((m) => <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button variant="outline" onClick={convert} disabled={!projectId || !!busy}>
+                <RotateCcw className="h-4 w-4 mr-1" /> {busy === 'convert' ? 'Converting…' : 'Convert plan'}
+              </Button>
+              <span className="text-xs text-muted-foreground pb-2">Recomposes the plan only — never rebuilds or publishes.</span>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -259,6 +434,54 @@ export default function BuilderPage() {
                       </div>
                     </li>
                   ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+
+          {qa?.styleAudit && (
+            <Card>
+              <CardHeader><CardTitle className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-primary" />
+                Style audit — {typeof qa.styleAudit.overall === 'number' ? qa.styleAudit.overall.toFixed(1) : '—'}/10 {qa.styleAudit.pass ? '· PASS' : '· below bar'}
+              </CardTitle>
+              <CardDescription>Ten design dimensions, each scored 0–10 (§61). The bar for a genuine render is ≥9 overall.</CardDescription></CardHeader>
+              <CardContent>
+                <ul className="space-y-2 text-sm">
+                  {normalizeDims(qa.styleAudit.dimensions).map(([name, score]) => (
+                    <li key={name} className="flex items-center gap-2">
+                      <span className="w-28 shrink-0 text-muted-foreground capitalize">{name.replace(/([A-Z])/g, ' $1')}</span>
+                      <div className="flex-1 h-2 rounded bg-muted overflow-hidden">
+                        <div className="h-full bg-primary" style={{ width: `${Math.max(0, Math.min(10, score)) * 10}%` }} />
+                      </div>
+                      <span className="w-10 text-right font-medium">{score}</span>
+                    </li>
+                  ))}
+                  {!normalizeDims(qa.styleAudit.dimensions).length && <li className="text-muted-foreground">No dimension scores recorded.</li>}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+
+          {qa?.cinematicAudit && (
+            <Card>
+              <CardHeader><CardTitle className="flex items-center gap-2">
+                <Clapperboard className="h-5 w-5 text-primary" />
+                Cinematic audit — {qa.cinematicAudit.grade || '—'} · {typeof qa.cinematicAudit.score === 'number' ? qa.cinematicAudit.score : '—'}/100
+              </CardTitle>
+              <CardDescription>Motion purpose, scroll smoothness, readability, pacing, mobile, reduced-motion, performance, conversion (§62).</CardDescription></CardHeader>
+              <CardContent>
+                <ul className="space-y-2 text-sm">
+                  {(qa.cinematicAudit.factors || []).map((f, idx) => (
+                    <li key={f.check || f.name || idx} className="flex items-start gap-2">
+                      {f.pass ? <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" /> : <XCircle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />}
+                      <div>
+                        <span className="font-medium">{f.check || f.name}</span>
+                        <span className="text-muted-foreground"> — {f.points ?? '?'}/{f.max ?? '?'} · {f.detail}</span>
+                      </div>
+                    </li>
+                  ))}
+                  {!qa.cinematicAudit.factors?.length && <li className="text-muted-foreground">No factors recorded.</li>}
                 </ul>
               </CardContent>
             </Card>

@@ -340,3 +340,72 @@ previews, served by GET /api/builder/universes), and a green "Make website" butt
 runs opportunity → project → build with the chosen universe and deep-links into the
 builder. Prospect rows now carry address + social_profiles. Browser-verified end to end;
 test-sell.js extended to 33 assertions.
+
+
+## Phase 7 — Cinematic + Media + Motion (Component Universe) — DONE
+Build contract: docs/kimi/PHASE7_CONTRACT.md (manual v28 §13 Phase 7; Multi-Mode
+Cinematic Component Universe doc §n cited inline). 134 assertions in
+scripts/test-phase7.js, all green; full legacy regression re-run green
+(33+38+58+39+55+34 = 257); tsc -b + vite build clean.
+
+### What was already present after Phases 4–6 (verified, not rebuilt)
+- CINEMATIC_UNIVERSE creation mode + 3 sibling modes, mode picker UI, change-component
+  and convert-mode with mode support (appBuilder.js, CreationModePicker.tsx).
+- Media/image generation: 4K library in data/media (gitignored, 83 assets), industry →
+  archetype map, procedural SVG fallback (mediaEngine.js).
+- Motion intensity tiers + reduced-motion kill switch (motionEngine.js, designQA.js).
+
+### New in Phase 7
+- server/services/componentRegistry.js — 60 curated components across all 20 families
+  (§12 full field set, 6–8 hero variants), 20 shaders (§24), 14 gradients, 22 motion
+  patterns (§26), 8 MOTION profiles (§10), 14 industry templates (§28); pure functions.
+- server/services/componentPipeline.js — IMPORT→NORMALIZE→TEST→CLASSIFY→APPROVE status
+  machine on component_assets (§29–31), §75 ten-factor quality gate with a
+  metadata-only path for curated seeds (HTML heuristics for payloads), §33 Jaccard
+  duplicate prevention (≥0.85 → variant-extension), §32 growth gap analysis, §34 search.
+- server/services/cinematicEngine.js — planCinematicExperience (deterministic on
+  universeSeed; §70 AUTO gating: shaders/gradients/image-sequence only at CINEMATIC+,
+  EXTREME never automatic), coordinateTimelines, performancePolicy (§41; mobile never
+  HEAVY/ULTRA), validateScrollTimeline (§21 contract), antiGimmickScore (§63),
+  antiComponentLibraryTest (§64), heroHiddenTest (§65), runCinematicAudit (§62, 8
+  factors /100, grade A≥90; real cinematic render ≥90, gimmick-stuffed <60).
+- DB: component_assets (+performance_class with lightweight migration for the owner's
+  live DB), site_recipes, indexes (db.js).
+- Builder: recipe v6 (component@version per section, locked, deterministic picks),
+  persisted per build; GET /project/:id/recipe; POST convert (§38, never rebuilds);
+  POST change-component (§37, exactly one section changes, recipe iteration bumps,
+  rebuild from SAME seed/content/STYLE_LOCK, returns {recipe, artifact, qa}).
+- server/routes/componentLibrary.js — /api/library: components browser (filters, caps),
+  detail + variants + similar, templates/shaders/gradients/motion-profiles/meta,
+  search, import, asset inbox + admin approve/reject/deprecate, growth.
+- Frontend: CreationModePicker (4 modes, LD style, motion level, §69 advanced options),
+  ComponentLibraryPage (/library) with filter chips, cards, admin inbox, growth panel;
+  BuilderPage shows recipe, style-audit + cinematic-audit cards, per-section
+  change-component, convert control.
+- siteTemplate.js cinematic additions: .shader-bg ambient layer (CSS-only, token-driven,
+  mobile + reduced-motion fallbacks), §47 image-sequence section (static <img> fallback
+  in no-JS markup, canvas driver lazy/progressive), §21 scroll-timeline contract
+  attributes + entry/active/exit state hooks on every scroll scene, §49 transparent→
+  solid cinematic nav, section order follows plan.cinematic.pacing, non-cinematic
+  output byte-unchanged.
+- designQA.js runStyleAudit (§61): 10 dimensions each 0–10 (color, typography,
+  component, imagery, motion, cinematic, responsive, industryFit, conversion, identity),
+  pass at overall ≥9; builder QA artifact stores {…qa, styleAudit, cinematicAudit}.
+- §57 PDF-ready output (server/services/pdfView.js): buildPdfView(plan, html) derives a
+  print-perfect single-file view from the SAME built artifact (never redesigned) — A4
+  @page rules, animations/transitions forced to static resting states, shader/canvas
+  layers hidden with their static equivalents visible, page-break rules; media refs
+  inlined as base64 within a 4 MB budget (SVG always) else rewritten absolute at serve
+  time; pdf artifact saved on every build/change-component; GET /project/:id/pdf serves
+  it as an honest lucio-<id>-pdf-ready.html download (no headless browser in the
+  sovereignty constraints — the browser's Save-as-PDF produces the binary);
+  "Export PDF" button in the builder.
+
+### Integration fixes applied while landing Phase 7 (all covered by tests now)
+- Shader/gradient color_inputs normalized from counts to named role arrays (§12 shape).
+- findSimilar signature widened to the full §12 field set so a near-copy of a curated
+  seed scores ≥0.85 symmetrically.
+- test-phase7.js referenced tryImport results incorrectly (module.mod on the module
+  namespace), silently gating all real-render coverage — fixed.
+- Admin approve/deprecate route test now walks the status machine first (imported →
+  approved is correctly blocked by design).

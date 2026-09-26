@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { makePlan, buildFromGoal, getLatestSite, getLatestQA, listArtifacts } from '../services/appBuilder.js';
+import { makePlan, buildFromGoal, getLatestSite, getLatestQA, listArtifacts, getLatestRecipe, recomposePlan, changeComponent, getLatestPdf } from '../services/appBuilder.js';
 import { DESIGN_UNIVERSES, MOTION_PERSONALITIES } from '../services/designUniverses.js';
+import { CREATION_MODES } from '../services/ldStyles.js';
 import { chat } from '../services/modelGateway.js';
 
 export const builderRouter = Router();
@@ -74,9 +75,59 @@ builderRouter.get('/project/:projectId/preview', (req, res) => {
   res.send(site.content);
 });
 
+// §57 PDF-ready export: the same single-file view generated at build time, with any
+// remaining media references made absolute against this server so printing is lossless.
+// This is a print-perfect HTML artifact — the actual PDF binary is produced by the
+// browser's Save-as-PDF (no headless browser exists in the sovereignty constraints).
+builderRouter.get('/project/:projectId/pdf', (req, res) => {
+  if (!ownProject(req, res)) return;
+  const pdf = getLatestPdf(req.params.projectId);
+  if (!pdf) return res.status(404).json({ error: 'no PDF-ready view yet — build the site first' });
+  const base = `${req.protocol}://${req.get('host')}`;
+  const html = pdf.content.replace(/\/api\/media\//g, `${base}/api/media/`);
+  const slug = req.params.projectId.slice(0, 8);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="lucio-${slug}-pdf-ready.html"`);
+  res.send(html);
+});
+
 // Companion chat powered by the sovereign engine
 builderRouter.post('/chat', (req, res) => {
   const { messages } = req.body || {};
   if (!Array.isArray(messages)) return res.status(400).json({ error: 'messages array required' });
   res.json(chat(messages));
+});
+
+// Phase 7 — latest stored v6 recipe (component@version per section)
+builderRouter.get('/project/:projectId/recipe', (req, res) => {
+  if (!ownProject(req, res)) return;
+  const row = getLatestRecipe(req.params.projectId);
+  if (!row) return res.status(404).json({ error: 'no stored recipe yet — build the site first' });
+  res.json({ recipe: JSON.parse(row.recipe_json), version: row.version, created_at: row.created_at });
+});
+
+// Phase 7 §38 — convert the project to another creation mode. Returns {plan} only:
+// recomposed for the new mode while preserving siteName, content pack, styleId, universe
+// and seed. Does NOT rebuild the site and does NOT publish.
+builderRouter.post('/project/:projectId/convert', requireRole('member'), (req, res) => {
+  const p = ownProject(req, res); if (!p) return;
+  const { creationMode } = req.body || {};
+  if (!creationMode) return res.status(400).json({ error: 'creationMode is required' });
+  if (!CREATION_MODES.some((m) => m.id === creationMode)) return res.status(400).json({ error: `unknown creationMode: ${creationMode}` });
+  const plan = recomposePlan(p.id, creationMode);
+  if (plan && plan.error) return res.status(plan.error).json({ error: plan.message });
+  if (!plan) return res.status(404).json({ error: 'no stored build to convert — build the site first' });
+  res.json({ plan });
+});
+
+// Phase 7 §37 — swap one recipe section to a different approved component: validates the
+// component exists + supports the project's creation mode (+ variant exists), bumps the
+// stored recipe version, rebuilds from the SAME seed/content (STYLE_LOCK preserved) and
+// returns {recipe, artifact, qa}. Never regenerates unrelated sections.
+builderRouter.post('/project/:projectId/change-component', requireRole('member'), (req, res) => {
+  const p = ownProject(req, res); if (!p) return;
+  const { section, componentId, variant } = req.body || {};
+  const result = changeComponent(p.id, { section, componentId, variant }, req.user, req.ip);
+  if (result.error) return res.status(result.error).json({ error: result.message });
+  res.json(result);
 });

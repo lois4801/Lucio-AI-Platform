@@ -136,3 +136,25 @@
   per-place coordinates.
 - Consequence: pin-drop discovery works end-to-end today; real live map data plus
   street view activate the moment the owner adds Google keys to .env.
+
+## D14 — §57 PDF output as a print-perfect HTML view (honest artifact)
+- Date: 2026-09-26
+- Decision: the platform's PDF deliverable is a single-file, print-perfect HTML view
+  generated from the SAME built artifact (same content, LD style, components, images,
+  layout identity), with interactive states converted to static resting states via an
+  injected print stylesheet (A4 @page, animations/transitions off, reveal states forced
+  visible, shader/canvas layers hidden in favor of their declared static fallbacks,
+  page-break rules). It is stored as a `pdf` build artifact on every
+  build/change-component and served by GET /api/builder/project/:id/pdf as an honest
+  `lucio-<id>-pdf-ready.html` download. No headless browser or PDF binary engine exists
+  in the sovereignty constraints (no new runtime dependencies), so the file is never
+  labeled a `.pdf`; the actual PDF binary is produced by the user's browser
+  (Save as PDF) or any HTML-to-PDF tool.
+- Media handling: `/api/media/*` refs are inlined as base64 data URIs within a 4 MB
+  budget in document order (SVG accents always; 4K JPGs until the budget is spent);
+  remaining refs are rewritten to absolute URLs at serve time so printing while the
+  server runs is lossless. A parity report asserts identical section/heading counts
+  between the site and its PDF view — the PDF is never redesigned separately (§57).
+- Consequence: exports work offline for the inlined subset and at full fidelity on the
+  live server; if a true server-side PDF binary is ever required, a headless-Chromium
+  stage can consume this same artifact without pipeline changes.
