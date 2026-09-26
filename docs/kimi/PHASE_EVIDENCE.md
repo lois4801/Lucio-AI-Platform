@@ -324,3 +324,10 @@ webhooks (manual payment-status flags instead).
 - `GOOGLE_MAPS_EMBED_KEY` — street-view embeds in map popups. Absent → button hidden.
 - `STRIPE_SECRET_KEY` — card billing. Absent → manual mode (keep 100%), error message
   steers explicitly. All three documented in .env.example; none committed.
+
+### Map UI iteration (same evening, owner screenshot reference)
+Scanner map restyled to the pindrop reference: CartoDB dark-matter tiles, 62vh
+map-first layout, div-icon dot markers with permanent name labels, dark popups,
+zoom controls top-right, overlay search bar (OSM Nominatim geocode → flyTo →
+pin-drop scan), LIVE/dev data-source badge and gap-signal legend overlaid on the
+map. Verified in-browser: dark tiles load, click-to-scan renders labeled markers.

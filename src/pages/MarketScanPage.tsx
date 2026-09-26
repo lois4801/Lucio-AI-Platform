@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Radar, RefreshCw, FileText, Ban, FolderPlus, Eye, MapPin, Navigation } from 'lucide-react';
+import { Radar, RefreshCw, FileText, Ban, FolderPlus, Eye, Navigation, Search as SearchIcon } from 'lucide-react';
 
 // Leaflet is loaded from CDN on demand (same pattern as scanner libs).
 function loadScript(src: string): Promise<void> {
@@ -103,13 +103,15 @@ export default function MarketScanPage() {
     p.website_gap_signal === 'GAP_NO_VERIFIED_WEBSITE' ? '#dc2626'
     : p.website_gap_signal === 'GAP_NONE' ? '#16a34a' : '#d97706';
 
-  // Initialize Leaflet map once.
+  // Initialize Leaflet map once — dark "command center" style like the reference:
+  // CartoDB dark-matter tiles, zoom top-right, click = pin-drop scan.
   useEffect(() => {
     let cancelled = false;
     loadLeaflet().then((L) => {
       if (cancelled || mapRef.current) return;
-      const map = L.map('prospect-map', { center: [56.13, -106.35], zoom: 4 });
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+      const map = L.map('prospect-map', { center: [56.13, -106.35], zoom: 4, zoomControl: false, attributionControl: false });
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, subdomains: 'abcd' }).addTo(map);
+      L.control.zoom({ position: 'topright' }).addTo(map);
       map.on('click', (e: any) => { runNearbyRef.current(e.latlng.lat, e.latlng.lng); });
       mapRef.current = map;
       setMapReady(true);
@@ -117,7 +119,7 @@ export default function MarketScanPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // Sync markers with results.
+  // Sync markers with results — pindrop-style dots with permanent name labels.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !window.L || !mapReady) return;
@@ -128,18 +130,25 @@ export default function MarketScanPage() {
     const pts = results.filter((r) => typeof r.lat === 'number' && typeof r.lng === 'number' && r.lat !== 0 && r.lng !== 0);
     pts.forEach((p) => {
       const color = markerColor(p);
-      const m = L.circleMarker([p.lat, p.lng], { radius: 7, color, weight: 2, fillColor: color, fillOpacity: 0.65 }).addTo(map);
+      const m = L.marker([p.lat, p.lng], {
+        icon: L.divIcon({
+          className: 'lucio-dot-wrap',
+          html: `<div class="lucio-dot" style="background:${color}"></div>`,
+          iconSize: [14, 14], iconAnchor: [7, 7],
+        }),
+      }).addTo(map);
+      m.bindTooltip(esc(p.business_name), { permanent: true, direction: 'top', offset: [0, -8], className: 'lucio-label' });
       const detail = `<div style="min-width:220px">
         <div style="font-weight:700">${esc(p.business_name)}</div>
-        <div style="font-size:12px;color:#666">${esc(p.city)}, ${esc(p.province_state)} · ${esc(p.industry)}</div>
+        <div style="font-size:12px;opacity:.7">${esc(p.city)}, ${esc(p.province_state)} · ${esc(p.industry)}</div>
         <div style="font-size:12px;margin-top:4px">${esc(GAP_LABEL[p.website_gap_signal] || p.website_gap_signal)} · score <b>${Math.round(p.lead_score)}</b></div>
-        <div style="font-size:11px;color:#555;margin-top:2px">${esc(p.recommended_offer || '')}</div>
+        <div style="font-size:11px;opacity:.7;margin-top:2px">${esc(p.recommended_offer || '')}</div>
         <div style="margin-top:6px;display:flex;gap:6px">
-          <button id="gen-${p.id}" style="font-size:11px;padding:3px 8px;border:1px solid #ccc;border-radius:6px;background:#111;color:#fff;cursor:pointer">Generate opportunity</button>
-          ${meta.mapsEmbedKey ? `<button id="sv-${p.id}" style="font-size:11px;padding:3px 8px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer">Street view</button>` : ''}
+          <button id="gen-${p.id}" style="font-size:11px;padding:3px 8px;border:1px solid #57534e;border-radius:6px;background:#0c0a09;color:#fafaf9;cursor:pointer">Generate opportunity</button>
+          ${meta.mapsEmbedKey ? `<button id="sv-${p.id}" style="font-size:11px;padding:3px 8px;border:1px solid #57534e;border-radius:6px;background:#292524;color:#fafaf9;cursor:pointer">Street view</button>` : ''}
         </div>
       </div>`;
-      m.bindPopup(L.popup({ maxWidth: 320 }).setContent(detail));
+      m.bindPopup(L.popup({ maxWidth: 320, className: 'lucio-popup' }).setContent(detail));
       m.on('popupopen', () => {
         const gen = document.getElementById(`gen-${p.id}`);
         if (gen) gen.onclick = () => generateOpportunity(p);
@@ -147,7 +156,7 @@ export default function MarketScanPage() {
         if (sv) sv.onclick = () => {
           const embed = `<div style="width:300px"><iframe width="300" height="200" style="border:0;border-radius:8px" loading="lazy"
             src="https://www.google.com/maps/embed/v1/streetview?location=${p.lat},${p.lng}&key=${encodeURIComponent(meta.mapsEmbedKey || '')}"></iframe>
-            <div style="font-size:11px;color:#666;margin-top:4px">${esc(p.business_name)} — <span style="cursor:pointer;text-decoration:underline" id="sv-back-${p.id}">back</span></div></div>`;
+            <div style="font-size:11px;opacity:.7;margin-top:4px">${esc(p.business_name)} — <span style="cursor:pointer;text-decoration:underline" id="sv-back-${p.id}">back</span></div></div>`;
           m.getPopup().setContent(embed).update();
           const back = document.getElementById(`sv-back-${p.id}`);
           if (back) back.onclick = () => { m.getPopup().setContent(detail).update(); };
@@ -155,8 +164,28 @@ export default function MarketScanPage() {
       });
       markersRef.current.push(m);
     });
-    if (pts.length) map.fitBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lng])).pad(0.2));
+    if (pts.length) map.flyToBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lng])).pad(0.2));
   }, [results, mapReady]);
+
+  // Overlay search bar: geocode a city/address (OpenStreetMap Nominatim, no key)
+  // then pin-drop scan there.
+  const [geoQuery, setGeoQuery] = useState('');
+  const [geoLoading, setGeoLoading] = useState(false);
+  const searchMap = async () => {
+    const q = geoQuery.trim();
+    if (!q || geoLoading) return;
+    setGeoLoading(true); setError('');
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ca&accept-language=en&q=${encodeURIComponent(q)}`, { headers: { Accept: 'application/json' } });
+      const rows = await res.json();
+      const hit = rows?.[0];
+      if (!hit) { setError(`Couldn't find "${q}" on the map.`); return; }
+      const lat = Number(hit.lat), lng = Number(hit.lon);
+      mapRef.current?.flyTo([lat, lng], 14, { duration: 1.2 });
+      await runNearby(lat, lng);
+    } catch (e: any) { setError(e.message); }
+    finally { setGeoLoading(false); }
+  };
 
 
   const startScan = async () => {
@@ -211,6 +240,46 @@ export default function MarketScanPage() {
         <h1 className="text-2xl font-bold tracking-tight">Market Scanner</h1>
         <p className="text-muted-foreground">Discover businesses through permitted sources, corroborate website presence, and score the opportunity — evidence first.</p>
       </div>
+
+      <Card className="overflow-hidden border-0 shadow-lg">
+        <CardContent className="p-0 relative">
+          {mapFailed && <p className="text-sm text-amber-600 dark:text-amber-400 absolute top-3 left-3 right-3 z-[1100] bg-background/95 rounded-lg p-3">Map could not load ({mapFailed}). Check your internet connection — map tiles and Leaflet load from CDN.</p>}
+          <div id="prospect-map" className="h-[62vh] min-h-[460px] w-full relative z-0 bg-[#0c0a09]" />
+
+          {/* Overlay search bar — geocode then pin-drop scan (like the reference) */}
+          <div className="absolute top-3 left-3 z-[1000] flex gap-2 w-[calc(100%-1.5rem)] sm:w-auto">
+            <div className="relative flex-1 sm:w-96">
+              <SearchIcon className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <Input value={geoQuery} onChange={(e) => setGeoQuery(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') searchMap(); }}
+                placeholder="Search a business, address, or city"
+                className="pl-9 bg-background/95 shadow-lg border-muted" />
+            </div>
+            <Button onClick={searchMap} disabled={geoLoading || !geoQuery.trim()} className="shadow-lg">
+              {geoLoading ? 'Locating…' : 'Find'}
+            </Button>
+          </div>
+
+          {/* Data-source badge, top right */}
+          <div className="absolute top-3 right-3 z-[1000]">
+            {meta.providers.some((p) => p.id === 'google-places' && p.configured)
+              ? <Badge className="shadow-lg">● LIVE · Google Places</Badge>
+              : <Badge variant="secondary" className="shadow-lg">dev data — add GOOGLE_PLACES_API_KEY for live</Badge>}
+          </div>
+
+          {/* Legend, bottom left */}
+          <div className="absolute bottom-3 left-3 z-[1000] rounded-lg bg-background/95 shadow-lg px-3 py-2 text-xs space-y-1">
+            <div className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-full ring-2 ring-white/70" style={{ background: '#dc2626' }} /> No website</div>
+            <div className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-full ring-2 ring-white/70" style={{ background: '#d97706' }} /> Weak / social only</div>
+            <div className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-full ring-2 ring-white/70" style={{ background: '#16a34a' }} /> Has a website</div>
+            <div className="text-muted-foreground pt-1 mt-1 border-t border-border/60">
+              {nearbyLoading
+                ? <span className="flex items-center gap-1 text-primary"><Navigation className="h-3 w-3 animate-pulse" /> Scanning dropped pin…</span>
+                : 'Click anywhere = scan a 3 km radius · marker labels = business names'}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2"><Radar className="h-5 w-5" /> New scan</CardTitle>
@@ -312,25 +381,6 @@ export default function MarketScanPage() {
           </CardContent>
         </Card>
       )}
-
-      <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2"><MapPin className="h-5 w-5" /> Discovery map</CardTitle>
-          <CardDescription>
-            Pin-drop discovery: click anywhere on the map to scan a 3 km radius around that point with the selected industry.
-            Markers: <span className="text-red-600 font-medium">red = no website</span> · <span className="text-amber-600 font-medium">amber = weak/social</span> · <span className="text-green-600 font-medium">green = has site</span>.
-            {meta.providers.some((p) => p.id === 'google-places' && p.configured)
-              ? ' Live Google Places data.'
-              : ' Live data requires GOOGLE_PLACES_API_KEY in .env — until then, fixture results use the nearest city center (approximate coordinates, labeled).'}
-            {meta.mapsEmbedKey ? ' Street view available on each marker.' : ' Add GOOGLE_MAPS_EMBED_KEY to .env to enable street-view previews.'}
-          </CardDescription></CardHeader>
-        <CardContent>
-          {mapFailed && <p className="text-sm text-amber-600 dark:text-amber-400">Map could not load ({mapFailed}). Check your internet connection — map tiles and Leaflet load from CDN.</p>}
-          <div id="prospect-map" className="h-[420px] w-full rounded-lg border relative z-0" />
-          {nearbyLoading && (
-            <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1"><Navigation className="h-3 w-3 animate-pulse" /> Scanning around dropped pin…</p>
-          )}
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader><CardTitle>Scan history</CardTitle></CardHeader>

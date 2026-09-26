@@ -73,3 +73,38 @@
     @apply bg-background text-foreground;
   }
 }
+/* ---- Discovery map: dark command-center theme (pindrop-style) ---- */
+.lucio-dot-wrap { background: transparent; border: none; }
+.lucio-dot {
+  width: 12px; height: 12px; border-radius: 9999px;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.8);
+  cursor: pointer;
+}
+.lucio-dot:hover { transform: scale(1.25); }
+.lucio-label {
+  background: rgba(12, 10, 9, 0.85) !important;
+  color: #fafaf9 !important;
+  border: 1px solid #44403c !important;
+  border-radius: 6px !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5) !important;
+  font-size: 10px !important;
+  font-weight: 600;
+  padding: 1px 6px !important;
+  pointer-events: none;
+}
+.lucio-label::before { display: none !important; }
+.lucio-popup .leaflet-popup-content-wrapper {
+  background: #1c1917;
+  color: #fafaf9;
+  border: 1px solid #44403c;
+  border-radius: 10px;
+}
+.lucio-popup .leaflet-popup-tip { background: #1c1917; border: 1px solid #44403c; }
+.lucio-popup .leaflet-popup-close-button { color: #a8a29e; }
+#prospect-map .leaflet-bar a {
+  background: rgba(28, 25, 23, 0.95);
+  color: #fafaf9;
+  border-bottom: 1px solid #44403c;
+}
+#prospect-map .leaflet-bar a:hover { background: #292524; }
