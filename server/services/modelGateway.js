@@ -1,0 +1,90 @@
+// Model Gateway — manual §7.1 contract: chat / generate / embed with benchmark-aware routing metadata.
+// Sovereign default: on-device deterministic engine. External adapters DISABLED by default (§14).
+import { db } from '../db.js';
+
+export function listProviders() {
+  return db.prepare(`SELECT * FROM provider_registry ORDER BY is_local DESC, id`).all();
+}
+
+export function setProviderEnabled(id, enabled, user) {
+  const p = db.prepare(`SELECT * FROM provider_registry WHERE id = ?`).get(id);
+  if (!p) throw new Error('provider not found');
+  db.prepare(`UPDATE provider_registry SET enabled = ? WHERE id = ?`).run(enabled ? 1 : 0, id);
+  return { ...p, enabled: enabled ? 1 : 0 };
+}
+
+function activeLocalProvider() {
+  return db
+    .prepare(`SELECT * FROM provider_registry WHERE enabled = 1 ORDER BY is_local DESC, id LIMIT 1`)
+    .get();
+}
+
+// ---- Sovereign engine: deterministic, on-device, no network ----
+
+const INDUSTRIES = [
+  { keys: ['plumb', 'hvac', 'electric', 'roof', 'contractor', 'renovation', 'landscap', 'clean'], industry: 'Home Services' },
+  { keys: ['restaurant', 'cafe', 'coffee', 'bakery', 'bar ', 'bistro', 'food'], industry: 'Food & Beverage' },
+  { keys: ['salon', 'barber', 'spa', 'nail', 'beauty', 'medspa', 'tattoo'], industry: 'Beauty & Wellness' },
+  { keys: ['gym', 'fitness', 'yoga', 'pilates', 'crossfit', 'martial'], industry: 'Fitness' },
+  { keys: ['clinic', 'dental', 'physio', 'medical', 'health', 'chiro'], industry: 'Healthcare' },
+  { keys: ['law', 'legal', 'attorney', 'account', 'bookkeep', 'tax'], industry: 'Professional Services' },
+  { keys: ['store', 'shop', 'boutique', 'retail', 'ecommerce', 'apparel'], industry: 'Retail & Commerce' },
+  { keys: ['hotel', 'motel', 'rental', 'airbnb', 'stay', 'resort'], industry: 'Hospitality' },
+  { keys: ['agency', 'marketing', 'design', 'studio', 'consult'], industry: 'Agency & Consulting' },
+  { keys: ['school', 'tutor', 'education', 'childcare', 'academy'], industry: 'Education' },
+  { keys: ['auto', 'car ', 'mechanic', 'detailing', 'tire'], industry: 'Automotive' },
+];
+
+const FEATURE_KEYS = [
+  { keys: ['book', 'appointment', 'schedule', 'reserve'], feature: 'booking', label: 'Online Booking' },
+  { keys: ['menu'], feature: 'menu', label: 'Menu / Price List' },
+  { keys: ['shop', 'store', 'sell', 'product', 'ecommerce', 'buy'], feature: 'storefront', label: 'Storefront' },
+  { keys: ['gallery', 'portfolio', 'photos', 'showcase'], feature: 'gallery', label: 'Gallery / Portfolio' },
+  { keys: ['contact', 'quote', 'estimate'], feature: 'contact', label: 'Contact & Quotes' },
+  { keys: ['blog', 'news', 'article'], feature: 'blog', label: 'Blog / Updates' },
+  { keys: ['team', 'staff', 'about'], feature: 'team', label: 'Team & About' },
+  { keys: ['review', 'testimonial'], feature: 'testimonials', label: 'Testimonials' },
+];
+
+export function parseGoal(goal) {
+  const g = String(goal || '').toLowerCase();
+  const industryHit = INDUSTRIES.find((i) => i.keys.some((k) => g.includes(k)));
+  const features = FEATURE_KEYS.filter((f) => f.keys.some((k) => g.includes(k))).map((f) => f.feature);
+  const nameMatch = String(goal).match(/(?:called|named|for)\s+["'“]?([A-Z][\w&'’-]*(?:\s+[A-Z][\w&'’-]*){0,5})/);
+  const locMatch = g.match(/(?:in|near|serving)\s+([a-z][a-z .'-]{1,30}?)(?:[,.;\s]|$)/);
+  const tone = g.includes('luxury') || g.includes('premium') || g.includes('elegant') ? 'premium'
+    : g.includes('bold') || g.includes('energetic') ? 'bold'
+    : g.includes('friendly') || g.includes('warm') || g.includes('cozy') ? 'warm'
+    : 'modern';
+  return {
+    businessName: nameMatch ? nameMatch[1].trim() : null,
+    industry: industryHit ? industryHit.industry : 'Local Business',
+    location: locMatch ? locMatch[1].trim().replace(/\b\w/g, (c) => c.toUpperCase()) : '',
+    features: features.length ? [...new Set(features)] : ['contact', 'gallery'],
+    tone,
+  };
+}
+
+export function chat(messages) {
+  const provider = activeLocalProvider();
+  const last = messages?.filter((m) => m.role === 'user').pop()?.content || '';
+  const parsed = parseGoal(last);
+  return {
+    provider: provider?.id || 'sovereign-engine',
+    sovereign: true,
+    reply: `I analyzed your goal. Business type: ${parsed.industry}${parsed.businessName ? `, name: ${parsed.businessName}` : ''}${parsed.location ? `, location: ${parsed.location}` : ''}. ` +
+      `Recommended features: ${parsed.features.join(', ')}. I can scaffold this now — open the App Builder and press "Build".`,
+    parsed,
+  };
+}
+
+export function gatewayStatus() {
+  const p = activeLocalProvider();
+  return {
+    activeProvider: p?.id || null,
+    activeLabel: p?.label || 'none',
+    sovereign: Boolean(p?.is_local ?? 1),
+    externalEnabled: db.prepare(`SELECT COUNT(*) c FROM provider_registry WHERE enabled = 1 AND is_local = 0`).get().c,
+    providers: listProviders(),
+  };
+}

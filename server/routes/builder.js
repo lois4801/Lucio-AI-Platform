@@ -1,0 +1,51 @@
+import { Router } from 'express';
+import { db } from '../db.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
+import { makePlan, buildFromGoal, getLatestSite, listArtifacts } from '../services/appBuilder.js';
+import { chat } from '../services/modelGateway.js';
+
+export const builderRouter = Router();
+builderRouter.use(requireAuth);
+
+function ownProject(req, res) {
+  const p = db.prepare(`SELECT * FROM projects WHERE id = ? AND org_id = ?`).get(req.params.projectId, req.user.orgId);
+  if (!p) { res.status(404).json({ error: 'project not found' }); return null; }
+  return p;
+}
+
+// Step 1 — Plan: parse a natural-language goal into a structured plan (no artifacts yet)
+builderRouter.post('/project/:projectId/plan', requireRole('member'), (req, res) => {
+  if (!ownProject(req, res)) return;
+  const { goal } = req.body || {};
+  if (!goal) return res.status(400).json({ error: 'goal is required' });
+  res.json({ plan: makePlan(goal) });
+});
+
+// Step 2 — Build: scaffold the site from a goal (or from the provided plan's goal)
+builderRouter.post('/project/:projectId/build', requireRole('member'), (req, res) => {
+  if (!ownProject(req, res)) return;
+  const { goal } = req.body || {};
+  if (!goal) return res.status(400).json({ error: 'goal is required' });
+  res.status(201).json(buildFromGoal(req.params.projectId, goal, req.user, req.ip));
+});
+
+builderRouter.get('/project/:projectId/artifacts', (req, res) => {
+  if (!ownProject(req, res)) return;
+  res.json({ artifacts: listArtifacts(req.params.projectId) });
+});
+
+// Live preview: serves the latest generated site HTML (§36 domainless preview foundation)
+builderRouter.get('/project/:projectId/preview', (req, res) => {
+  if (!ownProject(req, res)) return;
+  const site = getLatestSite(req.params.projectId);
+  if (!site) return res.status(404).send('<h3>No build yet — describe your idea in the App Builder and press Build.</h3>');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(site.content);
+});
+
+// Companion chat powered by the sovereign engine
+builderRouter.post('/chat', (req, res) => {
+  const { messages } = req.body || {};
+  if (!Array.isArray(messages)) return res.status(400).json({ error: 'messages array required' });
+  res.json(chat(messages));
+});
