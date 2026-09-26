@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db, audit } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { runMarketScan, listScans, getScan, resolveWebsitePresence, providerMeta } from '../services/discovery/pipeline.js';
+import { runMarketScan, runNearbyScan, listScans, getScan, resolveWebsitePresence, providerMeta } from '../services/discovery/pipeline.js';
 import { generateWebsiteOpportunity, createProjectFromOpportunity, listOpportunities } from '../services/opportunity.js';
 import { INDUSTRIES, REGIONS } from '../services/discovery/providers.js';
 import { wideEvent } from '../services/telemetry.js';
@@ -30,7 +30,23 @@ marketScansRouter.get('/', (req, res) => res.json({ scans: listScans(req.user.or
 
 // Operator metadata: industries and regions exposed by the configured providers
 marketScansRouter.get('/meta', (req, res) => {
-  res.json({ industries: INDUSTRIES, regions: REGIONS, providers: providerMeta() });
+  res.json({
+    industries: INDUSTRIES, regions: REGIONS, providers: providerMeta(),
+    // Street-view embed key for map popups (empty string = feature gated off).
+    mapsEmbedKey: String(process.env.GOOGLE_MAPS_EMBED_KEY || ''),
+  });
+});
+
+// Pin-drop map discovery: scan a 3 km circle around a clicked map point.
+marketScansRouter.post('/nearby', requireRole('member'), async (req, res) => {
+  try {
+    const { lat, lng, industry, maxResults } = req.body || {};
+    const result = await runNearbyScan(req.user.orgId, req.user, { lat, lng, industry, maxResults }, req.ip);
+    wideEvent('scan.nearby', { orgId: req.user.orgId, industry, unique: result.coverage?.unique_businesses, source: result.source });
+    res.status(201).json(result);
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
 });
 
 marketScansRouter.get('/:id', (req, res) => {

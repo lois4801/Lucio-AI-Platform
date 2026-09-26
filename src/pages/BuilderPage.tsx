@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CheckCircle2, XCircle, Hammer, ShieldCheck, Save, RotateCcw } from 'lucide-react';
+import { CheckCircle2, XCircle, Hammer, ShieldCheck, Save, RotateCcw, Globe } from 'lucide-react';
 
 const SAMPLE_GOALS = [
   'Build a warm cozy website for a cafe called Bluebird Coffee in Toronto with a menu, gallery and online booking',
@@ -98,6 +98,16 @@ export default function BuilderPage() {
     } catch (e: any) { setError(e.message); } finally { setBusy(''); }
   };
 
+  // Publish a live public link for the built site (Pindrop-style sell flow).
+  const [publishInfo, setPublishInfo] = useState<{ slug: string; token: string } | null>(null);
+  const publish = async () => {
+    setError(''); setBusy('publish');
+    try {
+      const d = await api<{ site: { slug: string; owner_token: string } }>('/sell/publish', { method: 'POST', body: JSON.stringify({ projectId }) });
+      setPublishInfo({ slug: d.site.slug, token: d.site.owner_token });
+    } catch (e: any) { setError(e.message); } finally { setBusy(''); }
+  };
+
   const createCp = async () => {
     setError('');
     try {
@@ -172,7 +182,17 @@ export default function BuilderPage() {
             <Button variant="secondary" onClick={validate} disabled={!projectId || !!busy}>
               <ShieldCheck className="h-4 w-4 mr-1" /> {busy === 'validate' ? 'Validating…' : 'Run QA validation'}
             </Button>
+            <Button variant="outline" onClick={publish} disabled={!projectId || !built || !!busy}>
+              <Globe className="h-4 w-4 mr-1" /> {busy === 'publish' ? 'Publishing…' : 'Publish live link'}
+            </Button>
           </div>
+          {publishInfo && (
+            <div className="text-sm border rounded-lg p-3 bg-muted/40 space-y-1">
+              <div>Live site: <a className="text-primary underline font-medium" href={`/live/${publishInfo.slug}`} target="_blank" rel="noreferrer">{window.location.origin}/live/{publishInfo.slug}</a></div>
+              <div>Owner portal (give this to the client): <a className="text-primary underline" href={`/portal/${publishInfo.token}`} target="_blank" rel="noreferrer">{window.location.origin}/portal/{publishInfo.token}</a></div>
+              <div className="text-xs text-muted-foreground">Track the deal, payment status, change requests and leads under “Clients & Sites” in the sidebar.</div>
+            </div>
+          )}
           {error && <p className="text-sm text-destructive">{error}</p>}
         </CardContent>
       </Card>

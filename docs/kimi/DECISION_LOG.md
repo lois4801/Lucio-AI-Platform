@@ -100,3 +100,39 @@
   (no websiteUri) is genuine provider field state rather than inference. Live scans
   require the owner to supply an API key; until then the honest fallback keeps every
   workflow testable.
+
+## D12 — Pindrop-style sell architecture: publish → pitch → bill → portal
+- Date: 2026-09-26
+- Decision: replicate pindrop.host's functional pillars without its lock-in. Copied:
+  find (scanner) → build (Phases 4–6) → PUBLISH a live public link (/live/:slug,
+  unauthenticated by design — site visitors and business owners are not Lucio users)
+  → sell (client deals: build fee + monthly retainer, stage pipeline, payment-status
+  tracking with failed-payment flag) → owner portal (/portal/:owner_token, token-only,
+  server-rendered standalone page where the owner requests changes WITH photos) →
+  monitoring (visits + enquiries per site) → leads inbox for all enquiries. Billing
+  defaults to MANUAL mode (invoice yourself, keep 100%) — the Stripe Payment Links
+  adapter activates only when STRIPE_SECRET_KEY is set and otherwise throws an error
+  that steers to manual; no fake payment claims are ever made. Skipped: NFC review
+  cards (physical merch), the credits system (internal metering, artificial here),
+  Stripe webhooks (manual payment-status flags instead).
+- Consequence: the full commercial loop runs today with zero external services; card
+  billing and street-view embeds turn on by dropping keys into .env. The owner portal
+  auto-creates an ACTIVE manual deal on the first change request so engagement is
+  tracked from the very first interaction.
+
+## D13 — Map discovery with pin-drop and honest live-data gating
+- Date: 2026-09-26
+- Decision: the Market Scanner gains a Leaflet + OpenStreetMap discovery map (CDN
+  client lib, same pattern as Tailwind CDN in generated sites). Clicking the map
+  drops a pin and scans a 3 km circle via Places searchText with locationBias
+  (googlePlacesProvider.nearby); candidates flow through the SAME dedupe →
+  website-presence resolution → scoring → CRM upsert pipeline as regular scans.
+  Without a Places key the fallback returns fixture businesses for the NEAREST city
+  centroid (approximate coordinates, explicitly labeled) — never presented as live
+  data. Street-view embeds ("drive mode") render only when GOOGLE_MAPS_EMBED_KEY is
+  configured; the key is exposed to the client only through the authenticated
+  /api/scans/meta response. Fixture coordinates come from a CITY_COORDS centroid
+  table with deterministic per-record jitter; live Places results carry real
+  per-place coordinates.
+- Consequence: pin-drop discovery works end-to-end today; real live map data plus
+  street view activate the moment the owner adds Google keys to .env.

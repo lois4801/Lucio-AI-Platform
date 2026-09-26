@@ -97,3 +97,12 @@ Maps canonical manual requirements to concrete files in this repository.
 - /scans/meta providers → server/routes/marketScans.js
 - Source badges + server-picked sources → src/pages/MarketScanPage.tsx
 - Tests → scripts/test-google-places.js (38 assertions)
+
+## Sell architecture + map discovery (Pindrop parity, post-v28 addendum)
+- Publish /live/:slug + owner portal /portal/:token → `server/routes/public.js` (unauthenticated public surface), `server/services/publish.js` (publish/deals/requests/leads service), schema in `server/db.js` (published_sites, client_deals, change_requests, leads + prospects lat/lng migration)
+- Sell API (auth) → `server/routes/sell.js` mounted at /api/sell in `server/index.js` (SPA fallback regex extended to exclude /live and /portal)
+- Enquiry-capable contact forms → `server/services/siteTemplate.js` (data-enquire + submit script active only under /live/<slug>)
+- Pin-drop nearby scan → `googlePlacesProvider.nearby` in `server/services/discovery/googlePlaces.js`, orchestration `runNearbyScan` in `server/services/discovery/pipeline.js`, route POST /api/scans/nearby, CITY_COORDS + nearestCity in `server/services/discovery/providers.js`
+- Discovery map UI → `src/pages/MarketScanPage.tsx` (Leaflet 1.9.4 CDN, OSM tiles, gap-signal markers, street-view gated on /api/scans/meta mapsEmbedKey)
+- Clients dashboard → `src/pages/ClientsPage.tsx` (route /clients in `src/App.tsx`, nav in `src/components/AppShell.tsx`), publish button in `src/pages/BuilderPage.tsx`
+- Tests → `scripts/test-sell.js` (31 assertions, HTTP-level, temp DB)

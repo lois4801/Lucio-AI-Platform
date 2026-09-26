@@ -246,7 +246,69 @@ CREATE TABLE IF NOT EXISTS assistant_dismissals (
   dismissed_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (user_id, tip_key)
 );
+
+-- ---- Pindrop-style sell architecture (find -> build -> sell -> serve) ----------
+CREATE TABLE IF NOT EXISTS published_sites (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'live',           -- live | offline
+  owner_token TEXT NOT NULL,                     -- client portal access
+  visits INTEGER NOT NULL DEFAULT 0,
+  enquiries INTEGER NOT NULL DEFAULT 0,
+  published_at TEXT NOT NULL DEFAULT (datetime('now')),
+  unpublished_at TEXT
+);
+CREATE TABLE IF NOT EXISTS client_deals (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  prospect_id TEXT,
+  project_id TEXT,
+  published_site_id TEXT,
+  business_name TEXT NOT NULL,
+  build_fee_cents INTEGER NOT NULL DEFAULT 0,
+  monthly_cents INTEGER NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'cad',
+  billing_mode TEXT NOT NULL DEFAULT 'manual',   -- manual | stripe
+  stripe_payment_link TEXT NOT NULL DEFAULT '',
+  stage TEXT NOT NULL DEFAULT 'pitched',         -- pitched | active | paused | churned
+  payment_status TEXT NOT NULL DEFAULT 'unknown',-- unknown | paid | failed
+  failed_flag INTEGER NOT NULL DEFAULT 0,
+  next_billing_at TEXT,
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS change_requests (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  deal_id TEXT NOT NULL,
+  message TEXT NOT NULL,
+  photo_file_id TEXT,
+  status TEXT NOT NULL DEFAULT 'open',           -- open | done
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  done_at TEXT
+);
+CREATE TABLE IF NOT EXISTS leads (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  published_site_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL DEFAULT '',
+  message TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_leads_site ON leads(published_site_id);
+CREATE INDEX IF NOT EXISTS idx_deals_org ON client_deals(org_id);
+CREATE INDEX IF NOT EXISTS idx_pub_proj ON published_sites(project_id);
 `);
+
+// Lightweight migrations: add columns to pre-existing tables when missing.
+{
+  const cols = db.prepare('PRAGMA table_info(prospects)').all().map((c) => c.name);
+  if (!cols.includes('lat')) db.exec('ALTER TABLE prospects ADD COLUMN lat REAL');
+  if (!cols.includes('lng')) db.exec('ALTER TABLE prospects ADD COLUMN lng REAL');
+}
 
 // Seed provider registry: local-first, external disabled by default (manual §7, §14)
 const seedProviders = db.prepare(

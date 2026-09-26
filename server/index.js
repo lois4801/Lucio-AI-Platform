@@ -30,6 +30,8 @@ import { prospectsRouter } from './routes/prospects.js';
 import { marketScansRouter } from './routes/marketScans.js';
 import { mediaRouter } from './routes/media.js';
 import { assistantRouter } from './routes/assistant.js';
+import { publicRouter } from './routes/public.js';
+import { sellRouter } from './routes/sell.js';
 
 export function createApp() {
   const app = express();
@@ -70,12 +72,16 @@ export function createApp() {
   app.use('/api/scans', marketScansRouter);
   app.use('/api/media', mediaRouter);
   app.use('/api/assistant', assistantRouter);
+  app.use('/api/sell', sellRouter);
+  // Public surface (no auth): live client sites, enquiries, owner portal.
+  // Mounted BEFORE the SPA fallback so /live and /portal are never swallowed.
+  app.use(publicRouter);
 
   // Production: serve the built frontend
   const dist = path.resolve(__dirname, '../dist');
   if (fs.existsSync(dist)) {
     app.use(express.static(dist));
-    app.get(/^(?!\/api).*/, (req, res) => res.sendFile(path.join(dist, 'index.html')));
+    app.get(/^(?!\/api|\/live|\/portal).*/, (req, res) => res.sendFile(path.join(dist, 'index.html')));
   }
 
   app.use((err, req, res, next) => {

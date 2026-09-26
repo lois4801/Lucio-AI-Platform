@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,7 +7,28 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Radar, RefreshCw, FileText, Ban, FolderPlus, Eye } from 'lucide-react';
+import { Radar, RefreshCw, FileText, Ban, FolderPlus, Eye, MapPin, Navigation } from 'lucide-react';
+
+// Leaflet is loaded from CDN on demand (same pattern as scanner libs).
+function loadScript(src: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = () => resolve(); s.onerror = () => reject(new Error(`Failed to load ${src}`));
+    document.head.appendChild(s);
+  });
+}
+function loadCss(href: string) {
+  if (document.querySelector(`link[href="${href}"]`)) return;
+  const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = href; document.head.appendChild(l);
+}
+declare global { interface Window { L?: any; } }
+async function loadLeaflet(): Promise<any> {
+  if (window.L) return window.L;
+  loadCss('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
+  await loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js');
+  if (!window.L) throw new Error('Leaflet failed to initialize');
+  return window.L;
+}
 
 const FALLBACK_INDUSTRIES = ['Plumbing', 'Roofing', 'Restaurant', 'Contracting', 'Beauty & Wellness', 'Automotive', ''];
 const FALLBACK_REGIONS = ['Nova Scotia', 'Ontario', 'Alberta', ''];
@@ -24,7 +45,7 @@ type ProspectRow = {
   id: string; business_name: string; city: string; province_state: string; industry: string;
   website_status: string; website_gap_signal: string; website_confidence: number; lead_score: number;
   priority: string; score_explanation: string; recommended_offer: string; public_phone: string;
-  crm_stage: string; suppression_status: string;
+  crm_stage: string; suppression_status: string; lat?: number | null; lng?: number | null;
 };
 type Scan = { id: string; status: string; created_at: string; coverage: any; query: any };
 type Evidence = { id: string; field_name: string; value: string; source_provider: string; source_type: string; confidence: number; retrieved_at: string };
@@ -40,16 +61,103 @@ export default function MarketScanPage() {
   const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [meta, setMeta] = useState<{ industries: string[]; regions: string[]; providers: ProviderMeta[] }>({ industries: FALLBACK_INDUSTRIES, regions: FALLBACK_REGIONS, providers: [] });
+  const [meta, setMeta] = useState<{ industries: string[]; regions: string[]; providers: ProviderMeta[]; mapsEmbedKey?: string }>({ industries: FALLBACK_INDUSTRIES, regions: FALLBACK_REGIONS, providers: [] });
+  const [mapReady, setMapReady] = useState(false);
+  const [mapFailed, setMapFailed] = useState('');
+  const [nearbyLoading, setNearbyLoading] = useState(false);
+  const mapRef = useRef<any>(null);
+  const markersRef = useRef<any[]>([]);
+  const popupsRef = useRef<Map<string, any>>(new Map());
 
   useEffect(() => {
-    api<{ industries: string[]; regions: string[]; providers: ProviderMeta[] }>('/scans/meta')
-      .then((d) => setMeta({ industries: [...d.industries, ''], regions: [...d.regions, ''], providers: d.providers || [] }))
+    api<{ industries: string[]; regions: string[]; providers: ProviderMeta[]; mapsEmbedKey?: string }>('/scans/meta')
+      .then((d) => setMeta({ industries: [...d.industries, ''], regions: [...d.regions, ''], providers: d.providers || [], mapsEmbedKey: d.mapsEmbedKey || '' }))
       .catch(() => {});
   }, []);
 
   const loadScans = () => api<{ scans: Scan[] }>('/scans').then((d) => setScans(d.scans)).catch(() => {});
   useEffect(() => { loadScans(); }, []);
+
+  const runNearby = async (lat: number, lng: number) => {
+    if (nearbyLoading) return;
+    setNearbyLoading(true); setError('');
+    try {
+      const d = await api<{ results: ProspectRow[]; source: string; note?: string }>('/scans/nearby', {
+        method: 'POST',
+        body: JSON.stringify({ lat, lng, industry: form.industry || 'business', maxResults: form.maxResults || 40 }),
+      });
+      setResults((rs) => {
+        const seen = new Set(rs.map((r) => `${r.business_name}|${r.city}`.toLowerCase()));
+        const fresh = d.results.filter((r) => !seen.has(`${r.business_name}|${r.city}`.toLowerCase()));
+        return [...rs, ...fresh];
+      });
+      setNotice(`Pin-drop scan near ${lat.toFixed(4)}, ${lng.toFixed(4)}: ${d.results.length} businesses (${d.source}). ${d.note || ''}`);
+    } catch (e: any) { setError(e.message); }
+    finally { setNearbyLoading(false); }
+  };
+  const runNearbyRef = useRef(runNearby);
+  runNearbyRef.current = runNearby;
+
+  const esc = (s: string) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] || c));
+  const markerColor = (p: ProspectRow) =>
+    p.website_gap_signal === 'GAP_NO_VERIFIED_WEBSITE' ? '#dc2626'
+    : p.website_gap_signal === 'GAP_NONE' ? '#16a34a' : '#d97706';
+
+  // Initialize Leaflet map once.
+  useEffect(() => {
+    let cancelled = false;
+    loadLeaflet().then((L) => {
+      if (cancelled || mapRef.current) return;
+      const map = L.map('prospect-map', { center: [56.13, -106.35], zoom: 4 });
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+      map.on('click', (e: any) => { runNearbyRef.current(e.latlng.lat, e.latlng.lng); });
+      mapRef.current = map;
+      setMapReady(true);
+    }).catch((e: any) => setMapFailed(e.message));
+    return () => { cancelled = true; };
+  }, []);
+
+  // Sync markers with results.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !window.L || !mapReady) return;
+    const L = window.L;
+    markersRef.current.forEach((m) => m.remove());
+    markersRef.current = [];
+    popupsRef.current.clear();
+    const pts = results.filter((r) => typeof r.lat === 'number' && typeof r.lng === 'number' && r.lat !== 0 && r.lng !== 0);
+    pts.forEach((p) => {
+      const color = markerColor(p);
+      const m = L.circleMarker([p.lat, p.lng], { radius: 7, color, weight: 2, fillColor: color, fillOpacity: 0.65 }).addTo(map);
+      const detail = `<div style="min-width:220px">
+        <div style="font-weight:700">${esc(p.business_name)}</div>
+        <div style="font-size:12px;color:#666">${esc(p.city)}, ${esc(p.province_state)} · ${esc(p.industry)}</div>
+        <div style="font-size:12px;margin-top:4px">${esc(GAP_LABEL[p.website_gap_signal] || p.website_gap_signal)} · score <b>${Math.round(p.lead_score)}</b></div>
+        <div style="font-size:11px;color:#555;margin-top:2px">${esc(p.recommended_offer || '')}</div>
+        <div style="margin-top:6px;display:flex;gap:6px">
+          <button id="gen-${p.id}" style="font-size:11px;padding:3px 8px;border:1px solid #ccc;border-radius:6px;background:#111;color:#fff;cursor:pointer">Generate opportunity</button>
+          ${meta.mapsEmbedKey ? `<button id="sv-${p.id}" style="font-size:11px;padding:3px 8px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer">Street view</button>` : ''}
+        </div>
+      </div>`;
+      m.bindPopup(L.popup({ maxWidth: 320 }).setContent(detail));
+      m.on('popupopen', () => {
+        const gen = document.getElementById(`gen-${p.id}`);
+        if (gen) gen.onclick = () => generateOpportunity(p);
+        const sv = document.getElementById(`sv-${p.id}`);
+        if (sv) sv.onclick = () => {
+          const embed = `<div style="width:300px"><iframe width="300" height="200" style="border:0;border-radius:8px" loading="lazy"
+            src="https://www.google.com/maps/embed/v1/streetview?location=${p.lat},${p.lng}&key=${encodeURIComponent(meta.mapsEmbedKey || '')}"></iframe>
+            <div style="font-size:11px;color:#666;margin-top:4px">${esc(p.business_name)} — <span style="cursor:pointer;text-decoration:underline" id="sv-back-${p.id}">back</span></div></div>`;
+          m.getPopup().setContent(embed).update();
+          const back = document.getElementById(`sv-back-${p.id}`);
+          if (back) back.onclick = () => { m.getPopup().setContent(detail).update(); };
+        };
+      });
+      markersRef.current.push(m);
+    });
+    if (pts.length) map.fitBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lng])).pad(0.2));
+  }, [results, mapReady]);
+
 
   const startScan = async () => {
     setError(''); setNotice(''); setScanning(true);
@@ -204,6 +312,25 @@ export default function MarketScanPage() {
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2"><MapPin className="h-5 w-5" /> Discovery map</CardTitle>
+          <CardDescription>
+            Pin-drop discovery: click anywhere on the map to scan a 3 km radius around that point with the selected industry.
+            Markers: <span className="text-red-600 font-medium">red = no website</span> · <span className="text-amber-600 font-medium">amber = weak/social</span> · <span className="text-green-600 font-medium">green = has site</span>.
+            {meta.providers.some((p) => p.id === 'google-places' && p.configured)
+              ? ' Live Google Places data.'
+              : ' Live data requires GOOGLE_PLACES_API_KEY in .env — until then, fixture results use the nearest city center (approximate coordinates, labeled).'}
+            {meta.mapsEmbedKey ? ' Street view available on each marker.' : ' Add GOOGLE_MAPS_EMBED_KEY to .env to enable street-view previews.'}
+          </CardDescription></CardHeader>
+        <CardContent>
+          {mapFailed && <p className="text-sm text-amber-600 dark:text-amber-400">Map could not load ({mapFailed}). Check your internet connection — map tiles and Leaflet load from CDN.</p>}
+          <div id="prospect-map" className="h-[420px] w-full rounded-lg border relative z-0" />
+          {nearbyLoading && (
+            <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1"><Navigation className="h-3 w-3 animate-pulse" /> Scanning around dropped pin…</p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader><CardTitle>Scan history</CardTitle></CardHeader>

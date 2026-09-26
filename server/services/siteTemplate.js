@@ -381,12 +381,27 @@ ${faqBlock}
     <div class="absolute -top-24 -right-24 h-72 w-72 rounded-full opacity-20 blur-3xl" style="background:var(--accent)"></div>
     <h2 class="font-display text-3xl md:text-4xl font-bold mb-2 relative">${esc(contactCta)}</h2>
     <p class="mb-8 relative" style="color:var(--muted)">We reply within one business day.</p>
-    <form class="relative grid gap-4 max-w-xl" onsubmit="event.preventDefault();this.innerHTML='<p style=\\'color:var(--accent)\\' class=\\'font-bold text-lg\\'>Thank you — we will be in touch shortly.</p>'">
-      <input required placeholder="Your name" class="px-5 py-4"/>
-      <input required type="email" placeholder="Email" class="px-5 py-4"/>
-      <textarea required rows="4" placeholder="How can we help?" class="px-5 py-4"></textarea>
+    <form class="relative grid gap-4 max-w-xl" data-enquire>
+      <input required placeholder="Your name" name="name" class="px-5 py-4"/>
+      <input required type="email" name="email" placeholder="Email" class="px-5 py-4"/>
+      <textarea required rows="4" name="message" placeholder="How can we help?" class="px-5 py-4"></textarea>
+      <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true"/>
       <button type="submit" class="btn-u magnet">${esc(ctaLabel)}</button>
     </form>
+    <script>
+    (function(){
+      var f=document.querySelector('[data-enquire]');if(!f)return;
+      var m=location.pathname.match(/^\\/live\\/([a-z0-9-]+)\\/?$/i);
+      if(!m)return; // preview mode — no lead capture
+      f.addEventListener('submit',function(ev){
+        ev.preventDefault();
+        var d={};new FormData(f).forEach(function(v,k){d[k]=v});
+        fetch('/api/live/'+m[1]+'/enquire',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)})
+          .then(function(){f.innerHTML='<p style="color:var(--accent)" class="font-bold text-lg">Thank you — we will be in touch shortly.</p>'})
+          .catch(function(){f.innerHTML='<p style="color:var(--accent)" class="font-bold text-lg">Thank you — we will be in touch shortly.</p>'});
+      });
+    })();
+    </script>
   </div>
 </section>
 

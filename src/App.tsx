@@ -13,6 +13,7 @@ import JobsPage from '@/pages/JobsPage';
 import AuditPage from '@/pages/AuditPage';
 import GatewayPage from '@/pages/GatewayPage';
 import MarketScanPage from '@/pages/MarketScanPage';
+import ClientsPage from '@/pages/ClientsPage';
 import { Button } from '@/components/ui/button';
 
 // A page crash must never leave the user staring at a blank screen — show the
@@ -66,6 +67,7 @@ export default function App() {
         <Route path="/scanner" element={page(<MarketScanPage />)} />
         <Route path="/projects" element={page(<ProjectsPage />)} />
         <Route path="/prospects" element={page(<ProspectsPage />)} />
+        <Route path="/clients" element={page(<ClientsPage />)} />
         <Route path="/research" element={page(<ResearchPage />)} />
         <Route path="/files" element={page(<FilesPage />)} />
         <Route path="/jobs" element={page(<JobsPage />)} />

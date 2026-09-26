@@ -19,7 +19,11 @@ const vite = await createViteServer({
     port: Number(argValue('port', 3000)),
     host: viteArgs.includes('--host') ? true : argValue('host', undefined),
     strictPort: false,
-    proxy: { '/api': { target: `http://localhost:${PORT}`, changeOrigin: true } },
+    proxy: {
+      '/api': { target: `http://localhost:${PORT}`, changeOrigin: true },
+      '/live': { target: `http://localhost:${PORT}`, changeOrigin: true },
+      '/portal': { target: `http://localhost:${PORT}`, changeOrigin: true },
+    },
   },
   clearScreen: false,
 });

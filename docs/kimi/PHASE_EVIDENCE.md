@@ -275,3 +275,52 @@
   white screen.
 - Verified in the user's own tab on :7101: card click -> /builder?project=<id>
   renders; full build runs; preview iframe + Design QA card appear; tsc + build clean.
+
+---
+
+## Pindrop sell architecture + map discovery (2026-09-26, evening)
+
+### What was copied from pindrop.host (functional pillars)
+- **Map-first discovery**: Leaflet/OSM map in the Market Scanner; markers colored by
+  website-gap signal (red = no website, amber = weak/social, green = has site);
+  popups carry name, gap, score, recommended offer and a "Generate opportunity"
+  shortcut that runs the existing opportunity → create-project flow.
+- **Pin-drop scanning**: map click → POST /api/scans/nearby → Places searchText with
+  locationBias circle (3 km radius) via `googlePlacesProvider.nearby`; results flow
+  through the identical dedupe/verify/score/upsert pipeline and merge into the table.
+- **Sell pipeline**: Builder "Publish live link" → POST /api/sell/publish → public
+  URL /live/:slug (serves latest site artifact, counts visits) → Clients & Sites page
+  (/clients) with published-sites table, deals (stage, build fee, monthly, billing
+  mode, payment status, failed-payment flag, next billing date), Stripe payment-link
+  button (manual fallback message when unconfigured), change-request inbox with
+  photos, and a leads table.
+- **Owner portal**: /portal/:owner_token — standalone server-rendered HTML, no Lucio
+  account required; stats, change-request form with photo upload (base64 JSON, stored
+  via the on-disk files store), previous requests list. First request auto-creates an
+  ACTIVE manual deal. Rate-limited (20/min) with per-IP limits on all public writes.
+- **Enquiries**: generated sites' contact forms POST to /api/live/:slug/enquire when
+  served from /live/ (honeypot + per-IP rate limit); leads land in the Clients page.
+
+### What was deliberately skipped
+NFC review cards (physical merch), the credits system (internal metering), Stripe
+webhooks (manual payment-status flags instead).
+
+### Verification
+- `scripts/test-sell.js` (NEW): 31 assertions over HTTP on an ephemeral port with a
+  temp DB — publish gating, live serving + visit counting, enquiry + honeypot,
+  portal render/request/photo/done flow, deal CRUD + field guards, manual-billing
+  steering, unpublish behavior, pin-drop validation + labeled fixture fallback.
+- Full regression: test-google-places (38), test-phase3 (58), test-phase4 (39),
+  test-phase6 (55), test-assistant (34) — all green. tsc -b clean, vite build clean.
+- Browser E2E on the user's live DB (read-only inspection): published the existing
+  "Harbour Plumbing & Heating Website" project through the service layer →
+  /live/harbour-plumbing-and-heating-website 200, /portal/<token> 200, enquiry POST
+  201; smoke lead removed afterwards. Clients & Sites and Market Scanner pages
+  render in the in-app browser with the map initialized.
+
+### Live-data gating (honesty)
+- `GOOGLE_PLACES_API_KEY` — live Google Places scans (city + pin-drop). Absent →
+  labeled fixture fallback.
+- `GOOGLE_MAPS_EMBED_KEY` — street-view embeds in map popups. Absent → button hidden.
+- `STRIPE_SECRET_KEY` — card billing. Absent → manual mode (keep 100%), error message
+  steers explicitly. All three documented in .env.example; none committed.

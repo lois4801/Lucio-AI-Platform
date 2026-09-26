@@ -21,7 +21,7 @@ const ENDPOINT = 'https://places.googleapis.com/v1/places:searchText';
 const FIELD_MASK = [
   'places.id', 'places.displayName', 'places.formattedAddress', 'places.addressComponents',
   'places.nationalPhoneNumber', 'places.websiteUri', 'places.rating', 'places.userRatingCount',
-  'places.types', 'places.googleMapsUri',
+  'places.types', 'places.googleMapsUri', 'places.location',
 ].join(',');
 
 export function isGooglePlacesConfigured() {
@@ -81,6 +81,8 @@ export function normalizePlace(place) {
     public_description: '',
     review_signals: rating != null ? `rating ${rating} from ${count ?? '?'} Google reviews` : '',
     google_maps_url: place.googleMapsUri || '',
+    lat: typeof place.location?.latitude === 'number' ? place.location.latitude : null,
+    lng: typeof place.location?.longitude === 'number' ? place.location.longitude : null,
     source: 'google-places',
     source_record_id: place.id || '',
     retrieved_at: new Date().toISOString(),
@@ -111,6 +113,27 @@ async function defaultFetch(body) {
   return json || {};
 }
 
+// Nearby search for map discovery (pin drop): Text Search biased to a circle
+// around the dropped pin. Requires a configured key; the pipeline falls back to
+// the nearest fixture city otherwise.
+async function searchNearby({ lat, lng, industry = '', maxResults = 20, fetcher = defaultFetch } = {}) {
+  if (!isGooglePlacesConfigured()) throw new Error('Google Places is not configured — set GOOGLE_PLACES_API_KEY in .env');
+  const terms = GOOGLE_QUERY_TERMS[industry] || [String(industry || 'local business').toLowerCase()];
+  const out = [];
+  for (const term of terms) {
+    if (out.length >= maxResults) break;
+    const json = await fetcher({
+      textQuery: term,
+      pageSize: Math.min(20, maxResults - out.length),
+      languageCode: 'en',
+      regionCode: 'CA',
+      locationBias: { circle: { center: { latitude: lat, longitude: lng }, radius: 3000 } },
+    });
+    for (const place of json.places || []) out.push(normalizePlace(place));
+  }
+  return out;
+}
+
 export const googlePlacesProvider = {
   id: 'google-places',
   kind: 'place-directory',
@@ -138,4 +161,6 @@ export const googlePlacesProvider = {
     }
     return out;
   },
+  // Pin-drop map discovery: searchText biased to a circle around the dropped pin.
+  nearby: searchNearby,
 };

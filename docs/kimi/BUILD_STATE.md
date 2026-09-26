@@ -22,6 +22,7 @@ Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 | Assistant layer | DONE (ships immediately) | 18-agent v9.6 squad embedded verbatim; journey-aware tips + chat panel on every authenticated page for all roles |
 | 6 Motion Engine / Cinematic expansion | DONE | LUCIO_SCENE_REGISTRY (10 scenes: loop/scroll/story/micro), MOTION INTENSITY tiers, deterministic seeded selection, device-aware fallbacks, CINEMA-STORY-01 chapters, QA contract check |
 | 7–17 | PENDING | Phase 7 next |
+| Sell architecture + map discovery (Pindrop parity) | DONE | Publish live links, owner portal with photo requests, deals/billing (manual default, Stripe-gated), leads inbox, enquiry-posting generated sites, pin-drop map discovery with street-view gating |
 
 ## Session-resume notes
 - Backend: Express + better-sqlite3 (data/lucio.db), serves /api on port 8787; Vite dev proxies /api.
@@ -30,3 +31,5 @@ Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 - Media library: data/media/ (gitignored) — 21 hero JPGs (12 archetypes + 9 alternates) + 6 gallery textures; regenerate with `python scripts/gen-media-library.py [heroes|alternates|textures|all]`.
 - Dev server: `npm run dev -- --port 7100` (log: lucio_dev.log); tests: `node scripts/test-phase3.js` (58) + `node scripts/test-phase4.js` (39).
 - ORPHANED VITE WATCH: dev.js's Vite child survives parent taskkill. Kill BOTH the :8787 PID and the :7100 PID, verify with netstat, before restart — a zombie Vite on [::1]:7100 served stale code during the Phase 4 E2E.
+- Sell architecture: dev.js Vite proxy now also forwards /live and /portal to :8787 — any preview server started before this change must be restarted or public links 404 through the dev port.
+- Test suites: test-sell.js (31) added; full set = sell(31) + google-places(38) + phase3(58) + phase4(39) + phase6(55) + assistant(34) = 255 assertions.

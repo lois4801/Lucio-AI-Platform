@@ -6,7 +6,8 @@
 // -> Generate website opportunity brief.
 import crypto from 'node:crypto';
 import { db, audit } from '../../db.js';
-import { getProviders, listProviderMeta } from './providers.js';
+import { getProviders, listProviderMeta, fixtureDirectoryProvider, nearestCity } from './providers.js';
+import { googlePlacesProvider, isGooglePlacesConfigured } from './googlePlaces.js';
 import { fetchWithGuards } from '../ssrfGuard.js';
 
 // ---------------------------------------------------------------------------
@@ -245,6 +246,7 @@ export function upsertProspect(orgId, scanId, biz, resolution, scoring) {
     lead_reason: resolution.resolution_note,
     recommended_service: scoring.recommended_service, recommended_offer: scoring.recommended_offer,
     crm_stage: 'DISCOVERED', last_verified_at: resolution.last_verified_at,
+    lat: biz.lat ?? null, lng: biz.lng ?? null,
   };
 
   let prospectId;
@@ -381,6 +383,66 @@ export async function runMarketScan(orgId, user, rawQuery, ip = '') {
   }
 }
 
+// Pin-drop map discovery (Pindrop-style): scan a circle around a map click.
+// Live Google Places when configured; otherwise the labeled fixture directory
+// for the nearest known city (approximate coordinates — honestly labeled).
+export async function runNearbyScan(orgId, user, { lat, lng, industry = '', maxResults = 40 } = {}, ip = '') {
+  lat = Number(lat); lng = Number(lng); maxResults = Math.max(1, Math.min(100, Number(maxResults) || 40));
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    throw new Error('invalid coordinates — expected lat/lng numbers');
+  }
+  industry = String(industry || '').trim();
+  const scanId = crypto.randomUUID();
+  const label = `${industry || 'Businesses'} @ ${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+  db.prepare(`INSERT INTO market_scans (id, org_id, name, query_json, status, created_by, started_at) VALUES (?,?,?,?,'running',?,?)`)
+    .run(scanId, orgId, `Pin-drop — ${label}`, JSON.stringify({ lat, lng, industry, maxResults, mode: 'nearby' }), user.id, new Date().toISOString());
+  audit(orgId, user.id, 'scan.start', 'market_scan', scanId, { mode: 'nearby', lat, lng, industry }, ip);
+
+  let candidates = [], source = '', note = '';
+  if (isGooglePlacesConfigured()) {
+    candidates = await googlePlacesProvider.nearby({ lat, lng, industry, maxResults });
+    source = 'google-places (live)';
+  } else {
+    const city = nearestCity(lat, lng);
+    candidates = await fixtureDirectoryProvider.search({ industry, city, maxResults });
+    source = 'fixture-directory (dev data)';
+    note = `Live Google Places not configured — showing fixture businesses for the nearest city center (${city}). Coordinates are approximate.`;
+  }
+  for (const c of candidates) { if (!c.industry) c.industry = industry; }
+
+  const suppressed = new Set(
+    db.prepare(`SELECT business_name, city FROM prospects WHERE org_id = ? AND suppression_status != 'NONE'`).all(orgId)
+      .map((p) => `${normalizeName(p.business_name)}|${normalizeName(p.city)}`)
+  );
+  const { merged } = dedupeCandidates(candidates.filter((c) =>
+    !suppressed.has(`${normalizeName(c.business_name)}|${normalizeName(c.city)}`)));
+
+  const results = [];
+  for (const biz of merged.slice(0, maxResults)) {
+    const resolution = await resolveWebsitePresence(biz);
+    const scoring = scoreOpportunity(biz, resolution, 'website');
+    const { prospectId } = upsertProspect(orgId, scanId, biz, resolution, scoring);
+    results.push({
+      id: prospectId, prospect_id: prospectId, business_name: biz.business_name, city: biz.city,
+      province_state: biz.province_state, industry: biz.industry, website_status: resolution.website_status,
+      website_gap_signal: resolution.website_gap_signal, website_confidence: resolution.website_confidence,
+      lead_score: scoring.lead_score, priority: scoring.priority, score_explanation: scoring.score_explanation,
+      recommended_offer: scoring.recommended_offer, public_phone: biz.public_phone,
+      crm_stage: 'DISCOVERED', suppression_status: 'NONE', lat: biz.lat ?? null, lng: biz.lng ?? null,
+    });
+  }
+  const coverage = {
+    mode: 'nearby', requested_geography: label, sources_completed: source ? [source.split(' ')[0]] : [],
+    records_discovered: candidates.length, unique_businesses: merged.length, duplicates_removed: candidates.length - merged.length,
+    website_gap_candidates: results.filter((r) => r.website_gap_signal !== 'GAP_NONE').length,
+    coverage_notes: note || 'Live Google Places data within a 3 km radius of the dropped pin.',
+  };
+  db.prepare(`UPDATE market_scans SET status = 'complete', coverage_json = ?, records_discovered = ?, unique_businesses = ?, duplicates_removed = ?, website_gap_candidates = ?, completed_at = datetime('now') WHERE id = ?`)
+    .run(JSON.stringify(coverage), coverage.records_discovered, coverage.unique_businesses, coverage.duplicates_removed, coverage.website_gap_candidates, scanId);
+  audit(orgId, user.id, 'scan.complete', 'market_scan', scanId, { mode: 'nearby', unique: merged.length }, ip);
+  return { scanId, results, source, note, coverage };
+}
+
 export function listScans(orgId) {
   return db.prepare(`SELECT * FROM market_scans WHERE org_id = ? ORDER BY created_at DESC LIMIT 100`).all(orgId)
     .map((s) => ({ ...s, query: safeParse(s.query_json), coverage: safeParse(s.coverage_json) }));
@@ -389,7 +451,7 @@ export function listScans(orgId) {
 export function getScan(orgId, scanId) {
   const s = db.prepare(`SELECT * FROM market_scans WHERE id = ? AND org_id = ?`).get(scanId, orgId);
   if (!s) return null;
-  const prospects = db.prepare(`SELECT id, business_name, city, province_state, industry, website_status, website_gap_signal, website_confidence, lead_score, priority, score_explanation, recommended_offer, public_phone, crm_stage, suppression_status, created_at FROM prospects WHERE scan_id = ? ORDER BY lead_score DESC`).all(scanId);
+  const prospects = db.prepare(`SELECT id, business_name, city, province_state, industry, website_status, website_gap_signal, website_confidence, lead_score, priority, score_explanation, recommended_offer, public_phone, crm_stage, suppression_status, lat, lng, created_at FROM prospects WHERE scan_id = ? ORDER BY lead_score DESC`).all(scanId);
   return { ...s, query: safeParse(s.query_json), coverage: safeParse(s.coverage_json), prospects };
 }
 

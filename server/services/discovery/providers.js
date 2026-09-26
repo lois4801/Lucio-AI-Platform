@@ -32,6 +32,36 @@ const PROVINCE_CODE_TO_NAME = {
   NL: 'Newfoundland and Labrador', YT: 'Yukon', NT: 'Northwest Territories', NU: 'Nunavut',
 };
 
+// Approximate city centroids (2 decimals) for map rendering of fixture records.
+// Labeled approximate — live Google Places results carry real per-place coordinates.
+export const CITY_COORDS = {
+  'Vancouver': [49.28, -123.12], 'Victoria': [48.43, -123.36], 'Kelowna': [49.89, -119.5], 'Surrey': [49.11, -122.83], 'Nanaimo': [49.17, -123.94],
+  'Calgary': [51.05, -114.07], 'Edmonton': [53.55, -113.49], 'Red Deer': [52.27, -113.81], 'Banff': [51.18, -115.57], 'Fort McMurray': [56.73, -111.38],
+  'Saskatoon': [52.16, -106.67], 'Regina': [50.45, -104.62], 'Prince Albert': [53.2, -105.75], 'Moose Jaw': [50.39, -105.55],
+  'Winnipeg': [49.9, -97.14], 'Brandon': [49.85, -99.95], 'Thompson': [55.74, -97.86], 'Steinbach': [49.53, -96.69],
+  'Toronto': [43.65, -79.38], 'Ottawa': [45.42, -75.7], 'Mississauga': [43.59, -79.64], 'Thunder Bay': [48.38, -89.25], 'Kingston': [44.23, -76.49], 'London': [42.98, -81.25],
+  'Montreal': [45.5, -73.57], 'Quebec City': [46.81, -71.21], 'Laval': [45.61, -73.71], 'Gatineau': [45.48, -75.7], 'Sherbrooke': [45.4, -71.9],
+  'Moncton': [46.09, -64.77], 'Saint John': [45.27, -66.06], 'Fredericton': [45.96, -66.64], 'Bathurst': [47.62, -65.65],
+  'Halifax': [44.65, -63.57], 'Dartmouth': [44.67, -63.57], 'Sydney': [46.14, -60.18], 'Truro': [45.36, -63.28], 'Bedford': [44.73, -63.66],
+  'Lunenburg': [44.38, -64.32], 'New Glasgow': [45.59, -62.65], 'Wolfville': [45.09, -64.36], 'Bridgewater': [44.38, -64.52], 'North Sydney': [46.2, -60.26],
+  'Charlottetown': [46.24, -63.13], 'Summerside': [46.39, -63.79], 'Stratford': [46.22, -63.09],
+  "St. John's": [47.56, -52.71], 'Mount Pearl': [47.52, -52.78], 'Corner Brook': [48.95, -57.95], 'Gander': [48.95, -54.61],
+  'Whitehorse': [60.72, -135.05], 'Dawson City': [64.06, -139.43], 'Watson Lake': [60.06, -128.71],
+  'Yellowknife': [62.45, -114.37], 'Hay River': [60.82, -115.8], 'Inuvik': [68.36, -133.72],
+  'Iqaluit': [63.75, -68.52], 'Rankin Inlet': [62.81, -92.08], 'Arviat': [61.11, -94.06],
+};
+
+// Nearest known fixture city to an arbitrary coordinate (fallback for pin-drop
+// scans when live Google Places is not configured).
+export function nearestCity(lat, lng) {
+  let best = null, bestD = Infinity;
+  for (const [city, [clat, clng]] of Object.entries(CITY_COORDS)) {
+    const d = (clat - lat) ** 2 + (clng - lng) ** 2;
+    if (d < bestD) { bestD = d; best = city; }
+  }
+  return best;
+}
+
 // ---------------------------------------------------------------------------
 // Industry bank — 32 service verticals (§17.13.1 extensible service-need discovery)
 const INDUSTRY_BANK = [
@@ -77,6 +107,7 @@ function composeBusiness(region, province, city, bank, i) {
   const mode = i % 10;
   const website_url = mode < 5 ? '' : mode < 7 ? `http://${slug(name)}-${city.toLowerCase().replace(/[^a-z]/g, '')}.example.com` : mode < 8 ? 'https://example.com/' + slug(name) : '';
   const social = mode % 3 === 0 ? [`https://facebook.com/${slug(name)}`] : mode % 3 === 1 ? [`https://instagram.com/${slug(name)}`] : [];
+  const [baseLat, baseLng] = CITY_COORDS[city] || [null, null];
   return {
     business_name: name,
     industry: bank.industry,
@@ -89,6 +120,9 @@ function composeBusiness(region, province, city, bank, i) {
     rating: (35 + ((i * 7) % 15)) / 10,
     review_count: 5 + ((i * 41) % 480),
     categories: bank.categories,
+    // Deterministic small spread (~±2.5 km) so city fixtures don't stack on one point.
+    lat: baseLat == null ? null : baseLat + (((i * 7) % 50) - 25) / 1000,
+    lng: baseLng == null ? null : baseLng + (((i * 13) % 50) - 25) / 1000,
   };
 }
 
@@ -191,6 +225,8 @@ function normalizeCandidate(b, source) {
     service_area: b.service_area || '',
     public_description: b.public_description || b.description || '',
     review_signals: b.rating ? `rating ${b.rating} from ${b.review_count ?? '?'} public reviews` : '',
+    lat: typeof b.lat === 'number' ? b.lat : (CITY_COORDS[b.city] ? CITY_COORDS[b.city][0] : null),
+    lng: typeof b.lng === 'number' ? b.lng : (CITY_COORDS[b.city] ? CITY_COORDS[b.city][1] : null),
     source,
     source_record_id: b.source_record_id || '',
     retrieved_at: new Date().toISOString(),
