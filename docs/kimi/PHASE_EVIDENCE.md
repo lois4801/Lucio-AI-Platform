@@ -229,3 +229,35 @@
   /builder?project=<id>, plus an explicit "Build" button; delete stops propagation.
   BuilderPage reads ?project= to preselect the project and syncs the URL on switch.
 - Verified: tsc clean, vite transforms 200, DOM click navigates to /builder?project=<id>.
+
+## Live Google data for market scans (owner directive, 2026-09-26)
+- Owner directive: "always use google.maps and google.com when scanning the market…
+  all data real and accurate." Implemented as the OFFICIAL Google Places API (New)
+  Text Search adapter — Google Maps scraping was deliberately NOT built (violates
+  Google's Terms of Service; the API is the permitted integration path).
+- server/services/discovery/googlePlaces.js: textQuery per industry category term
+  ("plumber in Halifax, NS, Canada"), regionCode CA, pageSize caps, multi-term
+  industries (e.g. Beauty & Wellness -> hair salon + spa). Every candidate carries
+  source 'google-places', the immutable place id as source_record_id, real
+  rating/review counts, and retrieved_at. The website gap signal is REAL field
+  state: Places returns websiteUri only when a website exists on record.
+- Credential rule (manual: secret references only): GOOGLE_PLACES_API_KEY read
+  exclusively from env; gitignored .env loaded by a minimal parser at server boot
+  (server/index.js); .env.example documents setup. No key in code or commits.
+- Provider wiring: getProviders leads with Google Places when configured;
+  normalizeRequest defaults to ['google-places','fixture-directory'] and
+  unconfigured providers are filtered out, so scans degrade cleanly to the LABELED
+  fixture directory — never a silent claim of live data. Per-provider failures are
+  caught and recorded in coverage.source_errors without sinking the scan.
+- UI: Market Scanner shows a data-source badge row (● LIVE · Google Places vs
+  fixture dataset) and per-scan results header badge; the scan form no longer
+  hardcodes the fixture source (server picks). /scans/meta exposes provider
+  live/configured flags.
+- Tests: scripts/test-google-places.js — 38/38 PASS (config gating, normalization,
+  query construction, full live pipeline with stubbed HTTP, evidence provenance,
+  genuine gap signals, fallback + failure resilience). Regressions: phase3 58/58,
+  phase4 39/39, phase6 55/55, assistant 34/34, tsc clean, build clean.
+- E2E through :7100: /scans/meta reports configured flags; without a key the scan
+  completes via fixture-directory only; with a deliberately bad key, google-places
+  failure is recorded in source_errors and the fixture fallback still serves.
+- Gate: PASS — pending the owner's real GOOGLE_PLACES_API_KEY for true live data.

@@ -85,3 +85,18 @@
   is honored with zero external animation libraries to keep the runtime sovereign.
 - Consequence: builds stay reproducible per seed, MINIMAL pages carry no dead motion
   code, and Design QA can verify the scroll-scene contract objectively.
+====
+## D11 — Live market data via official Google Places API, never scraping
+- Date: 2026-09-26
+- Decision: the owner directive to scan with Google data is implemented through the
+  official Places API (New) Text Search behind a provider adapter, with the key as a
+  secret reference (GOOGLE_PLACES_API_KEY via gitignored .env). Direct Google Maps
+  scraping was rejected as a violation of Google's Terms of Service. When the key is
+  absent or fails, scans degrade to the fixture directory which is ALWAYS labeled as
+  dev data in the UI (live badge vs fixture badge) — the platform never presents
+  fixture records as real market data, and per-provider errors are recorded in
+  coverage.source_errors instead of failing the scan.
+- Consequence: data accuracy is bounded by Google's own records; the gap signal
+  (no websiteUri) is genuine provider field state rather than inference. Live scans
+  require the owner to supply an API key; until then the honest fallback keeps every
+  workflow testable.

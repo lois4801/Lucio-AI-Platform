@@ -87,3 +87,13 @@ Maps canonical manual requirements to concrete files in this repository.
 - Route forwards motionIntensity (plan + build) → server/routes/builder.js
 - QA scroll-scene contract check (reveal driver + static fallback) → server/services/designQA.js
 - Tests → scripts/test-phase6.js (55 deterministic assertions)
+
+## Live Google scan provider (owner directive)
+- Places API (New) adapter, normalization, query terms, config gating
+  → server/services/discovery/googlePlaces.js
+- Provider registry ordering + meta flags → server/services/discovery/providers.js
+- Default sources, per-provider failure resilience → server/services/discovery/pipeline.js
+- .env secret loader (boot) → server/index.js
+- /scans/meta providers → server/routes/marketScans.js
+- Source badges + server-picked sources → src/pages/MarketScanPage.tsx
+- Tests → scripts/test-google-places.js (38 assertions)
