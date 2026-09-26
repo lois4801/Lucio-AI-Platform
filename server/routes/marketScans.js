@@ -3,6 +3,7 @@ import { db, audit } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { runMarketScan, listScans, getScan, resolveWebsitePresence } from '../services/discovery/pipeline.js';
 import { generateWebsiteOpportunity, createProjectFromOpportunity, listOpportunities } from '../services/opportunity.js';
+import { INDUSTRIES, REGIONS } from '../services/discovery/providers.js';
 
 export const marketScansRouter = Router();
 marketScansRouter.use(requireAuth);
@@ -18,6 +19,11 @@ marketScansRouter.post('/', requireRole('member'), async (req, res) => {
 });
 
 marketScansRouter.get('/', (req, res) => res.json({ scans: listScans(req.user.orgId) }));
+
+// Operator metadata: industries and regions exposed by the configured providers
+marketScansRouter.get('/meta', (req, res) => {
+  res.json({ industries: INDUSTRIES, regions: REGIONS, providers: ['fixture-directory', 'user-list'] });
+});
 
 marketScansRouter.get('/:id', (req, res) => {
   const scan = getScan(req.user.orgId, req.params.id);

@@ -68,3 +68,34 @@
   saved scans (§17.13.17 persistence) scaffolded but minimal; offline sandbox: live URL checks classify honestly as
   BROKEN/UNKNOWN when DNS is unavailable.
 - Gate: PASS for local dev scope. Live-provider validation BLOCKED (B3).
+
+## Phase 3 expansion — Nationwide coverage + luxury media engine (user request 2026-09-26)
+- Date: 2026-09-26
+- Fixture directory expanded: 33 industries × all 13 provinces/territories × every municipality in GEO_UNITS
+  = 7,805 synthetic businesses (plus 17 hand-written anchors); a single-province industry scan now returns dozens
+  of candidates (verified: Restaurant/British Columbia → 20 unique, 20 website-gap candidates). Scanner UI
+  dropdowns now load industries/regions from GET /api/scans/meta with local fallback lists.
+- Data-quality fixes proven by tests: deterministic composer seeds guarantee distinct names/phones per
+  (industry, city); entity-resolution dedupe no longer matches on RFC 2606 reserved example hosts
+  (isReservedExampleHost) — two businesses sharing an example.com placeholder are NOT the same business;
+  fixture confirmed-posture URLs keep example.com paths for live-check realism.
+- Luxury media engine (server/services/mediaEngine.js): curated AI-generated 4K library in data/media/
+  (12 industry hero images at 3840×2160 + 6 gallery textures at 2048², generated offline via
+  scripts/gen-media-library.py); industry→archetype mapping; deterministic 3-image gallery picks; procedural
+  SVG art fallback (resolution-independent) when the library is absent — no paid image service is ever required
+  for core flows. Served via GET /api/media/:name.
+- Website scaffold v3 (server/services/siteTemplate.js): Tailwind Play CDN with inline tailwind.config driven by
+  the LD palette/fonts; full-screen cinematic hero (ken-burns 4K image, vignette overlays, word-by-word staggered
+  headline, shine-sweep .btn-lux buttons, scroll hint); aurora scene for CINEMATIC_UNIVERSE; hover-lift cards;
+  IntersectionObserver scroll reveals; prefers-reduced-motion disables all animation (Component Universe mandate).
+- Builder UX: projects created from market-scan opportunities reuse the prospect's business name as the site
+  name when the build goal doesn't state one (withProjectSiteName in server/routes/builder.js).
+- Tests: `node scripts/test-phase3.js` — 55/55 PASS (previous 41 + new v3 block: Tailwind auto-applied, ken-burns
+  hero, shine buttons, staggered text, generated 4K hero referenced and present on disk, gallery media set,
+  unknown-industry resolution, procedural SVG fallback, reserved-host dedupe integrity).
+- E2E through :7100 proxy (fresh DB): register owner → scan Restaurant/British Columbia → generate opportunity →
+  create project → build with {styleId: LD-13, creationMode: CINEMATIC_UNIVERSE} → preview HTML contains
+  cdn.tailwindcss.com, hero-dining.jpg, kenburns, btn-lux, aurora, prefers-reduced-motion; title resolves to the
+  prospect business name; GET /api/media/hero-dining.jpg → 200 image/jpeg (726 KB).
+- Note: data/media/ is gitignored (generated assets are reproducible via scripts/gen-media-library.py).
+- Gate: PASS for local dev scope.

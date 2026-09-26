@@ -15,6 +15,7 @@ import { researchRouter } from './routes/research.js';
 import { builderRouter } from './routes/builder.js';
 import { prospectsRouter } from './routes/prospects.js';
 import { marketScansRouter } from './routes/marketScans.js';
+import { mediaRouter } from './routes/media.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -55,6 +56,7 @@ export function createApp() {
   app.use('/api/builder', builderRouter);
   app.use('/api/prospects', prospectsRouter);
   app.use('/api/scans', marketScansRouter);
+  app.use('/api/media', mediaRouter);
 
   // Production: serve the built frontend
   const dist = path.resolve(__dirname, '../dist');

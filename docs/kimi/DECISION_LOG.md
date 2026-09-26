@@ -27,3 +27,13 @@
   Multi_Mode_Cinematic_Component_Universe_v1 → creation modes + recipes + reduced-motion contract (Phases 6-7 foundation);
   Master_Content_Engine_v2 → content provenance classifications + verified-facts-first opportunity briefs (Phase 4 foundation).
   The remaining 28 LD styles and the full 1,000-2,000 component library are incremental curation work, not blockers.
+
+## D6 — Tailwind Play CDN + procedural SVG as the sovereign media baseline
+- Date: 2026-09-26
+- Decision: every generated website ships as a single self-contained HTML file using the Tailwind Play CDN with an
+  inline tailwind.config derived from the locked LD style tokens — zero build step, instant preview, exported sites
+  work standalone. Luxury imagery resolves in three tiers: (1) curated AI-generated 4K library in data/media/,
+  (2) optional on-demand generation through a configured image tool (premium path), (3) procedural SVG art that is
+  resolution-independent and palette-matched — so no paid API is ever required for core flows ("no credits" rule).
+  Animated cinematic scaffolding (ken-burns hero, shine-sweep buttons, staggered headline, scroll reveals) always
+  ships with a prefers-reduced-motion kill switch per the Component Universe contract.

@@ -14,9 +14,11 @@ import { fetchWithGuards } from '../ssrfGuard.js';
 
 const PROVINCE_ALIASES = {
   'nova scotia': 'NS', ns: 'NS', 'ontario': 'ON', on: 'ON', 'alberta': 'AB', ab: 'AB',
-  'british columbia': 'BC', bc: 'BC', 'quebec': 'QC', qc: 'QC', 'manitoba': 'MB', mb: 'MB',
-  'saskatchewan': 'SK', sk: 'SK', 'new brunswick': 'NB', nb: 'NB', 'pei': 'PE', 'prince edward island': 'PE',
+  'british columbia': 'BC', bc: 'BC', 'quebec': 'QC', 'québec': 'QC', qc: 'QC',
+  'manitoba': 'MB', mb: 'MB', 'saskatchewan': 'SK', sk: 'SK',
+  'new brunswick': 'NB', nb: 'NB', 'pei': 'PE', 'prince edward island': 'PE', pe: 'PE',
   'newfoundland': 'NL', 'newfoundland and labrador': 'NL', nl: 'NL',
+  'yukon': 'YT', yt: 'YT', 'northwest territories': 'NT', nt: 'NT', 'nunavut': 'NU', nu: 'NU',
 };
 
 export function normalizeRequest(q) {
@@ -61,6 +63,9 @@ export function normalizePhone(p) {
 export function normalizeDomain(u) {
   try { return new URL(u).hostname.toLowerCase().replace(/^www\./, ''); } catch { return ''; }
 }
+function isReservedExampleHost(host) {
+  return /(^|\.)example\.(com|org|net|edu)$/.test(host) || /(^|\.)example$/.test(host);
+}
 
 function nameSimilarity(a, b) {
   const A = normalizeName(a), B = normalizeName(b);
@@ -77,7 +82,10 @@ export function dedupeCandidates(candidates) {
   for (const c of candidates) {
     const match = merged.find((m) => {
       const phoneMatch = normalizePhone(m.public_phone) && normalizePhone(m.public_phone) === normalizePhone(c.public_phone);
-      const domainMatch = normalizeDomain(m.website_url) && normalizeDomain(m.website_url) === normalizeDomain(c.website_url);
+      // RFC 2606 reserved example hosts are placeholders, never real business
+      // identities — matching on them would merge distinct businesses.
+      const md = normalizeDomain(m.website_url), cd = normalizeDomain(c.website_url);
+      const domainMatch = md && md === cd && !isReservedExampleHost(md);
       const fuzzyName = nameSimilarity(m.business_name, c.business_name) >= 0.75 &&
         normalizeName(m.city) === normalizeName(c.city);
       return phoneMatch || domainMatch || fuzzyName;

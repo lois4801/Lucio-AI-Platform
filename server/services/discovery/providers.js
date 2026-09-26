@@ -1,4 +1,4 @@
-// Discovery providers — manual §17.13.2 provider-neutral architecture.
+// Discovery providers — manual v28 §17.13.2 provider-neutral architecture.
 // Every source is accessed through an adapter so provider changes, rate limits,
 // retention conditions and permitted-use rules are enforced centrally.
 //
@@ -9,9 +9,111 @@
 import crypto from 'node:crypto';
 
 // ---------------------------------------------------------------------------
-// Fixture directory (development source — clearly labeled, never presented as live data)
-// website_url values use .example.com (IANA reserved, guaranteed inert) or example.com.
-const FIXTURE_BUSINESSES = [
+// Geography — all provinces and territories across Canada (§17.13.1)
+export const GEO_UNITS = {
+  'British Columbia': ['Vancouver', 'Victoria', 'Kelowna', 'Surrey', 'Nanaimo'],
+  'Alberta': ['Calgary', 'Edmonton', 'Red Deer', 'Banff', 'Fort McMurray'],
+  'Saskatchewan': ['Saskatoon', 'Regina', 'Prince Albert', 'Moose Jaw'],
+  'Manitoba': ['Winnipeg', 'Brandon', 'Thompson', 'Steinbach'],
+  'Ontario': ['Toronto', 'Ottawa', 'Mississauga', 'Thunder Bay', 'Kingston', 'London'],
+  'Quebec': ['Montreal', 'Quebec City', 'Laval', 'Gatineau', 'Sherbrooke'],
+  'New Brunswick': ['Moncton', 'Saint John', 'Fredericton', 'Bathurst'],
+  'Nova Scotia': ['Halifax', 'Dartmouth', 'Sydney', 'Truro', 'Bedford', 'Lunenburg', 'New Glasgow', 'Wolfville', 'Bridgewater', 'North Sydney'],
+  'Prince Edward Island': ['Charlottetown', 'Summerside', 'Stratford'],
+  'Newfoundland and Labrador': ["St. John's", 'Mount Pearl', 'Corner Brook', 'Gander'],
+  'Yukon': ['Whitehorse', 'Dawson City', 'Watson Lake'],
+  'Northwest Territories': ['Yellowknife', 'Hay River', 'Inuvik'],
+  'Nunavut': ['Iqaluit', 'Rankin Inlet', 'Arviat'],
+};
+const PROVINCE_CODE_TO_NAME = {
+  BC: 'British Columbia', AB: 'Alberta', SK: 'Saskatchewan', MB: 'Manitoba', ON: 'Ontario',
+  QC: 'Quebec', NB: 'New Brunswick', NS: 'Nova Scotia', PE: 'Prince Edward Island',
+  NL: 'Newfoundland and Labrador', YT: 'Yukon', NT: 'Northwest Territories', NU: 'Nunavut',
+};
+
+// ---------------------------------------------------------------------------
+// Industry bank — 32 service verticals (§17.13.1 extensible service-need discovery)
+const INDUSTRY_BANK = [
+  { industry: 'Plumbing', prefixes: ['Harbour', 'Rapid', 'True Flow', 'Aqua', 'North Star'], suffixes: ['Plumbing', 'Plumbing & Heating', 'Mechanical'], categories: ['Plumber', 'Drain cleaning'] },
+  { industry: 'Roofing', prefixes: ['Peak', 'Summit', 'Storm Shield', 'Ironline', 'Clear Sky'], suffixes: ['Roofing', 'Roofing & Exteriors', 'Roof Works'], categories: ['Roofing contractor'] },
+  { industry: 'HVAC', prefixes: ['Comfort', 'Arctic', 'Climate', 'Blue Flame', 'Pure Air'], suffixes: ['Heating & Cooling', 'HVAC', 'Climate Solutions'], categories: ['HVAC contractor'] },
+  { industry: 'Electrical', prefixes: ['Volt', 'Bright', 'Copperline', 'Powerhouse', 'Live Wire'], suffixes: ['Electric', 'Electrical Services', 'Electric Ltd'], categories: ['Electrician'] },
+  { industry: 'Landscaping', prefixes: ['Green Horizon', 'Terra', 'Evergreen', 'Stone & Stem', 'Lush'], suffixes: ['Landscaping', 'Landscape Design', 'Gardens'], categories: ['Landscaper'] },
+  { industry: 'Restaurant', prefixes: ['Saffron', 'The Copper', 'Harvest', 'Ember', 'Golden Wok'], suffixes: ['Kitchen', 'Bistro', 'Eatery'], categories: ['Restaurant'] },
+  { industry: 'Cafe', prefixes: ['Bluebird', 'Velvet', 'Roast & Co', 'Maple', 'Daily Grind'], suffixes: ['Coffee', 'Cafe', 'Coffee House'], categories: ['Coffee shop'] },
+  { industry: 'Bakery', prefixes: ['Butter & Crumb', 'Golden Crust', 'Sweet Laurel', 'Flour', 'Crumb'], suffixes: ['Bakery', 'Bakeshop', 'Patisserie'], categories: ['Bakery'] },
+  { industry: 'Barbershop', prefixes: ['Sharp', 'Kings Row', 'Blade', 'Gentlemen', 'North Fade'], suffixes: ['Barbershop', 'Barber Co', 'Grooming'], categories: ['Barber shop'] },
+  { industry: 'Beauty & Wellness', prefixes: ['Glow', 'Serene', 'Luxe', 'Willow', 'Rosewater'], suffixes: ['Salon & Spa', 'Studio', 'Wellness'], categories: ['Hair salon', 'Spa'] },
+  { industry: 'Fitness', prefixes: ['Iron', 'Pulse', 'Summit', 'Forge', 'Motion'], suffixes: ['Fitness', 'Athletics', 'Training Co'], categories: ['Gym'] },
+  { industry: 'Dental', prefixes: ['Bright Smile', 'Pearl', 'Lakeshore', 'Gentle Care', 'Nova'], suffixes: ['Dental', 'Family Dentistry', 'Dental Studio'], categories: ['Dentist'] },
+  { industry: 'Physiotherapy', prefixes: ['Restore', 'Align', 'Peak Movement', 'Thrive', 'Motion'], suffixes: ['Physiotherapy', 'Physio & Rehab', 'Sports Medicine'], categories: ['Physiotherapist'] },
+  { industry: 'Auto Repair', prefixes: ['Precision', 'Maple', 'Torque', 'Highway', 'Trusty'], suffixes: ['Auto Care', 'Motors', 'Garage'], categories: ['Auto repair'] },
+  { industry: 'Retail', prefixes: ['Willow', 'North & Main', 'Atlas', 'Copper', 'Foundry'], suffixes: ['Boutique', 'Goods', 'Supply Co'], categories: ['Retail'] },
+  { industry: 'Legal Services', prefixes: ['Hartley', 'Sterling', 'Northgate', 'Beacon', 'Crossley'], suffixes: ['Law', 'Legal Group', 'Law Office'], categories: ['Law firm'] },
+  { industry: 'Accounting', prefixes: ['Ledger', 'Summit', 'Clear Books', 'True North', 'Meridian'], suffixes: ['Accounting', 'CPA', 'Bookkeeping'], categories: ['Accountant'] },
+  { industry: 'Real Estate', prefixes: ['Keyline', 'Harbour', 'Summit', 'Blue Door', 'Prairie'], suffixes: ['Realty', 'Real Estate Group', 'Properties'], categories: ['Real estate agency'] },
+  { industry: 'Cleaning Services', prefixes: ['Sparkle', 'Pristine', 'Fresh Nest', 'Crystal', 'Daily'], suffixes: ['Cleaning', 'Maid Services', 'Janitorial'], categories: ['Cleaning service'] },
+  { industry: 'Moving Company', prefixes: ['True North', 'Easy Move', 'Atlas', 'Swift', 'Trans Canada'], suffixes: ['Movers', 'Moving & Storage', 'Transport'], categories: ['Mover'] },
+  { industry: 'Pet Grooming', prefixes: ['Fluffy', 'Paw & Co', 'Happy Tails', 'Furry', 'Golden'], suffixes: ['Pet Grooming', 'Pet Spa', 'Dog Grooming'], categories: ['Pet groomer'] },
+  { industry: 'Photography', prefixes: ['Lumen', 'Golden Hour', 'Frame', 'Aperture', 'Northlight'], suffixes: ['Photography', 'Photo Studio', 'Visuals'], categories: ['Photographer'] },
+  { industry: 'Tutoring', prefixes: ['Bright Minds', 'Elevate', 'Summit', 'Keystone', 'Ascent'], suffixes: ['Tutoring', 'Learning Centre', 'Academy'], categories: ['Tutoring service'] },
+  { industry: 'Childcare', prefixes: ['Little Sprouts', 'Sunny Days', 'Bright Beginnings', 'Maple', 'Happy'], suffixes: ['Daycare', 'Child Care', 'Early Learning'], categories: ['Day care center'] },
+  { industry: 'Contracting', prefixes: ['Solid', 'Cornerstone', 'True Built', 'Summit', 'Heritage'], suffixes: ['Contracting', 'Construction', 'Builders'], categories: ['General contractor'] },
+  { industry: 'Painting', prefixes: ['Fresh Coat', 'True Colour', 'Prime', 'Canvas', 'Vivid'], suffixes: ['Painting', 'Painters', 'Decorating'], categories: ['Painter'] },
+  { industry: 'Carpentry', prefixes: ['Oak & Iron', 'True Grain', 'Heritage', 'Craftline', 'Northern'], suffixes: ['Carpentry', 'Woodworks', 'Custom Carpentry'], categories: ['Carpenter'] },
+  { industry: 'Snow Removal', prefixes: ['Arctic', 'Frost', 'True North', 'Polar', 'Whiteout'], suffixes: ['Snow Removal', 'Snow & Ice', 'Winter Services'], categories: ['Snow removal service'] },
+  { industry: 'IT Services', prefixes: ['Nexus', 'Clearbyte', 'Ironclad', 'Pixel', 'Vantage'], suffixes: ['IT Solutions', 'Tech', 'Computer Services'], categories: ['IT services'] },
+  { industry: 'Marketing', prefixes: ['Signal', 'Northstar', 'Amplify', 'Crafted', 'Vantage'], suffixes: ['Marketing', 'Digital', 'Creative'], categories: ['Marketing agency'] },
+  { industry: 'Grocery', prefixes: ['Harvest', 'Green Basket', 'Maple', 'Daily Fresh', 'Community'], suffixes: ['Market', 'Grocery', 'Foods'], categories: ['Grocery store'] },
+  { industry: 'Hospitality', prefixes: ['Aurora', 'Harbour', 'Summit', 'Lakeside', 'Grand'], suffixes: ['Inn', 'Hotel', 'Suites'], categories: ['Hotel'] },
+  { industry: 'Wedding Services', prefixes: ['Ever After', 'Golden Hour', 'Promise', 'Bloom', 'Eternal'], suffixes: ['Weddings', 'Events', 'Bridal'], categories: ['Wedding planner'] },
+];
+
+// Deterministic composition (no RNG): website posture cycles by index so every
+// region/industry mix gets a realistic spread of digital presences.
+function composeBusiness(region, province, city, bank, i) {
+  const name = `${bank.prefixes[i % bank.prefixes.length]} ${bank.suffixes[(i * 2 + 1) % bank.suffixes.length]}`;
+  const mode = i % 10;
+  const website_url = mode < 5 ? '' : mode < 7 ? `http://${slug(name)}-${city.toLowerCase().replace(/[^a-z]/g, '')}.example.com` : mode < 8 ? 'https://example.com/' + slug(name) : '';
+  const social = mode % 3 === 0 ? [`https://facebook.com/${slug(name)}`] : mode % 3 === 1 ? [`https://instagram.com/${slug(name)}`] : [];
+  return {
+    business_name: name,
+    industry: bank.industry,
+    city,
+    province_state: province,
+    public_phone: areaCode(province) + '-555-0' + String(300 + ((i * 37) % 600)),
+    address: `${20 + ((i * 13) % 900)} ${['Main St', 'King St', 'Queen St', 'First Ave', 'Church St', 'Water St'][i % 6]}, ${city}, ${province}`,
+    website_url,
+    social_profiles: social,
+    rating: (35 + ((i * 7) % 15)) / 10,
+    review_count: 5 + ((i * 41) % 480),
+    categories: bank.categories,
+  };
+}
+
+function areaCode(province) {
+  return { BC: '604', AB: '403', SK: '306', MB: '204', ON: '416', QC: '514', NB: '506', NS: '902', PE: '902', NL: '709', YT: '867', NT: '867', NU: '867' }[province] || '613';
+}
+function slug(s) { return s.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ''); }
+
+// Build the full fixture directory: coverage across every province/territory
+// and every municipality within it — 4 businesses per industry per city,
+// so a single-province scan returns dozens of candidates.
+const GENERATED = [];
+for (const [region, cities] of Object.entries(GEO_UNITS)) {
+  const province = Object.keys(PROVINCE_CODE_TO_NAME).find((k) => PROVINCE_CODE_TO_NAME[k] === region);
+  cities.forEach((city, ci) => {
+    INDUSTRY_BANK.forEach((bank, bi) => {
+      for (let k = 0; k < 4; k++) {
+        GENERATED.push(composeBusiness(region, province, city, bank, bi * 23 + ci * 7 + k + (region.length % 5)));
+      }
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Hand-written anchor fixtures with distinctive stories (kept for realism)
+const HANDWRITTEN = [
   { business_name: 'Halifax Harbour Plumbing', industry: 'Plumbing', city: 'Halifax', province_state: 'NS', public_phone: '902-555-0142', address: '221 Agricola St, Halifax, NS', website_url: '', social_profiles: ['https://facebook.com/halifaxharbourplumbing'], rating: 4.6, review_count: 38, categories: ['Plumber', 'Drain cleaning', 'Water heater'] },
   { business_name: 'Dartmouth Drain Masters', industry: 'Plumbing', city: 'Dartmouth', province_state: 'NS', public_phone: '902-555-0177', address: '45 Portland St, Dartmouth, NS', website_url: '', social_profiles: [], rating: 4.2, review_count: 21, categories: ['Plumber', 'Emergency plumber'] },
   { business_name: 'Cape Breton Pipeworks', industry: 'Plumbing', city: 'Sydney', province_state: 'NS', public_phone: '902-555-0119', address: '380 Charlotte St, Sydney, NS', website_url: 'http://cbpipeworks.example.com', social_profiles: [], rating: 3.9, review_count: 12, categories: ['Plumber'] },
@@ -27,28 +129,14 @@ const FIXTURE_BUSINESSES = [
   { business_name: 'South Shore Builders', industry: 'Contracting', city: 'Bridgewater', province_state: 'NS', public_phone: '902-555-0149', address: '405 King St, Bridgewater, NS', website_url: 'http://southshorebuilders.example.com', social_profiles: ['https://facebook.com/southshorebuilders'], rating: 4.2, review_count: 19, categories: ['General contractor'] },
   { business_name: 'Northside Renovations', industry: 'Contracting', city: 'North Sydney', province_state: 'NS', public_phone: '902-555-0163', address: '88 King St, North Sydney, NS', website_url: '', social_profiles: [], rating: 3.8, review_count: 7, categories: ['Renovation contractor'] },
   { business_name: 'Glow Salon & Spa', industry: 'Beauty & Wellness', city: 'Halifax', province_state: 'NS', public_phone: '902-555-0171', address: '1558 Barrington St, Halifax, NS', website_url: '', social_profiles: ['https://instagram.com/glowsalonhalifax'], rating: 4.8, review_count: 196, categories: ['Hair salon', 'Spa'] },
-  { business_name: 'Maritime Motors Auto Care', industry: 'Automotive', city: 'Halifax', province_state: 'NS', public_phone: '902-555-0126', address: '2400 Robie St, Halifax, NS', website_url: '', social_profiles: [], rating: 4.4, review_count: 77, categories: ['Auto repair'] },
-  { business_name: 'Toronto Lakeside Plumbing', industry: 'Plumbing', city: 'Toronto', province_state: 'ON', public_phone: '416-555-0134', address: '118 Queen St W, Toronto, ON', website_url: '', social_profiles: ['https://facebook.com/lakesideplumbingto'], rating: 4.5, review_count: 233, categories: ['Plumber'] },
-  { business_name: 'GTA Roof Pros', industry: 'Roofing', city: 'Toronto', province_state: 'ON', public_phone: '416-555-0147', address: '77 Bathurst St, Toronto, ON', website_url: 'http://gtaroofpros.example.com', social_profiles: [], rating: 3.7, review_count: 45, categories: ['Roofing contractor'] },
-  { business_name: 'Northern Lights Roofing', industry: 'Roofing', city: 'Thunder Bay', province_state: 'ON', public_phone: '807-555-0115', address: '920 Memorial Ave, Thunder Bay, ON', website_url: '', social_profiles: [], rating: 4.6, review_count: 52, categories: ['Roofing contractor', 'Metal roofing'] },
-  { business_name: 'Bistro Verde Toronto', industry: 'Restaurant', city: 'Toronto', province_state: 'ON', public_phone: '416-555-0181', address: '486 College St, Toronto, ON', website_url: '', social_profiles: ['https://instagram.com/bistroverde'], rating: 4.7, review_count: 521, categories: ['Italian restaurant'] },
-  { business_name: 'Ottawa Valley Eats', industry: 'Restaurant', city: 'Ottawa', province_state: 'ON', public_phone: '613-555-0129', address: '33 ByWard Market, Ottawa, ON', website_url: 'http://ottawavalleys.example.com', social_profiles: [], rating: 4.2, review_count: 96, categories: ['Restaurant'] },
-  { business_name: 'Queen West Hair Loft', industry: 'Beauty & Wellness', city: 'Toronto', province_state: 'ON', public_phone: '416-555-0152', address: '951 Queen St W, Toronto, ON', website_url: '', social_profiles: ['https://instagram.com/queenwesthairloft'], rating: 4.9, review_count: 340, categories: ['Hair salon'] },
-  { business_name: 'Calgary Stampede Mechanical', industry: 'Plumbing', city: 'Calgary', province_state: 'AB', public_phone: '403-555-0118', address: '1212 17 Ave SW, Calgary, AB', website_url: '', social_profiles: [], rating: 4.3, review_count: 64, categories: ['Plumber', 'HVAC'] },
-  { business_name: 'Rocky View Roofing', industry: 'Roofing', city: 'Calgary', province_state: 'AB', public_phone: '403-555-0161', address: '855 Country Hills Blvd, Calgary, AB', website_url: '', social_profiles: ['https://facebook.com/rockyviewroofing'], rating: 4.5, review_count: 88, categories: ['Roofing contractor'] },
-  { business_name: 'Bow River Contracting', industry: 'Contracting', city: 'Calgary', province_state: 'AB', public_phone: '403-555-0137', address: '410 11 St SE, Calgary, AB', website_url: 'http://bowrivercontracting.example.com', social_profiles: [], rating: 4.1, review_count: 26, categories: ['General contractor'] },
-  { business_name: 'Edmonton Neon Noodle', industry: 'Restaurant', city: 'Edmonton', province_state: 'AB', public_phone: '780-555-0144', address: '10232 104 St NW, Edmonton, AB', website_url: '', social_profiles: ['https://instagram.com/neonnoodle'], rating: 4.6, review_count: 287, categories: ['Asian fusion restaurant'] },
-  { business_name: 'Whyte Ave Wellness', industry: 'Beauty & Wellness', city: 'Edmonton', province_state: 'AB', public_phone: '780-555-0113', address: '8205 104 St NW, Edmonton, AB', website_url: '', social_profiles: [], rating: 4.7, review_count: 158, categories: ['Spa', 'Massage'] },
-  { business_name: 'Maple Leaf Auto Works', industry: 'Automotive', city: 'Calgary', province_state: 'AB', public_phone: '403-555-0199', address: '3309 14 St NW, Calgary, AB', website_url: 'http://mapleleafauto.example.com', social_profiles: [], rating: 4.0, review_count: 41, categories: ['Auto repair', 'Tires'] },
+  { business_name: 'Maritime Motors Auto Care', industry: 'Auto Repair', city: 'Halifax', province_state: 'NS', public_phone: '902-555-0126', address: '2400 Robie St, Halifax, NS', website_url: '', social_profiles: [], rating: 4.4, review_count: 77, categories: ['Auto repair'] },
+  { business_name: 'Maple Leaf Auto Works', industry: 'Auto Repair', city: 'Calgary', province_state: 'AB', public_phone: '403-555-0199', address: '3309 14 St NW, Calgary, AB', website_url: 'http://mapleleafauto.example.com', social_profiles: [], rating: 4.0, review_count: 41, categories: ['Auto repair', 'Tires'] },
 ];
 
-// Geography units the fixture provider can expand into (§17.13.3 coverage engine)
-const GEO_UNITS = {
-  'Nova Scotia': ['Halifax', 'Dartmouth', 'Sydney', 'Truro', 'Bedford', 'Lunenburg', 'New Glasgow', 'Wolfville', 'Bridgewater', 'North Sydney'],
-  'Ontario': ['Toronto', 'Ottawa', 'Thunder Bay'],
-  'Alberta': ['Calgary', 'Edmonton'],
-};
-const PROVINCE_CODE_TO_NAME = { NS: 'Nova Scotia', ON: 'Ontario', AB: 'Alberta', BC: 'British Columbia', QC: 'Quebec' };
+export const FIXTURE_BUSINESSES = [...HANDWRITTEN, ...GENERATED];
+export const INDUSTRIES = [...new Set(FIXTURE_BUSINESSES.map((b) => b.industry))].sort();
+export const REGIONS = Object.keys(GEO_UNITS);
+export const FIXTURE_COUNT = FIXTURE_BUSINESSES.length;
 
 export const fixtureDirectoryProvider = {
   id: 'fixture-directory',

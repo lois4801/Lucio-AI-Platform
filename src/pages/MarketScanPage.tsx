@@ -9,8 +9,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Radar, RefreshCw, FileText, Ban, FolderPlus, Eye } from 'lucide-react';
 
-const INDUSTRIES = ['Plumbing', 'Roofing', 'Restaurant', 'Contracting', 'Beauty & Wellness', 'Automotive', ''];
-const REGIONS = ['Nova Scotia', 'Ontario', 'Alberta', ''];
+const FALLBACK_INDUSTRIES = ['Plumbing', 'Roofing', 'Restaurant', 'Contracting', 'Beauty & Wellness', 'Automotive', ''];
+const FALLBACK_REGIONS = ['Nova Scotia', 'Ontario', 'Alberta', ''];
 const GAP_LABEL: Record<string, string> = {
   GAP_NONE: 'No gap', GAP_WEAK: 'Weak site', GAP_OUTDATED: 'Outdated', GAP_BROKEN: 'Broken/parked',
   GAP_SOCIAL_ONLY: 'Social only', GAP_NO_VERIFIED_WEBSITE: 'No verified website', GAP_UNKNOWN: 'Unknown',
@@ -39,6 +39,13 @@ export default function MarketScanPage() {
   const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [meta, setMeta] = useState<{ industries: string[]; regions: string[] }>({ industries: FALLBACK_INDUSTRIES, regions: FALLBACK_REGIONS });
+
+  useEffect(() => {
+    api<{ industries: string[]; regions: string[] }>('/scans/meta')
+      .then((d) => setMeta({ industries: [...d.industries, ''], regions: [...d.regions, ''] }))
+      .catch(() => {});
+  }, []);
 
   const loadScans = () => api<{ scans: Scan[] }>('/scans').then((d) => setScans(d.scans)).catch(() => {});
   useEffect(() => { loadScans(); }, []);
@@ -103,14 +110,14 @@ export default function MarketScanPage() {
               <label className="text-xs text-muted-foreground">Industry</label>
               <Select value={form.industry} onValueChange={(v) => setForm({ ...form, industry: v })}>
                 <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-                <SelectContent>{INDUSTRIES.filter(Boolean).map((i) => <SelectItem key={i} value={i}>{i}</SelectItem>)}</SelectContent>
+                <SelectContent>{meta.industries.filter(Boolean).map((i) => <SelectItem key={i} value={i}>{i}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div>
               <label className="text-xs text-muted-foreground">Region</label>
               <Select value={form.region} onValueChange={(v) => setForm({ ...form, region: v })}>
                 <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-                <SelectContent>{REGIONS.filter(Boolean).map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
+                <SelectContent>{meta.regions.filter(Boolean).map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div>

@@ -11,7 +11,7 @@ const { db } = await import('../server/db.js');
 const { normalizeRequest, expandGeography, dedupeCandidates, resolveWebsitePresence, scoreOpportunity, upsertProspect, runMarketScan } = await import('../server/services/discovery/pipeline.js');
 const { assertSafeUrl, fetchWithGuards } = await import('../server/services/ssrfGuard.js');
 const { generateWebsiteOpportunity, industryProfile } = await import('../server/services/opportunity.js');
-const { getProviders, fixtureDirectoryProvider } = await import('../server/services/discovery/providers.js');
+const { getProviders, fixtureDirectoryProvider, FIXTURE_BUSINESSES, FIXTURE_COUNT, INDUSTRIES, REGIONS, GEO_UNITS } = await import('../server/services/discovery/providers.js');
 const { recommendStyles, getStyle, CREATION_MODES } = await import('../server/services/ldStyles.js');
 const { makePlan, scaffoldSite } = await import('../server/services/appBuilder.js');
 
@@ -30,7 +30,13 @@ console.log('== Discovery: geography expansion, providers, budgets ==');
   const { units } = expandGeography(req, providers);
   ok(units.length === 10, 'geography expands NS into 10 municipalities', `got ${units.length}`);
   const rows = await fixtureDirectoryProvider.search({ industry: 'Plumbing', province_state: 'NS' });
-  ok(rows.length === 4 && rows.every((r) => r.source === 'fixture-directory'), 'fixture provider returns 4 NS plumbers with source label');
+  const expectedPlumbers = (await import('../server/services/discovery/providers.js')).FIXTURE_BUSINESSES
+    .filter((b) => b.industry === 'Plumbing' && b.province_state === 'NS').length;
+  ok(rows.length === expectedPlumbers && rows.every((r) => r.source === 'fixture-directory'), `fixture provider returns ${expectedPlumbers} NS plumbers with source label`);
+  ok(FIXTURE_COUNT >= 300, `fixture directory covers 300+ businesses (${FIXTURE_COUNT})`);
+  ok(REGIONS.length === 13, 'all 13 provinces and territories covered');
+  ok(INDUSTRIES.length >= 30, `${INDUSTRIES.length} service industries available`);
+  ok(Object.keys(GEO_UNITS).every((r) => GEO_UNITS[r].length >= 3), 'every region has 3+ municipalities');
   ok(rows[0].business_name && rows[0].city, 'candidates normalize to canonical model');
 }
 
@@ -84,24 +90,25 @@ console.log('== Security: SSRF guards ==');
 
 console.log('== End-to-end scan -> CRM idempotency, suppression ==');
 {
-  const q = { industry: 'Plumbing', province: 'Nova Scotia', sources: ['fixture-directory'], maxResults: 20 };
+  const q = { industry: 'Plumbing', province: 'Nova Scotia', sources: ['fixture-directory'], maxResults: 100 };
   const r1 = await runMarketScan(ORG, USER, q);
-  ok(r1.coverage.unique_businesses === 4, 'scan finds 4 unique NS plumbers', `got ${r1.coverage.unique_businesses}`);
+  const expectedNSPlumbers = FIXTURE_BUSINESSES.filter((b) => b.industry === 'Plumbing' && b.province_state === 'NS').length;
+  ok(r1.coverage.unique_businesses === expectedNSPlumbers, `scan finds ${expectedNSPlumbers} unique NS plumbers`, `got ${r1.coverage.unique_businesses}`);
   ok(r1.coverage.geography_units_planned === 10 && r1.coverage.geography_units_completed === 10, 'coverage tracks planned/completed units');
   ok(r1.coverage.website_gap_candidates >= 3, 'gap candidates counted');
   const prospectRows = db.prepare(`SELECT COUNT(*) c FROM prospects WHERE org_id = ?`).get(ORG).c;
-  ok(prospectRows === 4, '4 CRM prospects created');
+  ok(prospectRows === expectedNSPlumbers, `${expectedNSPlumbers} CRM prospects created`);
   const evCount = db.prepare(`SELECT COUNT(*) c FROM evidence_records WHERE org_id = ?`).get(ORG).c;
   ok(evCount >= 12, `evidence retained (${evCount} records)`);
 
   const r2 = await runMarketScan(ORG, USER, q);
-  ok(db.prepare(`SELECT COUNT(*) c FROM prospects WHERE org_id = ?`).get(ORG).c === 4, 're-scan is idempotent (no duplicate CRM records)');
+  ok(db.prepare(`SELECT COUNT(*) c FROM prospects WHERE org_id = ?`).get(ORG).c === expectedNSPlumbers, 're-scan is idempotent (no duplicate CRM records)');
   ok(r2.results.every((x) => x.updated), 're-scan marks prospects as updated, not duplicated');
 
   const victim = db.prepare(`SELECT id FROM prospects WHERE org_id = ? LIMIT 1`).get(ORG);
   db.prepare(`UPDATE prospects SET suppression_status='SUPPRESSED' WHERE id=?`).run(victim.id);
   const r3 = await runMarketScan(ORG, USER, q);
-  ok(db.prepare(`SELECT COUNT(*) c FROM prospects WHERE org_id = ? AND suppression_status='NONE'`).get(ORG).c === 3, 'suppressed business stops being processed');
+  ok(db.prepare(`SELECT COUNT(*) c FROM prospects WHERE org_id = ? AND suppression_status='NONE'`).get(ORG).c === expectedNSPlumbers - 1, 'suppressed business stops being processed');
   ok(!r3.results.some((x) => x.prospect_id === victim.id), 'suppressed business absent from new scan results');
 }
 
@@ -137,6 +144,27 @@ console.log('== LD styles + creation modes (companion docs integration) ==');
   ok(plan.contentProvenance.industrySuggestions.every((s) => s.classification === 'INFERRED_INDUSTRY_SUGGESTION'), 'content engine marks industry copy as suggestions');
   const plan2 = makePlan('Build a website for a salon called Glow');
   ok(plan2.creationMode === 'CUSTOM_AI', 'default creation mode is CUSTOM_AI');
+}
+
+console.log('== Scaffold v3: Tailwind, cinematic hero, luxury media ==');
+{
+  const { mediaSet, mediaFilePath, proceduralArt } = await import('../server/services/mediaEngine.js');
+  const plan = makePlan('Build a cinematic website for a fine dining restaurant called Maison Lumiere', { styleId: 'LD-13', creationMode: 'CINEMATIC_UNIVERSE', industry: 'Restaurant' });
+  const html = scaffoldSite(plan);
+  ok(html.includes('cdn.tailwindcss.com') && html.includes('tailwind.config'), 'Tailwind applied automatically via Play CDN + inline config');
+  ok(html.includes('kenburns') && html.includes('class="hero'), 'cinematic full-screen hero with ken-burns motion');
+  ok(html.includes('btn-lux') && html.includes('shine'), 'animated luxury buttons (shine sweep)');
+  ok(html.includes('rise') && html.includes('IntersectionObserver'), 'staggered headline text + scroll reveals');
+  ok(html.includes('prefers-reduced-motion'), 'reduced-motion disables animation');
+  const media = mediaSet('Restaurant');
+  ok(media.hero.kind === 'generated-4k' && html.includes(media.hero.src), 'generated 4K hero referenced in scaffold');
+  ok(!!mediaFilePath('hero-dining.jpg'), '4K hero file exists on disk');
+  ok(media.gallery.length === 3 && media.gallery.every((g) => g.src.startsWith('/api/media/')), 'gallery uses generated media set');
+  const fallback = mediaSet('Quantum Robotics');
+  ok(fallback.hero.src.startsWith('/api/media/') && fs.existsSync(mediaFilePath(`${fallback.hero.key}.jpg`)), 'unknown industry still resolves to an existing luxury hero');
+  const art = proceduralArt('test-fallback-art');
+  ok(art.note.includes('procedural') && fs.existsSync(mediaFilePath('test-fallback-art.svg')), 'missing library key falls back to procedural SVG art');
+  fs.unlinkSync(mediaFilePath('test-fallback-art.svg'));
 }
 
 console.log(`\nRESULT: ${passed} passed, ${failed} failed`);

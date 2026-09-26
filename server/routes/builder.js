@@ -13,23 +13,31 @@ function ownProject(req, res) {
   return p;
 }
 
+// Project names created from market-scan opportunities are "<Business> Website" —
+// reuse the business name as the site name when the caller didn't supply one.
+function withProjectSiteName(project, opts) {
+  if (opts.siteName) return opts;
+  const m = String(project.name || '').match(/^(.+?)\s+Website$/i);
+  return m ? { ...opts, siteName: m[1] } : opts;
+}
+
 // Step 1 — Plan: parse a natural-language goal into a structured plan (no artifacts yet).
 // Accepts optional LD style / creation mode / opportunity overrides (Phases 4–7 integration).
 builderRouter.post('/project/:projectId/plan', requireRole('member'), (req, res) => {
-  if (!ownProject(req, res)) return;
+  const p = ownProject(req, res); if (!p) return;
   const { goal } = req.body || {};
   if (!goal) return res.status(400).json({ error: 'goal is required' });
   const { styleId, creationMode, siteName, industry, tagline, verifiedFacts } = req.body || {};
-  res.json({ plan: makePlan(goal, { styleId, creationMode, siteName, industry, tagline, verifiedFacts }) });
+  res.json({ plan: makePlan(goal, withProjectSiteName(p, { styleId, creationMode, siteName, industry, tagline, verifiedFacts })) });
 });
 
 // Step 2 — Build: scaffold the site from a goal + options
 builderRouter.post('/project/:projectId/build', requireRole('member'), (req, res) => {
-  if (!ownProject(req, res)) return;
+  const p = ownProject(req, res); if (!p) return;
   const { goal } = req.body || {};
   if (!goal) return res.status(400).json({ error: 'goal is required' });
   const { styleId, creationMode, siteName, industry, tagline, verifiedFacts } = req.body || {};
-  res.status(201).json(buildFromGoal(req.params.projectId, goal, { styleId, creationMode, siteName, industry, tagline, verifiedFacts }, req.user, req.ip));
+  res.status(201).json(buildFromGoal(req.params.projectId, goal, withProjectSiteName(p, { styleId, creationMode, siteName, industry, tagline, verifiedFacts }), req.user, req.ip));
 });
 
 builderRouter.get('/project/:projectId/artifacts', (req, res) => {
