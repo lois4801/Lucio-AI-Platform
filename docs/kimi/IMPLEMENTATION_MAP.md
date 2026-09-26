@@ -24,3 +24,18 @@ Maps canonical manual requirements to concrete files in this repository.
 ## App Builder (flagship, §1.1)
 - Goal→plan→scaffold→preview pipeline → `server/services/appBuilder.js` + `server/routes/builder.js`
 - Generated sites served from data/builds/<projectId>/ and previewed live in the UI
+
+## Phase 3 — Market Scan / Website Gap / CRM Prospect Engine (v28 §17.13)
+- Provider adapters → server/services/discovery/providers.js (fixture-directory, user-list)
+- Pipeline (normalize/expand/dedupe/resolve/score/upsert/coverage) → server/services/discovery/pipeline.js
+- SSRF + safe fetch → server/services/ssrfGuard.js
+- Website Opportunity + industry profiles → server/services/opportunity.js
+- Schema → server/db.js (prospects full §17.13.5 model, market_scans, evidence_records, website_opportunities)
+- API → server/routes/marketScans.js (mounted at /api/scans)
+- UI → src/pages/MarketScanPage.tsx
+- Tests → scripts/test-phase3.js (41 deterministic assertions)
+
+## Companion doc integration (Phases 4–7 foundations)
+- LD styles → server/services/ldStyles.js; applied in server/services/appBuilder.js (STYLE_LOCK, tokens, recipes)
+- Creation modes → CREATION_MODES in ldStyles.js; CINEMATIC_UNIVERSE ships scroll-driven scene + reduced-motion fallback
+- Content engine → contentProvenance in plans; fact classifications in opportunity.js

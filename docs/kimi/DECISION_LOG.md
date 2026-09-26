@@ -13,3 +13,17 @@
 - Date: 2026-09-26
 - Sections: manual §7, §14
 - Decision: the local model gateway implements a deterministic on-device "sovereign engine" (rule/grammar-based NLU + template synthesis) so every core workflow functions with no GPU and no paid API. OpenAI-compatible self-hosted endpoints (Ollama/llama.cpp/vLLM) are supported as configurable local adapters; external frontier adapters exist in the provider registry but are DISABLED by default.
+
+## D4 — v28 canonical + Phase 3 fixture discovery source
+- Date: 2026-09-26
+- Decision: v28 MARKET_SCAN_CANONICAL is now the single authority (its title page supersedes v27). Phase 3 is
+  implemented against §17.13 with a clearly-labeled fixture directory source and user-supplied list provider per
+  §17.13.22: no live-provider results are fabricated; live maps/search/registry adapters remain pending credentials.
+
+## D5 — Companion prompt docs applied as builder subsystems
+- Date: 2026-09-26
+- Decision: the three companion docs are integrated as follows rather than built as separate apps:
+  Design_Style_Library_v3 → LD style registry + STYLE_LOCK in the builder (Phases 5 foundation); 
+  Multi_Mode_Cinematic_Component_Universe_v1 → creation modes + recipes + reduced-motion contract (Phases 6-7 foundation);
+  Master_Content_Engine_v2 → content provenance classifications + verified-facts-first opportunity briefs (Phase 4 foundation).
+  The remaining 28 LD styles and the full 1,000-2,000 component library are incremental curation work, not blockers.

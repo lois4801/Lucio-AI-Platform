@@ -12,6 +12,7 @@ import FilesPage from '@/pages/FilesPage';
 import JobsPage from '@/pages/JobsPage';
 import AuditPage from '@/pages/AuditPage';
 import GatewayPage from '@/pages/GatewayPage';
+import MarketScanPage from '@/pages/MarketScanPage';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -32,6 +33,7 @@ export default function App() {
       <Route element={user ? <AppShell user={user} onLogout={() => setUser(null)} /> : <Navigate to="/" replace />}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/builder" element={<BuilderPage />} />
+        <Route path="/scanner" element={<MarketScanPage />} />
         <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/prospects" element={<ProspectsPage />} />
         <Route path="/research" element={<ResearchPage />} />

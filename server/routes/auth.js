@@ -13,11 +13,10 @@ authRouter.post('/register', (req, res) => {
   if (String(password).length < 8) return res.status(400).json({ error: 'password must be at least 8 characters' });
   const existing = db.prepare(`SELECT id FROM users WHERE email = ?`).get(String(email).toLowerCase());
   if (existing) return res.status(409).json({ error: 'email already registered' });
-  const userCount = db.prepare(`SELECT COUNT(*) c FROM users`).get().c;
   const orgId = crypto.randomUUID();
   const userId = crypto.randomUUID();
-  // First user on the platform becomes OWNER of a new organization
-  const role = userCount === 0 ? 'owner' : 'member';
+  // Every registration creates a new organization — its founder is the OWNER
+  const role = 'owner';
   db.prepare(`INSERT INTO organizations (id, name) VALUES (?,?)`).run(orgId, orgName || `${name}'s Organization`);
   db.prepare(`INSERT INTO users (id, org_id, email, name, password_hash, role) VALUES (?,?,?,?,?,?)`)
     .run(userId, orgId, String(email).toLowerCase(), name, hashPassword(password), role);

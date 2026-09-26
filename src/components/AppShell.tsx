@@ -5,12 +5,13 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import {
   LayoutDashboard, Hammer, FolderKanban, Radar, Search, Files, TerminalSquare, ScrollText,
-  Cpu, LogOut,
+  Cpu, LogOut, ScanSearch,
 } from 'lucide-react';
 
 const NAV = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/builder', label: 'App Builder', icon: Hammer },
+  { to: '/scanner', label: 'Market Scanner', icon: ScanSearch },
   { to: '/projects', label: 'Projects', icon: FolderKanban },
   { to: '/prospects', label: 'Agency OS · Prospects', icon: Radar },
   { to: '/research', label: 'Research', icon: Search },

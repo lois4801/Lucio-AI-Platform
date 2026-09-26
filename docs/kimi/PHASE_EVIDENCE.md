@@ -44,3 +44,27 @@
 - Versioned artifacts; QA validation job; checkpoints/restore
 - Evidence: end-to-end run 2026-09-26 (Bluebird Coffee demo: plan, build v1, preview, validation 6/6, checkpoint/restore)
 - Partial: agent router with bounded agent/skill selection (§12) NOT YET EVIDENCED — blocked in part by B1 (canonical catalog absent).
+
+## Phase 3 — Business Discovery + Evidence Engine (v28 §17.13) — PASS (local dev scope, fixture sources)
+- Date: 2026-09-26
+- Canonical spec: v28 MARKET_SCAN_CANONICAL supersedes v27 (title page); Phase 3 canonical build spec = §17.13
+- Implemented: provider-neutral discovery adapters (fixture-directory dev source, user-list), geography expansion,
+  entity resolution (phone/domain/fuzzy name+city), corroborated Website Presence Resolver (6 canonical states +
+  7 canonical Gap Signals), explainable 0–100 lead score with score_factors[]/explanation/confidence, idempotent
+  CRM upsert with conflicting-fact preservation, evidence_records with full provenance model (§17.13.15),
+  SSRF guards (loopback/private/link-local/metadata blocked, redirect validation, timeouts, size caps),
+  Website Opportunity object (§17.13.11) with fact classification + industry intelligence profiles (§17.13.12),
+  suppression + re-verification, coverage report per §17.13.3, operator UI per §17.13.18
+- Companion docs integrated: Design_Style_Library_v3 (LD style registry, 12 curated token-complete styles from the
+  40-system library; STYLE_LOCK enforced; industry/tone-aware recommendation), Multi_Mode_Cinematic_Component_Universe_v1
+  (4 creation modes CUSTOM_AI / COMPONENT_SYSTEM / HYBRID / CINEMATIC_UNIVERSE, recipes stored, reduced-motion
+  fallback mandatory), Master_Content_Engine_v2 (content provenance classes VERIFIED/PUBLIC_SOURCE/INFERRED/CREATIVE/UNKNOWN;
+  verified facts first, industry suggestions second)
+- Tests: `node scripts/test-phase3.js` — 41/41 PASS (discovery, entity resolution, website resolution, scoring,
+  SSRF 7/7 hostile URLs blocked, scan idempotency, suppression, conflicting facts, opportunity classifications,
+  LD style + creation mode integration)
+- Known limitations: live directory providers (maps/registries/search) not yet connected — fixture source used per
+  §17.13.22 (contract implemented, live validation pending, no fabricated live results); bulk ops (§17.13.19) and
+  saved scans (§17.13.17 persistence) scaffolded but minimal; offline sandbox: live URL checks classify honestly as
+  BROKEN/UNKNOWN when DNS is unavailable.
+- Gate: PASS for local dev scope. Live-provider validation BLOCKED (B3).

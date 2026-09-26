@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.resolve(__dirname, '../data');
+const DATA_DIR = process.env.LUCIO_DATA_DIR || path.resolve(__dirname, '../data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(path.join(DATA_DIR, 'files'), { recursive: true });
 fs.mkdirSync(path.join(DATA_DIR, 'builds'), { recursive: true });
@@ -122,13 +122,103 @@ CREATE TABLE IF NOT EXISTS research_runs (
 CREATE TABLE IF NOT EXISTS prospects (
   id TEXT PRIMARY KEY,
   org_id TEXT NOT NULL,
+  scan_id TEXT,
   business_name TEXT NOT NULL,
-  location TEXT DEFAULT '',
+  legal_name TEXT DEFAULT '',
   industry TEXT DEFAULT '',
-  website_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  subindustry TEXT DEFAULT '',
+  country TEXT DEFAULT 'Canada',
+  province_state TEXT DEFAULT '',
+  city TEXT DEFAULT '',
+  postal_code TEXT DEFAULT '',
+  address TEXT DEFAULT '',
+  latitude REAL,
+  longitude REAL,
+  timezone TEXT DEFAULT '',
+  public_phone TEXT DEFAULT '',
+  public_email TEXT DEFAULT '',
+  contact_page_url TEXT DEFAULT '',
   website_url TEXT DEFAULT '',
+  website_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  website_gap_signal TEXT NOT NULL DEFAULT 'GAP_UNKNOWN',
+  website_confidence REAL DEFAULT 0,
+  website_last_verified_at TEXT,
+  social_profiles TEXT DEFAULT '[]',
+  opening_hours TEXT DEFAULT '',
+  business_categories TEXT DEFAULT '[]',
+  service_area TEXT DEFAULT '',
+  public_description TEXT DEFAULT '',
+  review_signals TEXT DEFAULT '',
+  business_signals TEXT DEFAULT '',
+  digital_presence_signals TEXT DEFAULT '',
+  source_evidence TEXT DEFAULT '[]',
+  conflicting_facts TEXT DEFAULT '[]',
+  missing_facts TEXT DEFAULT '[]',
+  lead_score REAL DEFAULT 0,
+  score_factors TEXT DEFAULT '[]',
+  score_explanation TEXT DEFAULT '',
+  priority TEXT DEFAULT 'LOW',
+  lead_reason TEXT DEFAULT '',
+  recommended_service TEXT DEFAULT '',
+  recommended_offer TEXT DEFAULT '',
+  suggested_site_brief TEXT DEFAULT '',
+  suggested_pages TEXT DEFAULT '[]',
+  suggested_features TEXT DEFAULT '[]',
+  crm_stage TEXT NOT NULL DEFAULT 'DISCOVERED',
+  outreach_status TEXT DEFAULT 'NONE',
+  last_verified_at TEXT,
+  suppression_status TEXT NOT NULL DEFAULT 'NONE',
+  location TEXT DEFAULT '',
   confidence REAL DEFAULT 0,
   notes TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS market_scans (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  name TEXT DEFAULT '',
+  query_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','running','complete','failed')),
+  coverage_json TEXT NOT NULL DEFAULT '{}',
+  records_discovered INTEGER DEFAULT 0,
+  unique_businesses INTEGER DEFAULT 0,
+  duplicates_removed INTEGER DEFAULT 0,
+  website_gap_candidates INTEGER DEFAULT 0,
+  request_budget_used INTEGER DEFAULT 0,
+  error TEXT DEFAULT '',
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  started_at TEXT,
+  completed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS evidence_records (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  prospect_id TEXT,
+  scan_id TEXT,
+  field_name TEXT NOT NULL,
+  value TEXT DEFAULT '',
+  source_type TEXT NOT NULL DEFAULT 'directory',
+  source_provider TEXT NOT NULL DEFAULT '',
+  source_url_or_identifier TEXT DEFAULT '',
+  retrieved_at TEXT NOT NULL DEFAULT (datetime('now')),
+  extraction_method TEXT DEFAULT 'provider-record',
+  confidence REAL DEFAULT 0.8,
+  corroboration_count INTEGER DEFAULT 1,
+  retention_policy TEXT DEFAULT 'standard',
+  permitted_use TEXT DEFAULT 'business-prospecting',
+  hash TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS website_opportunities (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  prospect_id TEXT NOT NULL,
+  project_id TEXT,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'ready',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

@@ -1,13 +1,13 @@
 # BUILD STATE — Lucio AI Platform
 
-Canonical spec: Lucio_AI_Platform_Single_Master_Implementation_Manual_v27_KIMI_READY_CANONICAL.docx
+Canonical spec: Lucio_AI_Platform_Single_Master_Implementation_Manual_v28_MARKET_SCAN_CANONICAL.docx (v28 supersedes v27)
 Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 
 ## Current position
-- Phase: 0 PASS · Phase 1 PASS · Phase 2 PASS (local dev scope) — Phase 3 next
+- Phase: 0 PASS · Phase 1 PASS · Phase 2 PASS · Phase 3 PASS (local dev scope, fixture discovery sources) — Phase 4 next
 - Branch: main
 - Last passing checkpoint: see git log
-- Next action: Phase 3 — Business Discovery + Evidence Engine (verified/corroborated business profiles with missing/conflicting fact tracking)
+- Next action: Phase 4 — Structured Website Content + Site Architect (content engine + sitemap/customer-journey/SEO pipeline from opportunity input)
 - Release posture: local development build, not production
 
 ## Phase summary

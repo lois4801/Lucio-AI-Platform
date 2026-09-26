@@ -17,12 +17,26 @@ const SAMPLE_GOALS = [
 type Artifact = { id: string; kind: string; path: string; version: number; created_at: string };
 type Validation = { passed: boolean; checks: { name: string; passed: boolean }[] };
 type Cp = { id: string; label: string; created_at: string };
+type Plan2 = Plan & {
+  style?: { id: string; name: string; source: string };
+  recommendedStyles?: string[];
+  creationMode?: string;
+  recipe?: { version: number; styleId: string; creationMode: string; locked: boolean };
+};
+const MODES = [
+  { id: 'CUSTOM_AI', label: 'AI Custom Design' },
+  { id: 'COMPONENT_SYSTEM', label: 'Component System' },
+  { id: 'HYBRID', label: 'Hybrid' },
+  { id: 'CINEMATIC_UNIVERSE', label: 'Cinematic Universe' },
+];
 
 export default function BuilderPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState('');
   const [goal, setGoal] = useState('');
-  const [plan, setPlan] = useState<Plan | null>(null);
+  const [plan, setPlan] = useState<Plan2 | null>(null);
+  const [styleId, setStyleId] = useState('');
+  const [creationMode, setCreationMode] = useState('CUSTOM_AI');
   const [built, setBuilt] = useState(false);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [validation, setValidation] = useState<Validation | null>(null);
@@ -49,12 +63,14 @@ export default function BuilderPage() {
 
   const run = async (step: 'plan' | 'build') => {
     setError(''); setBusy(step);
+    const opts = { goal, styleId: styleId || undefined, creationMode };
     try {
       if (step === 'plan') {
-        const d = await api<{ plan: Plan }>(`/builder/project/${projectId}/plan`, { method: 'POST', body: JSON.stringify({ goal }) });
+        const d = await api<{ plan: Plan2 }>(`/builder/project/${projectId}/plan`, { method: 'POST', body: JSON.stringify(opts) });
         setPlan(d.plan);
+        if (!styleId && d.plan.style) setStyleId(d.plan.style.id);
       } else {
-        await api(`/builder/project/${projectId}/build`, { method: 'POST', body: JSON.stringify({ goal }) });
+        await api(`/builder/project/${projectId}/build`, { method: 'POST', body: JSON.stringify(opts) });
         setBuilt(true);
         const d = await api<{ artifacts: Artifact[] }>(`/builder/project/${projectId}/artifacts`);
         setArtifacts(d.artifacts);
@@ -118,6 +134,22 @@ export default function BuilderPage() {
               <Badge key={s} variant="secondary" className="cursor-pointer max-w-full truncate" onClick={() => setGoal(s)}>Try: {s.slice(0, 60)}…</Badge>
             ))}
           </div>
+          <div className="flex flex-wrap gap-2 items-center">
+            <span className="text-sm text-muted-foreground whitespace-nowrap">Creation mode</span>
+            <Select value={creationMode} onValueChange={setCreationMode}>
+              <SelectTrigger className="w-52"><SelectValue /></SelectTrigger>
+              <SelectContent>{MODES.map((m) => <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>)}</SelectContent>
+            </Select>
+            <span className="text-sm text-muted-foreground whitespace-nowrap">LD style</span>
+            <Select value={styleId} onValueChange={setStyleId}>
+              <SelectTrigger className="w-56"><SelectValue placeholder="Auto-recommend" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Auto-recommend</SelectItem>
+                {plan?.recommendedStyles?.map((sid) => <SelectItem key={sid} value={sid}>{sid}</SelectItem>)}
+                {plan?.style && !plan.recommendedStyles?.includes(plan.style.id) && <SelectItem value={plan.style.id}>{plan.style.id} {plan.style.name}</SelectItem>}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => run('plan')} disabled={!projectId || !goal || !!busy}>
               {busy === 'plan' ? 'Planning…' : '1 · Generate plan'}
@@ -137,10 +169,14 @@ export default function BuilderPage() {
         <Card>
           <CardHeader>
             <CardTitle>Plan — {plan.siteName}</CardTitle>
-            <CardDescription>{plan.industry}{plan.location ? ` · ${plan.location}` : ''} · tone: {plan.tone} · pages: {plan.pages.join(', ')}</CardDescription>
+            <CardDescription>{plan.industry}{plan.location ? ` · ${plan.location}` : ''} · tone: {plan.tone} · mode: {plan.creationMode?.replaceAll('_', ' ')} · pages: {plan.pages.join(', ')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm">{plan.tagline}</p>
+            <div className="flex flex-wrap gap-2 items-center">
+              <Badge variant="default">{plan.style?.id} {plan.style?.name}</Badge>
+              <span className="text-xs text-muted-foreground">STYLE_LOCK · recipe v{plan.recipe?.version} · {plan.style?.source === 'recommended' ? 'auto-selected (change above)' : 'your pick'}</span>
+            </div>
             <div className="flex flex-wrap gap-2">
               {plan.services.map((s) => <Badge key={s} variant="outline">{s}</Badge>)}
               {plan.features.map((f) => <Badge key={f}>{f}</Badge>)}
