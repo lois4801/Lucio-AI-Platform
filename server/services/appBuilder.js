@@ -11,6 +11,7 @@ import { scaffoldSite } from './siteTemplate.js';
 import { pickUniverse, getUniverse } from './designUniverses.js';
 import { buildContentPack } from './contentEngine.js';
 import { wideEvent } from './telemetry.js';
+import { runDesignQA } from './designQA.js';
 export { scaffoldSite };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -126,18 +127,27 @@ export function buildFromGoal(projectId, goal, opts = {}, user, ip = '') {
   const plan = makePlan(goal, { ...opts, projectId });
   const html = scaffoldSite(plan);
   const artifact = saveArtifact(projectId, 'site', 'index.html', html);
+  // Phase 5: automatic Design QA + responsive audit against the site's own tokens
+  const qa = runDesignQA(plan, html);
+  saveArtifact(projectId, 'qa', 'report.json', JSON.stringify(qa, null, 2));
   db.prepare(`UPDATE projects SET status = 'preview', updated_at = datetime('now') WHERE id = ?`).run(projectId);
   audit(user.orgId, user.id, 'builder.scaffold', 'project', projectId,
-    { goal: String(goal).slice(0, 120), version: artifact.version, style: plan.style.id, creationMode: plan.creationMode }, ip);
+    { goal: String(goal).slice(0, 120), version: artifact.version, style: plan.style.id, creationMode: plan.creationMode, qaScore: qa.score }, ip);
   // honeycomb-style wide event: one self-contained JSON line per build lifecycle
   wideEvent('build.completed', {
     projectId, version: artifact.version, style: plan.style.id, creationMode: plan.creationMode,
     universe: plan.universe.id, motion: plan.universe.motion, industry: plan.industry,
     pages: plan.contentPack.sitemap.length, sections: plan.contentPack.sitemap.reduce((n, s) => n + s.sections.length, 0),
-    provenance: plan.contentPack.provenanceSummary, media: plan.contentPack ? undefined : undefined,
+    provenance: plan.contentPack.provenanceSummary, qaScore: qa.score, qaGrade: qa.grade,
     bytes: html.length, durationMs: Date.now() - t0,
   });
-  return { plan, artifact };
+  return { plan, artifact, qa };
+}
+
+export function getLatestQA(projectId) {
+  return db
+    .prepare(`SELECT * FROM build_artifacts WHERE project_id = ? AND kind = 'qa' ORDER BY version DESC LIMIT 1`)
+    .get(projectId);
 }
 
 export function getLatestSite(projectId) {

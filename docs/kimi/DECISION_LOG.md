@@ -50,3 +50,26 @@
   per-project build environments) and generates all visual diversity from its own universe registry.
 - Consequence: no claims of visual inspiration from those orgs are made in user-facing copy; the
   generator meta tag records the universe id + motion personality for traceability.
+====
+## D8 — Always-on assistant layer grounded in the real v9.6 registry
+- Date: 2026-09-26
+- Decision: the "agents assist every user every step" requirement is served by an in-app assistant
+  layer whose squad is 18 agents extracted VERBATIM from the v9.6 unified roster (1,599 agents) —
+  roles, ids, specialties, when_to_use and provenance copied unchanged into
+  reference/agents/assistant-squad.json. No personas are invented. The assistant brain is
+  sovereign and deterministic (route map + keyword-scored intents + journey state from DB counts);
+  no external model call is needed for any assistive response. "Clients and owners" = every
+  authenticated role in the org; assistance is not gated to owners.
+- Consequence: the full 1,599-agent registry remains the canonical source outside the repo; the
+  embedded squad is traceable per agent via provenance fields. Tips are dismissible per user
+  (assistant_dismissals table) so assistance stays helpful rather than noisy.
+====
+## D9 — Design QA as a build-time gate artifact, not a post-hoc report
+- Date: 2026-09-26
+- Decision: design QA (score, grade, 8 explainable factors incl. reduced-motion coverage and
+  responsive audit) runs inside buildFromGoal on every build, is persisted as a versioned 'qa'
+  artifact, is returned in the build response, and is surfaced in the builder UI. The reduced-motion
+  factor measures selector coverage against the motion kill-switch block (with killsAll wholesale
+  credit) rather than keyframe-name matching, which failed on real v4 HTML.
+- Consequence: every generated site carries an inspectable quality report; weak output is visibly
+  penalized (verified: 15/F on stripped HTML), keeping the score honest.

@@ -7,6 +7,7 @@ import {
   LayoutDashboard, Hammer, FolderKanban, Radar, Search, Files, TerminalSquare, ScrollText,
   Cpu, LogOut, ScanSearch,
 } from 'lucide-react';
+import AssistantPanel from '@/components/AssistantPanel';
 
 const NAV = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -65,6 +66,7 @@ export default function AppShell({ user, onLogout }: { user: User; onLogout: () 
           <Outlet context={{ user }} />
         </div>
       </main>
+      <AssistantPanel />
     </div>
   );
 }

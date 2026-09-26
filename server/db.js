@@ -239,6 +239,13 @@ CREATE TABLE IF NOT EXISTS agent_registry (
   skills TEXT NOT NULL DEFAULT '[]',
   status TEXT NOT NULL DEFAULT 'schema-only'
 );
+
+CREATE TABLE IF NOT EXISTS assistant_dismissals (
+  user_id TEXT NOT NULL,
+  tip_key TEXT NOT NULL,
+  dismissed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, tip_key)
+);
 `);
 
 // Seed provider registry: local-first, external disabled by default (manual §7, §14)

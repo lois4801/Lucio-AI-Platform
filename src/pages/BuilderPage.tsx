@@ -17,6 +17,10 @@ const SAMPLE_GOALS = [
 type Artifact = { id: string; kind: string; path: string; version: number; created_at: string };
 type Validation = { passed: boolean; checks: { name: string; passed: boolean }[] };
 type Cp = { id: string; label: string; created_at: string };
+type QAReport = {
+  score: number; grade: string; summary: string;
+  factors: { check: string; points: number; max: number; detail: string; pass: boolean }[];
+};
 type Plan2 = Plan & {
   style?: { id: string; name: string; source: string };
   recommendedStyles?: string[];
@@ -40,6 +44,7 @@ export default function BuilderPage() {
   const [built, setBuilt] = useState(false);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [validation, setValidation] = useState<Validation | null>(null);
+  const [qa, setQa] = useState<QAReport | null>(null);
   const [checkpoints, setCheckpoints] = useState<Cp[]>([]);
   const [cpLabel, setCpLabel] = useState('');
   const [busy, setBusy] = useState('');
@@ -54,10 +59,13 @@ export default function BuilderPage() {
 
   useEffect(() => {
     if (!projectId) return;
-    setBuilt(false); setPlan(null); setValidation(null);
+    setBuilt(false); setPlan(null); setValidation(null); setQa(null);
     api<{ artifacts: Artifact[] }>(`/builder/project/${projectId}/artifacts`).then((d) => setArtifacts(d.artifacts)).catch(() => {});
+    loadQa();
     loadCps();
   }, [projectId]);
+
+  const loadQa = () => api<{ report: QAReport }>(`/builder/project/${projectId}/qa`).then((d) => setQa(d.report)).catch(() => setQa(null));
 
   const loadCps = () => api<{ checkpoints: Cp[] }>(`/checkpoints/project/${projectId}`).then((d) => setCheckpoints(d.checkpoints)).catch(() => {});
 
@@ -74,6 +82,7 @@ export default function BuilderPage() {
         setBuilt(true);
         const d = await api<{ artifacts: Artifact[] }>(`/builder/project/${projectId}/artifacts`);
         setArtifacts(d.artifacts);
+        loadQa();
       }
     } catch (e: any) { setError(e.message); } finally { setBusy(''); }
   };
@@ -208,6 +217,29 @@ export default function BuilderPage() {
               )}
             </CardContent>
           </Card>
+
+          {qa && (
+            <Card>
+              <CardHeader><CardTitle className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-primary" />
+                Design QA — {qa.grade} · {qa.score}/100
+              </CardTitle>
+              <CardDescription>Automatic audit against this site&rsquo;s design universe tokens (runs on every build).</CardDescription></CardHeader>
+              <CardContent>
+                <ul className="space-y-2 text-sm">
+                  {qa.factors.map((f) => (
+                    <li key={f.check} className="flex items-start gap-2">
+                      {f.pass ? <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" /> : <XCircle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />}
+                      <div>
+                        <span className="font-medium">{f.check}</span>
+                        <span className="text-muted-foreground"> — {f.points}/{f.max} · {f.detail}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
 
           {validation && (
             <Card>

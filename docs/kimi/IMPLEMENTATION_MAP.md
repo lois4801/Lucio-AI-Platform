@@ -63,3 +63,17 @@ Maps canonical manual requirements to concrete files in this repository.
 - LD styles → server/services/ldStyles.js; applied in server/services/appBuilder.js (STYLE_LOCK, tokens, recipes)
 - Creation modes → CREATION_MODES in ldStyles.js; CINEMATIC_UNIVERSE ships scroll-driven scene + reduced-motion fallback
 - Content engine → contentProvenance in plans; fact classifications in opportunity.js
+
+## Assistant layer (ships immediately)
+- 18-agent squad verbatim from v9.6 roster → reference/agents/assistant-squad.json
+- Assistant brain (routing, journey state, tips, chat intents) → server/services/assistant/engine.js
+- API /api/assistant (context/chat/dismiss/squad) → server/routes/assistant.js (mounted in server/index.js)
+- assistant_dismissals table → server/db.js
+- Floating panel on every authenticated page → src/components/AssistantPanel.tsx (mounted in AppShell)
+- Tests → scripts/test-assistant.js (34 assertions)
+
+## Phase 5 — Design Intelligence
+- runDesignQA (score/grade, 8 factors, checks) → server/services/designQA.js
+- Build-time QA + 'qa' artifact + wide-event fields → server/services/appBuilder.js
+- GET /builder/project/:id/qa → server/routes/builder.js
+- QA card in builder → src/pages/BuilderPage.tsx

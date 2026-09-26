@@ -143,3 +143,45 @@
   both previews carry JSON-LD LocalBusiness, Google Fonts, reduced-motion, seeded 4K alternates
   (hero-dining-3, hero-clinic-2 → 200 image/jpeg); build.completed wide events in data/telemetry.log.
 - Gate: PASS for local dev scope.
+
+## Assistant layer — always-on agent assistance (available immediately, all roles)
+- v9.6 package (Lucio_Agents_v9_6_GROK_BUILD_AGENT_SKILL_EXPANSION_FINAL) unzipped to workspace
+  agent-pack/ (outside repo, not committed). Verified: UNIFIED_AGENT_ROSTER_FINAL.csv lists
+  1,599 agents; JSON definitions carry full provenance (division, specialty, when_to_use,
+  source_repository, source_path, version).
+- 18 journey agents extracted VERBATIM (roles, ids, display names, specialties, when_to_use,
+  provenance — no invented personas) into reference/agents/assistant-squad.json, with
+  provenance.roster_total_agents = 1599 recorded.
+- Assistant brain is sovereign/deterministic (server/services/assistant/engine.js): route→agent
+  routing (ROUTE_AGENTS), 7-step journey state computed from real DB counts (project → scan →
+  evidence → opportunity → build → qa → checkpoint) with done/total/next, proactive TIPS filtered
+  by per-user assistant_dismissals, and keyword-scored chat INTENTS (15) with journey fallback.
+  No external model call required for any assistive response.
+- API: server/routes/assistant.js mounted at /api/assistant behind requireAuth — GET /context?route=,
+  POST /chat, POST /dismiss, GET /squad (returns full provenance block).
+- UI: src/components/AssistantPanel.tsx — floating button bottom-right on EVERY authenticated page
+  (mounted in AppShell): agent header, journey checklist with deep-links, dismissible proactive
+  tips, chat. "Clients and owners" served = every authenticated role in the org (owner/member/viewer).
+- Tests: node scripts/test-assistant.js — 34/34 PASS.
+- E2E through :7100 (fresh org "Assist E2E 2" / user Ava Test): context on /scanner routed to
+  Business Discovery — Business Profile Strategy Agent with onboarding + firstScan tips; chat
+  "How do I find leads?" → scan-guide agent; POST /dismiss {firstScan} removed the tip from the
+  next context; /squad returns 18 agents with roster_total_agents 1599; greeting uses first name.
+- Gate: PASS.
+
+## Phase 5 — Design Intelligence: automatic design QA + responsive audit
+- server/services/designQA.js: runDesignQA(plan, html) → {score 0–100, grade A–F, 8 explainable
+  factors (universe tokens, typography, motion+cinematic, reduced-motion, responsiveness, content
+  depth, media/embeds, metadata), checks[]}. Reduced-motion factor measures coverage of
+  animation-using selectors against the prefers-reduced-motion block, with killsAll credit when
+  a wholesale animation:none rule is present.
+- Wired into buildFromGoal (server/services/appBuilder.js): QA runs on every build, report saved
+  as a kind 'qa' artifact (versioned), returned in the build response as {plan, artifact, qa};
+  qaScore/qaGrade included in the build.completed wide event.
+- API: GET /api/builder/project/:id/qa returns the latest report (404 before first build).
+- UI: BuilderPage QA card above validation — per-factor pass/fail with points/max + detail.
+- Discrimination proof: deliberately weak HTML (no fonts/motion/meta/responsiveness) scores 15/F
+  with all 8 factors failing; the v4 cinematic scaffold scores 100/A. QA is not a rubber stamp.
+- E2E through :7100: project "QA E2E Salon" → build "Velvet & Vine" (luxury hair salon) →
+  qa {score 100, grade A, 8 factors}; GET /project/:id/qa returns the same report.
+- Gate: PASS for local dev scope.

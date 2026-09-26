@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { makePlan, buildFromGoal, getLatestSite, listArtifacts } from '../services/appBuilder.js';
+import { makePlan, buildFromGoal, getLatestSite, getLatestQA, listArtifacts } from '../services/appBuilder.js';
 import { chat } from '../services/modelGateway.js';
 
 export const builderRouter = Router();
@@ -43,6 +43,14 @@ builderRouter.post('/project/:projectId/build', requireRole('member'), (req, res
 builderRouter.get('/project/:projectId/artifacts', (req, res) => {
   if (!ownProject(req, res)) return;
   res.json({ artifacts: listArtifacts(req.params.projectId) });
+});
+
+// Latest design QA report (Phase 5)
+builderRouter.get('/project/:projectId/qa', (req, res) => {
+  if (!ownProject(req, res)) return;
+  const qa = getLatestQA(req.params.projectId);
+  if (!qa) return res.status(404).json({ error: 'no QA report yet — build the site first' });
+  res.json({ report: JSON.parse(qa.content), version: qa.version, created_at: qa.created_at });
 });
 
 // Live preview: serves the latest generated site HTML (§36 domainless preview foundation)
