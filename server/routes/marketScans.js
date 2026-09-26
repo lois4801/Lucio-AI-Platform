@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db, audit } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { runMarketScan, listScans, getScan, resolveWebsitePresence } from '../services/discovery/pipeline.js';
+import { runMarketScan, listScans, getScan, resolveWebsitePresence, providerMeta } from '../services/discovery/pipeline.js';
 import { generateWebsiteOpportunity, createProjectFromOpportunity, listOpportunities } from '../services/opportunity.js';
 import { INDUSTRIES, REGIONS } from '../services/discovery/providers.js';
 import { wideEvent } from '../services/telemetry.js';
@@ -30,7 +30,7 @@ marketScansRouter.get('/', (req, res) => res.json({ scans: listScans(req.user.or
 
 // Operator metadata: industries and regions exposed by the configured providers
 marketScansRouter.get('/meta', (req, res) => {
-  res.json({ industries: INDUSTRIES, regions: REGIONS, providers: ['fixture-directory', 'user-list'] });
+  res.json({ industries: INDUSTRIES, regions: REGIONS, providers: providerMeta() });
 });
 
 marketScansRouter.get('/:id', (req, res) => {

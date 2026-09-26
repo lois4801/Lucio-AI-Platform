@@ -6,7 +6,7 @@
 // -> Generate website opportunity brief.
 import crypto from 'node:crypto';
 import { db, audit } from '../../db.js';
-import { getProviders } from './providers.js';
+import { getProviders, listProviderMeta } from './providers.js';
 import { fetchWithGuards } from '../ssrfGuard.js';
 
 // ---------------------------------------------------------------------------
@@ -33,10 +33,15 @@ export function normalizeRequest(q) {
     websiteStatus: q.websiteStatus || 'ANY',
     minScore: Math.max(0, Math.min(100, Number(q.minScore) || 0)),
     maxResults: Math.max(1, Math.min(200, Number(q.maxResults) || 50)),
-    sources: Array.isArray(q.sources) && q.sources.length ? q.sources : ['fixture-directory'],
+    // Default: every configured provider, LIVE Google Places first when its key is
+    // set (owner directive). getProviders filters out unconfigured providers, so
+    // the fallback list degrades cleanly to the labeled fixture directory.
+    sources: Array.isArray(q.sources) && q.sources.length ? q.sources : ['google-places', 'fixture-directory'],
     userRecords: Array.isArray(q.userRecords) ? q.userRecords : [],
   };
 }
+
+export function providerMeta() { return listProviderMeta(); }
 
 export function expandGeography(req, providers) {
   // Geography expands into units (cities) via providers that support unit listing.
@@ -322,17 +327,25 @@ export async function runMarketScan(orgId, user, rawQuery, ip = '') {
     );
 
     const candidates = [];
+    const sourceErrors = {};
     for (const unit of units) {
       for (const p of providers) {
         const params = { ...req, city: req.city || (p.geographyUnits ? unit : req.city) };
         if (p.id === 'user-list') params.userRecords = req.userRecords;
-        const rows = await p.search(params);
+        try {
+          const rows = await p.search(params);
+          candidates.push(...rows);
+          if (!coverage.sources_completed.includes(p.id)) coverage.sources_completed.push(p.id);
+        } catch (pe) {
+          // One failing provider (e.g. Places quota/key issue) must not sink the
+          // whole scan — record it and continue with the remaining sources.
+          sourceErrors[p.id] = String(pe.message || pe);
+        }
         coverage.request_budget_used += 1;
-        candidates.push(...rows);
-        if (!coverage.sources_completed.includes(p.id)) coverage.sources_completed.push(p.id);
       }
       coverage.geography_units_completed++;
     }
+    if (Object.keys(sourceErrors).length) coverage.source_errors = sourceErrors;
 
     coverage.records_discovered = candidates.length;
     const { merged, duplicatesRemoved } = dedupeCandidates(candidates.filter((c) =>

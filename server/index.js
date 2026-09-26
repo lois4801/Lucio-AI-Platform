@@ -3,6 +3,19 @@ import express from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+
+// Secret references from the gitignored .env file (never commit credentials).
+// Loaded before anything else reads process.env.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ENV_FILE = path.resolve(__dirname, '../.env');
+if (fs.existsSync(ENV_FILE)) {
+  for (const line of fs.readFileSync(ENV_FILE, 'utf8').split(/\r?\n/)) {
+    const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(line);
+    if (!m || line.trim().startsWith('#')) continue;
+    if (process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+  }
+}
+
 import { parseCookies } from './middleware/auth.js';
 import { authRouter } from './routes/auth.js';
 import { projectsRouter } from './routes/projects.js';
@@ -17,8 +30,6 @@ import { prospectsRouter } from './routes/prospects.js';
 import { marketScansRouter } from './routes/marketScans.js';
 import { mediaRouter } from './routes/media.js';
 import { assistantRouter } from './routes/assistant.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export function createApp() {
   const app = express();

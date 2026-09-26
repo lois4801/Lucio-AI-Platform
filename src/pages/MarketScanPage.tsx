@@ -28,6 +28,7 @@ type ProspectRow = {
 };
 type Scan = { id: string; status: string; created_at: string; coverage: any; query: any };
 type Evidence = { id: string; field_name: string; value: string; source_provider: string; source_type: string; confidence: number; retrieved_at: string };
+type ProviderMeta = { id: string; label: string; is_live: boolean; configured: boolean };
 
 export default function MarketScanPage() {
   const [form, setForm] = useState({ industry: 'Plumbing', region: 'Nova Scotia', city: '', minScore: 0, maxResults: 50 });
@@ -39,11 +40,11 @@ export default function MarketScanPage() {
   const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [meta, setMeta] = useState<{ industries: string[]; regions: string[] }>({ industries: FALLBACK_INDUSTRIES, regions: FALLBACK_REGIONS });
+  const [meta, setMeta] = useState<{ industries: string[]; regions: string[]; providers: ProviderMeta[] }>({ industries: FALLBACK_INDUSTRIES, regions: FALLBACK_REGIONS, providers: [] });
 
   useEffect(() => {
-    api<{ industries: string[]; regions: string[] }>('/scans/meta')
-      .then((d) => setMeta({ industries: [...d.industries, ''], regions: [...d.regions, ''] }))
+    api<{ industries: string[]; regions: string[]; providers: ProviderMeta[] }>('/scans/meta')
+      .then((d) => setMeta({ industries: [...d.industries, ''], regions: [...d.regions, ''], providers: d.providers || [] }))
       .catch(() => {});
   }, []);
 
@@ -55,7 +56,9 @@ export default function MarketScanPage() {
     try {
       const d = await api<{ scanId: string; coverage: any; results: ProspectRow[] }>('/scans', {
         method: 'POST',
-        body: JSON.stringify({ industry: form.industry, region: form.region, city: form.city, minScore: form.minScore, maxResults: form.maxResults, sources: ['fixture-directory'] }),
+        // Sources omitted on purpose: the server picks LIVE Google Places first
+        // when configured, and degrades to the labeled fixture directory otherwise.
+        body: JSON.stringify({ industry: form.industry, region: form.region, city: form.city, minScore: form.minScore, maxResults: form.maxResults }),
       });
       const full = await api<{ scan: Scan & { prospects: ProspectRow[] } }>(`/scans/${d.scanId}`);
       setScan(full.scan);
@@ -105,6 +108,19 @@ export default function MarketScanPage() {
         <CardHeader><CardTitle className="flex items-center gap-2"><Radar className="h-5 w-5" /> New scan</CardTitle>
           <CardDescription>Coverage is based on available permitted sources; results are not guaranteed to contain every operating business.</CardDescription></CardHeader>
         <CardContent className="space-y-3">
+          {meta.providers.length > 0 && (
+            <div className="flex flex-wrap gap-2 items-center text-xs">
+              <span className="text-muted-foreground">Data source:</span>
+              {meta.providers.filter((p) => p.configured).map((p) => (
+                <Badge key={p.id} variant={p.is_live ? 'default' : 'secondary'}>
+                  {p.is_live ? '● LIVE' : 'dev'} · {p.label}
+                </Badge>
+              ))}
+              {!meta.providers.some((p) => p.is_live && p.configured) && (
+                <span className="text-amber-600 dark:text-amber-400">Live Google data not configured — add GOOGLE_PLACES_API_KEY to .env (see .env.example)</span>
+              )}
+            </div>
+          )}
           <div className="flex flex-wrap gap-2 items-end">
             <div>
               <label className="text-xs text-muted-foreground">Industry</label>
@@ -141,9 +157,18 @@ export default function MarketScanPage() {
 
       {scan && (
         <Card>
-          <CardHeader><CardTitle>Results — {scan.query?.industry} in {scan.query?.city || scan.query?.region || scan.query?.province}</CardTitle>
+          <CardHeader><CardTitle className="flex items-center gap-2">Results — {scan.query?.industry} in {scan.query?.city || scan.query?.region || scan.query?.province}
+            {scan.coverage?.sources_completed?.includes('google-places')
+              ? <Badge className="ml-1">● LIVE · Google Places</Badge>
+              : <Badge variant="secondary" className="ml-1">fixture dataset (dev data)</Badge>}
+          </CardTitle>
             <CardDescription>
               {scan.coverage?.unique_businesses} unique businesses · {scan.coverage?.duplicates_removed} duplicates removed · {scan.coverage?.website_gap_candidates} gap candidates · {scan.coverage?.geography_units_completed}/{scan.coverage?.geography_units_planned} areas covered
+              {scan.coverage?.source_errors && Object.keys(scan.coverage.source_errors).length > 0 && (
+                <span className="block text-amber-600 dark:text-amber-400 mt-1">
+                  Source errors: {Object.entries(scan.coverage.source_errors).map(([id, msg]) => `${id}: ${String(msg).slice(0, 120)}`).join(' · ')}
+                </span>
+              )}
             </CardDescription></CardHeader>
           <CardContent>
             <Table>

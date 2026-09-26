@@ -7,6 +7,7 @@
 //    (live directory provider validation remains pending per §17.13.22 — see BLOCKERS B3)
 //  - user-list: user-supplied business records (CSV/JSON paste), user-authorized data
 import crypto from 'node:crypto';
+import { googlePlacesProvider, isGooglePlacesConfigured } from './googlePlaces.js';
 
 // ---------------------------------------------------------------------------
 // Geography — all provinces and territories across Canada (§17.13.1)
@@ -197,7 +198,19 @@ function normalizeCandidate(b, source) {
 }
 
 export function getProviders(ids) {
-  const all = [fixtureDirectoryProvider, userListProvider];
+  // Live Google Places leads when configured (owner directive: real, accurate data
+  // from Google); the fixture directory remains the labeled dev fallback.
+  const all = [googlePlacesProvider, fixtureDirectoryProvider, userListProvider].filter(
+    (p) => p.id !== 'google-places' || isGooglePlacesConfigured()
+  );
   if (!ids?.length) return all;
   return all.filter((p) => ids.includes(p.id));
+}
+
+export function listProviderMeta() {
+  return [
+    { id: 'google-places', label: googlePlacesProvider.label, is_live: true, configured: isGooglePlacesConfigured() },
+    { id: 'fixture-directory', label: fixtureDirectoryProvider.label, is_live: false, configured: true },
+    { id: 'user-list', label: userListProvider.label, is_live: false, configured: true },
+  ];
 }
