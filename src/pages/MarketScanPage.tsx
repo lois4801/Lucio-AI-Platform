@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Radar, RefreshCw, FileText, Ban, FolderPlus, Eye, Navigation, Search as SearchIcon } from 'lucide-react';
+import { Radar, RefreshCw, FileText, Ban, FolderPlus, Eye, Navigation, Search as SearchIcon, ScanSearch, Hammer, HandCoins, UserRound } from 'lucide-react';
 
 // Leaflet is loaded from CDN on demand (same pattern as scanner libs).
 function loadScript(src: string): Promise<void> {
@@ -236,39 +237,39 @@ export default function MarketScanPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Market Scanner</h1>
-        <p className="text-muted-foreground">Discover businesses through permitted sources, corroborate website presence, and score the opportunity — evidence first.</p>
+      <div className="flex items-baseline justify-between">
+        <h1 className="text-xl font-bold tracking-tight">Market Scanner</h1>
+        <p className="text-xs text-muted-foreground hidden sm:block">Click the map to scan · evidence-first discovery</p>
       </div>
 
-      <Card className="overflow-hidden border-0 shadow-lg">
+      <Card className="overflow-hidden rounded-none border-0 shadow-none -mx-6 lg:-mx-8">
         <CardContent className="p-0 relative">
           {mapFailed && <p className="text-sm text-amber-600 dark:text-amber-400 absolute top-3 left-3 right-3 z-[1100] bg-background/95 rounded-lg p-3">Map could not load ({mapFailed}). Check your internet connection — map tiles and Leaflet load from CDN.</p>}
-          <div id="prospect-map" className="h-[62vh] min-h-[460px] w-full relative z-0 bg-[#0c0a09]" />
+          <div id="prospect-map" className="h-[calc(100vh-7rem)] min-h-[480px] w-full relative z-0 bg-[#0c0a09]" />
 
           {/* Overlay search bar — geocode then pin-drop scan (like the reference) */}
-          <div className="absolute top-3 left-3 z-[1000] flex gap-2 w-[calc(100%-1.5rem)] sm:w-auto">
-            <div className="relative flex-1 sm:w-96">
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] flex gap-2 w-[calc(100%-1.5rem)] max-w-xl">
+            <div className="relative flex-1">
               <SearchIcon className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               <Input value={geoQuery} onChange={(e) => setGeoQuery(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') searchMap(); }}
                 placeholder="Search a business, address, or city"
-                className="pl-9 bg-background/95 shadow-lg border-muted" />
+                className="pl-9 pr-20 bg-background/95 shadow-lg border-muted rounded-full h-11" />
+              <Button size="sm" onClick={searchMap} disabled={geoLoading || !geoQuery.trim()} className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full h-9">
+                {geoLoading ? '…' : 'Search'}
+              </Button>
             </div>
-            <Button onClick={searchMap} disabled={geoLoading || !geoQuery.trim()} className="shadow-lg">
-              {geoLoading ? 'Locating…' : 'Find'}
-            </Button>
           </div>
 
-          {/* Data-source badge, top right */}
-          <div className="absolute top-3 right-3 z-[1000]">
+          {/* Data-source badge, top right under search */}
+          <div className="absolute top-[3.75rem] right-3 z-[1000]">
             {meta.providers.some((p) => p.id === 'google-places' && p.configured)
               ? <Badge className="shadow-lg">● LIVE · Google Places</Badge>
               : <Badge variant="secondary" className="shadow-lg">dev data — add GOOGLE_PLACES_API_KEY for live</Badge>}
           </div>
 
           {/* Legend, bottom left */}
-          <div className="absolute bottom-3 left-3 z-[1000] rounded-lg bg-background/95 shadow-lg px-3 py-2 text-xs space-y-1">
+          <div className="absolute bottom-20 left-3 z-[1000] rounded-lg bg-background/95 shadow-lg px-3 py-2 text-xs space-y-1">
             <div className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-full ring-2 ring-white/70" style={{ background: '#dc2626' }} /> No website</div>
             <div className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-full ring-2 ring-white/70" style={{ background: '#d97706' }} /> Weak / social only</div>
             <div className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-full ring-2 ring-white/70" style={{ background: '#16a34a' }} /> Has a website</div>
@@ -276,6 +277,23 @@ export default function MarketScanPage() {
               {nearbyLoading
                 ? <span className="flex items-center gap-1 text-primary"><Navigation className="h-3 w-3 animate-pulse" /> Scanning dropped pin…</span>
                 : 'Click anywhere = scan a 3 km radius · marker labels = business names'}
+            </div>
+          </div>
+
+          {/* Mode pill — Find / Build / Sell / You (pindrop-style bottom nav) */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000]">
+            <div className="flex items-center gap-1 rounded-full bg-background/95 shadow-xl border border-border/60 p-1.5">
+              {([
+                { to: '/scanner', label: 'Find', icon: ScanSearch, active: true },
+                { to: '/builder', label: 'Build', icon: Hammer },
+                { to: '/clients', label: 'Sell', icon: HandCoins },
+                { to: '/dashboard', label: 'You', icon: UserRound },
+              ] as { to: string; label: string; icon: any; active?: boolean }[]).map(({ to, label, icon: Icon, active }) => (
+                <Link key={label} to={to}
+                  className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold transition-colors ${active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}>
+                  <Icon className="h-3.5 w-3.5" /> {label}
+                </Link>
+              ))}
             </div>
           </div>
         </CardContent>
