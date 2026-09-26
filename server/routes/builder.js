@@ -2,10 +2,22 @@ import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { makePlan, buildFromGoal, getLatestSite, getLatestQA, listArtifacts } from '../services/appBuilder.js';
+import { DESIGN_UNIVERSES, MOTION_PERSONALITIES } from '../services/designUniverses.js';
 import { chat } from '../services/modelGateway.js';
 
 export const builderRouter = Router();
 builderRouter.use(requireAuth);
+
+// Design universe catalog — the "template gallery" the build panel picks from.
+builderRouter.get('/universes', (req, res) => {
+  res.json({
+    universes: DESIGN_UNIVERSES.map((u) => ({
+      id: u.id, name: u.name, inspiration: u.inspiration,
+      motion: MOTION_PERSONALITIES.find((m) => m.id === u.motion)?.label || u.motion,
+      headingFont: u.fonts?.heading || '', palette: { bg: u.palette?.bg, accent: u.palette?.accent, ink: u.palette?.ink },
+    })),
+  });
+});
 
 function ownProject(req, res) {
   const p = db.prepare(`SELECT * FROM projects WHERE id = ? AND org_id = ?`).get(req.params.projectId, req.user.orgId);

@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Radar, RefreshCw, FileText, Ban, FolderPlus, Eye, Navigation, Search as SearchIcon, ScanSearch, Hammer, HandCoins, UserRound } from 'lucide-react';
+import { Radar, RefreshCw, FileText, Ban, FolderPlus, Eye, Navigation, Search as SearchIcon, ScanSearch, Hammer, HandCoins, UserRound, MapPin, Phone, Globe, Facebook, Instagram, Music2, Youtube, Linkedin, Sparkles } from 'lucide-react';
 
 // Leaflet is loaded from CDN on demand (same pattern as scanner libs).
 function loadScript(src: string): Promise<void> {
@@ -47,10 +48,29 @@ type ProspectRow = {
   website_status: string; website_gap_signal: string; website_confidence: number; lead_score: number;
   priority: string; score_explanation: string; recommended_offer: string; public_phone: string;
   crm_stage: string; suppression_status: string; lat?: number | null; lng?: number | null;
+  address?: string; social_profiles?: string | string[];
 };
 type Scan = { id: string; status: string; created_at: string; coverage: any; query: any };
 type Evidence = { id: string; field_name: string; value: string; source_provider: string; source_type: string; confidence: number; retrieved_at: string };
 type ProviderMeta = { id: string; label: string; is_live: boolean; configured: boolean };
+type Universe = { id: string; name: string; inspiration: string; motion: string; headingFont: string; palette: { bg: string; accent: string; ink: string } };
+
+function socialIcon(url: string) {
+  const u = url.toLowerCase();
+  if (u.includes('facebook')) return Facebook;
+  if (u.includes('instagram')) return Instagram;
+  if (u.includes('tiktok')) return Music2;
+  if (u.includes('youtube') || u.includes('youtu.be')) return Youtube;
+  if (u.includes('linkedin')) return Linkedin;
+  if (u.includes('twitter') || u.includes('x.com')) return Globe;
+  return Globe;
+}
+function socialList(p: ProspectRow): string[] {
+  const raw = p.social_profiles;
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.filter(Boolean);
+  try { const parsed = JSON.parse(raw); return Array.isArray(parsed) ? parsed.filter(Boolean) : []; } catch { return []; }
+}
 
 export default function MarketScanPage() {
   const [form, setForm] = useState({ industry: 'Plumbing', region: 'Nova Scotia', city: '', minScore: 0, maxResults: 50 });
@@ -146,6 +166,7 @@ export default function MarketScanPage() {
         <div style="font-size:11px;opacity:.7;margin-top:2px">${esc(p.recommended_offer || '')}</div>
         <div style="margin-top:6px;display:flex;gap:6px">
           <button id="gen-${p.id}" style="font-size:11px;padding:3px 8px;border:1px solid #57534e;border-radius:6px;background:#0c0a09;color:#fafaf9;cursor:pointer">Generate opportunity</button>
+          <button id="bw-${p.id}" style="font-size:11px;padding:3px 8px;border:0;border-radius:6px;background:#22c55e;color:#052e16;font-weight:700;cursor:pointer">Build website →</button>
           ${meta.mapsEmbedKey ? `<button id="sv-${p.id}" style="font-size:11px;padding:3px 8px;border:1px solid #57534e;border-radius:6px;background:#292524;color:#fafaf9;cursor:pointer">Street view</button>` : ''}
         </div>
       </div>`;
@@ -153,6 +174,8 @@ export default function MarketScanPage() {
       m.on('popupopen', () => {
         const gen = document.getElementById(`gen-${p.id}`);
         if (gen) gen.onclick = () => generateOpportunity(p);
+        const bw = document.getElementById(`bw-${p.id}`);
+        if (bw) bw.onclick = () => openBuild(p);
         const sv = document.getElementById(`sv-${p.id}`);
         if (sv) sv.onclick = () => {
           const embed = `<div style="width:300px"><iframe width="300" height="200" style="border:0;border-radius:8px" loading="lazy"
@@ -233,6 +256,41 @@ export default function MarketScanPage() {
       const c = await act(`/scans/opportunities/${d.opportunityId}/create-project`, `Project created for ${p.business_name} — open the App Builder to generate the site`);
       if (c?.projectId) setNotice((n) => n + ` (project ${c.projectId.slice(0, 8)}…)`);
     }
+  };
+
+  // ---- Build panel (pindrop-style): business details + socials + template gallery -> make website
+  const navigate = useNavigate();
+  const [universes, setUniverses] = useState<Universe[]>([]);
+  const [buildFor, setBuildFor] = useState<ProspectRow | null>(null);
+  const [buildDesc, setBuildDesc] = useState('');
+  const [buildStyle, setBuildStyle] = useState('auto');
+  const [making, setMaking] = useState(false);
+
+  useEffect(() => {
+    api<{ universes: Universe[] }>('/builder/universes').then((d) => setUniverses(d.universes || [])).catch(() => {});
+  }, []);
+
+  const openBuild = (p: ProspectRow) => {
+    setBuildFor(p);
+    setBuildStyle('auto');
+    setBuildDesc(`Build a modern mobile-ready website for ${p.business_name} in ${p.city} with a click-to-call contact form, service gallery, and reviews.`);
+  };
+
+  const makeWebsite = async () => {
+    if (!buildFor || making) return;
+    setMaking(true); setError(''); setNotice('');
+    try {
+      const d = await api<{ opportunityId: string }>(`/scans/prospects/${buildFor.id}/opportunity`, { method: 'POST' });
+      const c = await api<{ projectId: string }>(`/scans/opportunities/${d.opportunityId}/create-project`, { method: 'POST' });
+      await api(`/builder/project/${c.projectId}/build`, {
+        method: 'POST',
+        body: JSON.stringify({ goal: buildDesc.trim() || `Build a website for ${buildFor.business_name} in ${buildFor.city}`, styleId: buildStyle === 'auto' ? undefined : buildStyle }),
+      });
+      setNotice(`Website built for ${buildFor.business_name} — opening the builder`);
+      setBuildFor(null);
+      navigate(`/builder?project=${c.projectId}`);
+    } catch (e: any) { setError(e.message); }
+    finally { setMaking(false); }
   };
 
   return (
@@ -388,6 +446,7 @@ export default function MarketScanPage() {
                         <Button size="sm" variant="ghost" title="View evidence" onClick={() => viewEvidence(p)}><Eye className="h-3.5 w-3.5" /></Button>
                         <Button size="sm" variant="ghost" title="Verify again" onClick={() => reverify(p)}><RefreshCw className="h-3.5 w-3.5" /></Button>
                         <Button size="sm" variant="ghost" title="Generate opportunity + create project" onClick={() => generateOpportunity(p)}><FolderPlus className="h-3.5 w-3.5" /></Button>
+                        <Button size="sm" variant="ghost" title="Build website now (pick a template)" onClick={() => openBuild(p)}><Hammer className="h-3.5 w-3.5" /></Button>
                         <Button size="sm" variant="ghost" title="Suppress" onClick={async () => { await act(`/scans/prospects/${p.id}/suppress`, `${p.business_name} suppressed`); setResults((rs) => rs.filter((r) => r.id !== p.id)); }}><Ban className="h-3.5 w-3.5" /></Button>
                       </div>
                     </TableCell>
@@ -438,6 +497,92 @@ export default function MarketScanPage() {
             ))}
             {!evidence.length && <p className="text-sm text-muted-foreground">No evidence records.</p>}
           </ul>
+        </DialogContent>
+      </Dialog>
+
+      {/* Build panel — pindrop-style: business details + socials + template gallery + make website */}
+      <Dialog open={!!buildFor} onOpenChange={() => setBuildFor(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Build a website for {buildFor?.business_name}</DialogTitle>
+            <DialogDescription>Describe it, or pick a template. You can fine-tune everything in the editor after.</DialogDescription>
+          </DialogHeader>
+          {buildFor && (
+            <div className="space-y-5">
+              {/* Business facts */}
+              <div className="rounded-xl border bg-muted/30 p-4 space-y-2 text-sm">
+                <div className="font-semibold text-base">{buildFor.business_name} <span className="text-muted-foreground font-normal">· {buildFor.industry || 'local business'}</span></div>
+                {(buildFor.address || buildFor.city) && (
+                  <div className="flex items-center gap-2 text-muted-foreground"><MapPin className="h-3.5 w-3.5 shrink-0" />{buildFor.address || `${buildFor.city}, ${buildFor.province_state}`}</div>
+                )}
+                {buildFor.public_phone && (
+                  <div className="flex items-center gap-2 text-muted-foreground"><Phone className="h-3.5 w-3.5 shrink-0" />{buildFor.public_phone}</div>
+                )}
+                {socialList(buildFor).length > 0 && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="text-xs text-muted-foreground mr-1">Socials on record:</span>
+                    {socialList(buildFor).map((u) => {
+                      const Icon = socialIcon(u);
+                      return (
+                        <a key={u} href={u} target="_blank" rel="noreferrer" title={u}
+                          className="h-8 w-8 rounded-full border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+                          <Icon className="h-3.5 w-3.5" />
+                        </a>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="flex items-center gap-2 pt-1 text-xs">
+                  <Badge variant={GAP_VARIANT[buildFor.website_gap_signal] || 'outline'}>{GAP_LABEL[buildFor.website_gap_signal] || buildFor.website_gap_signal}</Badge>
+                  <span className="text-muted-foreground">score {Math.round(buildFor.lead_score)} · {buildFor.recommended_offer}</span>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="text-xs text-muted-foreground">Describe the site — or leave the auto-draft and just pick a template</label>
+                <Textarea rows={3} value={buildDesc} onChange={(e) => setBuildDesc(e.target.value)} />
+              </div>
+
+              {/* Template gallery */}
+              <div>
+                <label className="text-xs text-muted-foreground">Pick a template</label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-1.5">
+                  <button onClick={() => setBuildStyle('auto')}
+                    className={`text-left rounded-xl border-2 overflow-hidden transition-all ${buildStyle === 'auto' ? 'border-primary ring-2 ring-primary/30' : 'border-border hover:border-muted-foreground/50'}`}>
+                    <div className="h-20 bg-gradient-to-br from-emerald-500 via-teal-600 to-emerald-800 flex items-center justify-center">
+                      <Sparkles className="h-7 w-7 text-white" />
+                    </div>
+                    <div className="p-2.5">
+                      <div className="text-sm font-semibold flex items-center gap-1.5">Dealer's choice</div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">We pick the best design for this business — deterministic per site, always on-brand.</div>
+                    </div>
+                  </button>
+                  {universes.map((u) => (
+                    <button key={u.id} onClick={() => setBuildStyle(u.id)}
+                      className={`text-left rounded-xl border-2 overflow-hidden transition-all ${buildStyle === u.id ? 'border-primary ring-2 ring-primary/30' : 'border-border hover:border-muted-foreground/50'}`}>
+                      <div className="h-20 flex flex-col justify-between p-2" style={{ background: u.palette?.bg || '#111', borderBottom: `2px solid ${u.palette?.accent || '#444'}` }}>
+                        <span className="text-[10px] font-bold leading-tight" style={{ color: u.palette?.ink || '#fff', fontFamily: u.headingFont || undefined }}>{u.name}</span>
+                        <span className="text-[9px]" style={{ color: u.palette?.accent || '#999' }}>Aa · {u.motion}</span>
+                      </div>
+                      <div className="p-2.5">
+                        <div className="text-sm font-semibold">{u.name}</div>
+                        <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">{u.inspiration} · {u.motion}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Make website */}
+              <div className="space-y-2">
+                <Button className="w-full h-11 text-base bg-green-600 hover:bg-green-700 text-white" onClick={makeWebsite} disabled={making}>
+                  <Hammer className="h-4 w-4 mr-2" /> {making ? 'Building…' : 'Make website'}
+                </Button>
+                <p className="text-xs text-center text-muted-foreground">Mobile-ready, click-to-call, contact form, gallery and reviews — built and previewable in about a minute.</p>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

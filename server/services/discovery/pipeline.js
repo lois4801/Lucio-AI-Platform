@@ -429,6 +429,7 @@ export async function runNearbyScan(orgId, user, { lat, lng, industry = '', maxR
       lead_score: scoring.lead_score, priority: scoring.priority, score_explanation: scoring.score_explanation,
       recommended_offer: scoring.recommended_offer, public_phone: biz.public_phone,
       crm_stage: 'DISCOVERED', suppression_status: 'NONE', lat: biz.lat ?? null, lng: biz.lng ?? null,
+      address: biz.address || '', social_profiles: biz.social_profiles || [],
     });
   }
   const coverage = {
@@ -451,7 +452,7 @@ export function listScans(orgId) {
 export function getScan(orgId, scanId) {
   const s = db.prepare(`SELECT * FROM market_scans WHERE id = ? AND org_id = ?`).get(scanId, orgId);
   if (!s) return null;
-  const prospects = db.prepare(`SELECT id, business_name, city, province_state, industry, website_status, website_gap_signal, website_confidence, lead_score, priority, score_explanation, recommended_offer, public_phone, crm_stage, suppression_status, lat, lng, created_at FROM prospects WHERE scan_id = ? ORDER BY lead_score DESC`).all(scanId);
+  const prospects = db.prepare(`SELECT id, business_name, city, province_state, industry, website_status, website_gap_signal, website_confidence, lead_score, priority, score_explanation, recommended_offer, public_phone, crm_stage, suppression_status, lat, lng, address, social_profiles, created_at FROM prospects WHERE scan_id = ? ORDER BY lead_score DESC`).all(scanId);
   return { ...s, query: safeParse(s.query_json), coverage: safeParse(s.coverage_json), prospects };
 }
 

@@ -331,3 +331,12 @@ map-first layout, div-icon dot markers with permanent name labels, dark popups,
 zoom controls top-right, overlay search bar (OSM Nominatim geocode → flyTo →
 pin-drop scan), LIVE/dev data-source badge and gap-signal legend overlaid on the
 map. Verified in-browser: dark tiles load, click-to-scan renders labeled markers.
+
+### Build panel (pindrop "Make website" flow)
+Marker popups and result rows now open a build panel: business facts (address, phone,
+social profile icons from prospect evidence), an editable site description (auto-drafted),
+a template gallery (Dealer's choice + the 12 design universes with live palette/font
+previews, served by GET /api/builder/universes), and a green "Make website" button that
+runs opportunity → project → build with the chosen universe and deep-links into the
+builder. Prospect rows now carry address + social_profiles. Browser-verified end to end;
+test-sell.js extended to 33 assertions.

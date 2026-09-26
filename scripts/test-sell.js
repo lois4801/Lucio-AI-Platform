@@ -153,6 +153,13 @@ console.log('== Pin-drop nearby scan ==');
   ok(typeof meta.json?.mapsEmbedKey === 'string', 'meta exposes street-view key flag');
 }
 
+console.log('== Template gallery (design universes) ==');
+{
+  const uni = await call('GET', '/api/builder/universes');
+  ok(Array.isArray(uni.json?.universes) && uni.json.universes.length === 12, 'universe catalog lists all 12 design universes');
+  ok(uni.json.universes.every((u) => u.id && u.name && u.inspiration && u.palette?.bg), 'every universe ships name, inspiration and palette');
+}
+
 server.close();
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
