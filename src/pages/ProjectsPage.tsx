@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router';
 import { api, type Project } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Hammer } from 'lucide-react';
 
 export default function ProjectsPage() {
+  const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[]>([]);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -48,7 +50,15 @@ export default function ProjectsPage() {
       </Card>
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
         {projects.map((p) => (
-          <Card key={p.id}>
+          <Card
+            key={p.id}
+            role="link"
+            tabIndex={0}
+            aria-label={`Open ${p.name} in the builder`}
+            className="cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => navigate(`/builder?project=${p.id}`)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/builder?project=${p.id}`); } }}
+          >
             <CardHeader className="pb-2">
               <div className="flex justify-between items-start">
                 <CardTitle className="text-lg">{p.name}</CardTitle>
@@ -58,9 +68,14 @@ export default function ProjectsPage() {
             </CardHeader>
             <CardContent className="flex justify-between items-center text-xs text-muted-foreground">
               <span>Updated {new Date(p.updated_at).toLocaleDateString()}</span>
-              <Button size="sm" variant="ghost" onClick={() => remove(p.id)} aria-label="Delete project">
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button size="sm" onClick={(e) => { e.stopPropagation(); navigate(`/builder?project=${p.id}`); }} aria-label={`Build website for ${p.name}`}>
+                  <Hammer className="h-3.5 w-3.5 mr-1" /> Build
+                </Button>
+                <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); remove(p.id); }} aria-label="Delete project">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </CardContent>
           </Card>
         ))}

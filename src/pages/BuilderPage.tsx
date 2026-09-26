@@ -53,7 +53,10 @@ export default function BuilderPage() {
   const load = async () => {
     const { projects } = await api<{ projects: Project[] }>('/projects');
     setProjects(projects);
-    if (!projectId && projects.length) setProjectId(projects[0].id);
+    // deep-link support: /builder?project=<id> (from Projects page cards)
+    const urlProject = new URLSearchParams(window.location.search).get('project');
+    if (urlProject && projects.some((p) => p.id === urlProject)) setProjectId(urlProject);
+    else if (!projectId && projects.length) setProjectId(projects[0].id);
   };
   useEffect(() => { load().catch(() => {}); }, []);
 
@@ -128,7 +131,7 @@ export default function BuilderPage() {
         <CardContent className="space-y-3">
           <div className="flex gap-2 items-center">
             <span className="text-sm text-muted-foreground whitespace-nowrap">Project</span>
-            <Select value={projectId} onValueChange={setProjectId}>
+            <Select value={projectId} onValueChange={(id) => { setProjectId(id); window.history.replaceState(null, '', `/builder?project=${id}`); }}>
               <SelectTrigger className="w-64"><SelectValue placeholder="Select a project" /></SelectTrigger>
               <SelectContent>
                 {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
