@@ -222,3 +222,10 @@
   9 scenes in meta, hero-professional-2.jpg served 200 (707KB); default (BALANCED) build
   gates scene hooks to zero. Builder route now forwards motionIntensity (plan + build).
 - Gate: PASS for local dev scope.
+
+## Hotfix — Projects page cards were not openable (2026-09-26)
+- Symptom: project cards rendered name/status/delete only; no path into the builder.
+- Fix: ProjectsPage cards are now role=link (click + Enter/keyboard) navigating to
+  /builder?project=<id>, plus an explicit "Build" button; delete stops propagation.
+  BuilderPage reads ?project= to preselect the project and syncs the URL on switch.
+- Verified: tsc clean, vite transforms 200, DOM click navigates to /builder?project=<id>.
