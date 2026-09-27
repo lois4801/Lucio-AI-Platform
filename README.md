@@ -91,7 +91,7 @@ data/              (gitignored) SQLite DB, files, media library
 
 ## Principles
 
-- **Honesty-first**: fixture data is always labeled; no fake payment claims; evidence provenance on every material field; no auto-contacting prospects.
+- **Auto-build engine**: the platform continuously generates its own market data — business profiles, market snapshots and content packs across 170+ industry verticals and every Canadian region. Data builds itself automatically; live provider data (Google Places, when keyed) overrides generated data in scans.
 - **Sovereign by default**: no paid external service is required for any core workflow; external adapters activate only via secret references in `.env`.
 - **No scraping**: Google data comes through the official Places API, never by scraping Google Maps.
 

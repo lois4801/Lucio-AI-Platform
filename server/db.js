@@ -760,6 +760,60 @@ CREATE TABLE IF NOT EXISTS autofix_events (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(incident_id, seq)
 );
+CREATE TABLE IF NOT EXISTS auto_industry_catalog (
+  industry TEXT PRIMARY KEY,
+  family TEXT NOT NULL DEFAULT '',
+  keywords_json TEXT NOT NULL DEFAULT '[]',
+  price_band TEXT NOT NULL DEFAULT '$$',
+  peak_months_json TEXT NOT NULL DEFAULT '[]',
+  prefixes_json TEXT NOT NULL DEFAULT '[]',
+  suffixes_json TEXT NOT NULL DEFAULT '[]',
+  categories_json TEXT NOT NULL DEFAULT '[]',
+  businesses_per_region INTEGER NOT NULL DEFAULT 0,
+  built_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS auto_market_snapshots (
+  industry TEXT NOT NULL,
+  region TEXT NOT NULL,
+  total_businesses INTEGER NOT NULL DEFAULT 0,
+  website_gap_rate REAL NOT NULL DEFAULT 0,
+  demand_index INTEGER NOT NULL DEFAULT 0,
+  seasonality_json TEXT NOT NULL DEFAULT '[]',
+  top_services_json TEXT NOT NULL DEFAULT '[]',
+  avg_projected_value INTEGER NOT NULL DEFAULT 0,
+  recommended_offer TEXT NOT NULL DEFAULT '',
+  businesses_json TEXT NOT NULL DEFAULT '[]',
+  built_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (industry, region)
+);
+CREATE TABLE IF NOT EXISTS auto_content_packs (
+  industry TEXT PRIMARY KEY,
+  family TEXT NOT NULL DEFAULT '',
+  keywords_json TEXT NOT NULL DEFAULT '[]',
+  heroes_json TEXT NOT NULL DEFAULT '[]',
+  taglines_json TEXT NOT NULL DEFAULT '[]',
+  services_json TEXT NOT NULL DEFAULT '[]',
+  faqs_json TEXT NOT NULL DEFAULT '[]',
+  ctas_json TEXT NOT NULL DEFAULT '[]',
+  audiences_json TEXT NOT NULL DEFAULT '[]',
+  journey_json TEXT NOT NULL DEFAULT '[]',
+  outreach_angles_json TEXT NOT NULL DEFAULT '[]',
+  seo_json TEXT NOT NULL DEFAULT '{}',
+  version INTEGER NOT NULL DEFAULT 1,
+  built_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS auto_build_jobs (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL DEFAULT 'build',
+  status TEXT NOT NULL DEFAULT 'running',
+  progress_json TEXT NOT NULL DEFAULT '{}',
+  summary_json TEXT NOT NULL DEFAULT '{}',
+  error TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  completed_at TEXT
+);
 `);
 
 // Lightweight migrations: add columns to pre-existing tables when missing.
@@ -767,6 +821,7 @@ CREATE TABLE IF NOT EXISTS autofix_events (
   const cols = db.prepare('PRAGMA table_info(prospects)').all().map((c) => c.name);
   if (!cols.includes('lat')) db.exec('ALTER TABLE prospects ADD COLUMN lat REAL');
   if (!cols.includes('lng')) db.exec('ALTER TABLE prospects ADD COLUMN lng REAL');
+  if (!cols.includes('auto_profile_json')) db.exec(`ALTER TABLE prospects ADD COLUMN auto_profile_json TEXT NOT NULL DEFAULT ''`);
 }
 {
   const cols = db.prepare('PRAGMA table_info(component_assets)').all().map((c) => c.name);

@@ -4,6 +4,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { runMarketScan, runNearbyScan, listScans, getScan, resolveWebsitePresence, providerMeta } from '../services/discovery/pipeline.js';
 import { generateWebsiteOpportunity, createProjectFromOpportunity, listOpportunities } from '../services/opportunity.js';
 import { INDUSTRIES, REGIONS } from '../services/discovery/providers.js';
+import { AUTO_INDUSTRIES } from '../services/autoData.js';
 import { wideEvent } from '../services/telemetry.js';
 
 export const marketScansRouter = Router();
@@ -31,7 +32,9 @@ marketScansRouter.get('/', (req, res) => res.json({ scans: listScans(req.user.or
 // Operator metadata: industries and regions exposed by the configured providers
 marketScansRouter.get('/meta', (req, res) => {
   res.json({
-    industries: INDUSTRIES, regions: REGIONS, providers: providerMeta(),
+    // Full union: classic fixture verticals + the auto data engine catalog.
+    industries: [...new Set([...INDUSTRIES, ...AUTO_INDUSTRIES])].sort(),
+    regions: REGIONS, providers: providerMeta(),
     // Street-view embed key for map popups (empty string = feature gated off).
     mapsEmbedKey: String(process.env.GOOGLE_MAPS_EMBED_KEY || ''),
   });

@@ -43,12 +43,16 @@ import { nexusRouter } from './routes/nexus.js';
 import { agentsRouter } from './routes/agents.js';
 import { clawRouter } from './routes/claw.js';
 import { autofixRouter } from './routes/autofix.js';
+import { autoDataRouter } from './routes/autoData.js';
+import { ensureCatalog } from './services/autoData.js';
 import { requestCounter } from './services/enterprise.js';
 import { ingestPacks } from './services/agentPacks.js';
 
 seedVerticalApps();
 const packIngest = ingestPacks();
 console.log(`[lucio-api] agent packs ingested: ${packIngest.total} agents (${packIngest.agency} agency-agents, ${packIngest['500']} 500-ai-agents-projects)`);
+const catalogCount = ensureCatalog();
+console.log(`[lucio-api] auto data engine: ${catalogCount} industry verticals materialized`);
 
 export function createApp() {
   const app = express();
@@ -101,6 +105,7 @@ app.use('/api/apps', appStudioRouter);
   app.use('/api/agents', agentsRouter);
   app.use('/api/claw', clawRouter);
   app.use('/api/autofix', autofixRouter);
+  app.use('/api/autodata', autoDataRouter);
   // Public surface (no auth): live client sites, enquiries, owner portal.
   // Mounted BEFORE the SPA fallback so /live and /portal are never swallowed.
   app.use(publicRouter);

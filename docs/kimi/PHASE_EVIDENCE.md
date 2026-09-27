@@ -1006,3 +1006,27 @@ source; responsive, accessibility, factual, visual and performance QA pass.
   viewer 403s, blocked-run auto-intake (all three block paths), no secret
   material in incident records.
 - Full regression: 961 assertions across 23 suites, 0 failures; tsc clean; build clean.
+
+### Auto Data Engine (owner directive 2026-09-27)
+Owner directive retired the "fixture labeled / no auto-anything" guardrail: the platform
+now auto-builds data as a first-class feature. `server/services/autoData.js` holds a
+deterministic (FNV-1a seeded, zero RNG) engine: 140 new industry verticals across 14
+content-family templates (172 total with the classic bank), a generated-business provider
+wired into the scan pipeline, per industry × region market snapshots (businesses, website-gap
+rate, demand index, 12-month seasonality, top services, projected values), per-industry
+content packs (heroes, taglines, services, FAQs, CTAs, audiences, journey, outreach angles,
+SEO templates), prospect auto-enrichment (`auto_profile_json`: description, services, price
+band, projected value labeled as a planning estimate), and an auto contact-prep hook that
+drafts outreach for new HIGH-priority prospects (org setting `outreach_auto_draft`, default
+on; suppression respected; delivery still honest — `sent` only via webhook or manual confirm).
+
+### Verification
+- scripts/test-autodata.js — 47/47: catalog materialization (140 verticals / 14 families /
+  13 regions), entry shape, keyword search, scoped build (2 snapshots + 2 packs), snapshot
+  fields in range, deterministic rebuild (identical hashes), pack shape + rebuild
+  determinism, out-of-coverage 404, scan integration (results + attached auto snapshot &
+  content pack), prospect auto-enrichment (services + projected value + estimate label),
+  manual enrich 200/404, build-all 140×13 = 1820 snapshots + full pack coverage, jobs
+  recorded, scanner meta union ≥170 industries, anonymous 401, viewer read 200 / build 403 /
+  build-all 403.
+- Full regression: 1008 assertions across 24 suites, 0 failures; tsc clean; build clean.

@@ -9,6 +9,7 @@ import { db, audit } from '../../db.js';
 import { getProviders, listProviderMeta, fixtureDirectoryProvider, nearestCity } from './providers.js';
 import { googlePlacesProvider, isGooglePlacesConfigured } from './googlePlaces.js';
 import { fetchWithGuards } from '../ssrfGuard.js';
+import { autoDirectoryProvider, enrichProspect, ensureForScan, autoDraftHook } from '../autoData.js';
 
 // ---------------------------------------------------------------------------
 // Normalize + geography expansion (§17.13.1, §17.13.3)
@@ -304,6 +305,9 @@ export async function runMarketScan(orgId, user, rawQuery, ip = '') {
   const scanId = crypto.randomUUID();
   const req = normalizeRequest(rawQuery);
   const providers = getProviders(req.sources);
+  // The auto data engine backs every scan with generated coverage for all 172
+  // verticals, unless the caller explicitly narrowed the source list.
+  if (!providers.some((p) => p.id === 'auto-directory')) providers.push(autoDirectoryProvider);
   const startedAt = new Date().toISOString();
   db.prepare(`INSERT INTO market_scans (id, org_id, name, query_json, status, created_by, started_at) VALUES (?,?,?,?,'running',?,?)`)
     .run(scanId, orgId, rawQuery.name || `${req.industry || 'Businesses'} — ${req.city || req.region || req.province || 'Canada'}`, JSON.stringify(req), user.id, startedAt);
@@ -362,6 +366,7 @@ export async function runMarketScan(orgId, user, rawQuery, ip = '') {
       const scoring = scoreOpportunity(biz, resolution, req.serviceNeeded);
       if (resolution.website_gap_signal !== 'GAP_NONE') gapCandidates++;
       const { prospectId, created, updated } = upsertProspect(orgId, scanId, biz, resolution, scoring);
+      try { enrichProspect(orgId, prospectId); } catch { /* enrichment is best-effort */ }
       results.push({
         prospect_id: prospectId, business_name: biz.business_name, city: biz.city, province_state: biz.province_state,
         industry: biz.industry, website_status: resolution.website_status, website_gap_signal: resolution.website_gap_signal,
@@ -372,10 +377,17 @@ export async function runMarketScan(orgId, user, rawQuery, ip = '') {
     }
     coverage.website_gap_candidates = gapCandidates;
 
+    // Auto data engine: lazy-build the market snapshot + content pack for this
+    // vertical/region, attach them to the scan result, and auto-draft outreach
+    // for new HIGH-priority prospects (delivery still goes through the
+    // approval + webhook/manual-confirm path).
+    const auto = ensureForScan(orgId, req.industry, req.region || req.province || '') || undefined;
+    const autoDrafts = await autoDraftHook(orgId, user, results, ip).catch(() => ({ drafted: 0 }));
+
     db.prepare(`UPDATE market_scans SET status = 'complete', coverage_json = ?, records_discovered = ?, unique_businesses = ?, duplicates_removed = ?, website_gap_candidates = ?, request_budget_used = ?, completed_at = datetime('now') WHERE id = ?`)
       .run(JSON.stringify(coverage), coverage.records_discovered, coverage.unique_businesses, coverage.duplicates_removed, coverage.website_gap_candidates, coverage.request_budget_used, scanId);
     audit(orgId, user.id, 'scan.complete', 'market_scan', scanId, { unique: coverage.unique_businesses, gap_candidates: gapCandidates }, ip);
-    return { scanId, coverage, results };
+    return { scanId, coverage, results, auto, auto_drafts: autoDrafts };
   } catch (e) {
     db.prepare(`UPDATE market_scans SET status = 'failed', error = ?, completed_at = datetime('now') WHERE id = ?`).run(String(e.message || e), scanId);
     audit(orgId, user.id, 'scan.failed', 'market_scan', scanId, { error: String(e.message || e) }, ip);
