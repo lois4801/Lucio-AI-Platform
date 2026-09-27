@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { BriefcaseBusiness, Copy, ExternalLink, Flag, CreditCard, CheckCircle2, HandCoins, Globe, Rocket, RotateCcw, ShieldCheck, Download, Plus, X, ClipboardCheck } from 'lucide-react';
+import { BriefcaseBusiness, Copy, ExternalLink, Flag, CreditCard, CheckCircle2, HandCoins, Globe, Rocket, RotateCcw, ShieldCheck, Download, Plus, X, ClipboardCheck, ArrowDownLeft, ArrowUpRight, Receipt } from 'lucide-react';
 
 type Deal = {
   id: string; business_name: string; stage: string; build_fee_cents: number; monthly_cents: number;
@@ -24,6 +24,8 @@ type PublishReq = { id: string; project_id: string; published_site_id: string; a
 type Deployment = { id: string; artifact_version: number; status: string; note: string; created_at: string };
 type SiteDomain = { id: string; domain: string; verification_status: string; verification_token: string; verification_note: string | null; ssl_status: string; ssl_note: string | null; verified_at: string | null; created_at: string };
 type Review = { id: string; project_id: string; project_name: string; site_slug: string | null; business_name: string | null; token: string; reviewer_name: string; reviewer_email: string; status: string; message: string; created_at: string; decided_at: string | null };
+type CommEvent = { id: string; deal_id: string | null; business_name: string | null; channel: string; direction: string; summary: string; created_at: string };
+type BillingEvent = { id: string; deal_id: string; business_name: string; kind: string; amount_cents: number; currency: string; status: string; note: string; created_at: string };
 
 const STAGES = ['pitched', 'active', 'paused', 'churned'];
 const PAY_STATUSES = ['unknown', 'paid', 'failed'];
@@ -47,9 +49,12 @@ export default function ClientsPage() {
   const [newDomain, setNewDomain] = useState('');
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewForm, setReviewForm] = useState({ siteId: '', reviewerName: '', reviewerEmail: '' });
+  const [timeline, setTimeline] = useState<CommEvent[]>([]);
+  const [billing, setBilling] = useState<BillingEvent[]>([]);
+  const [billingForm, setBillingForm] = useState({ dealId: '', kind: 'payment_received', amount: '', note: '' });
 
   const load = async () => {
-    const [m, d, r, l, s, q, v] = await Promise.all([
+    const [m, d, r, l, s, q, v, tl, bl] = await Promise.all([
       api<{ user: { role: string } }>('/auth/me'),
       api<{ deals: Deal[] }>('/sell/deals'),
       api<{ requests: Request[] }>('/sell/requests'),
@@ -57,8 +62,11 @@ export default function ClientsPage() {
       api<{ sites: PublishedSite[] }>('/sell/published'),
       api<{ requests: PublishReq[] }>('/sell/publish-requests'),
       api<{ reviews: Review[] }>('/sell/reviews'),
+      api<{ events: CommEvent[] }>('/sell/timeline'),
+      api<{ events: BillingEvent[] }>('/sell/billing-events'),
     ]);
     setMe(m.user); setDeals(d.deals); setRequests(r.requests); setLeads(l.leads); setSites(s.sites); setPubReqs(q.requests); setReviews(v.reviews);
+    setTimeline(tl.events); setBilling(bl.events);
     const siteList = s.sites;
     const [depPairs, domPairs] = await Promise.all([
       Promise.all(siteList.map((site) => api<{ deployments: Deployment[] }>(`/sell/published/${site.id}/deployments`).then((x) => [site.id, x.deployments] as const))),
@@ -136,6 +144,14 @@ export default function ClientsPage() {
     });
     setReviewForm({ siteId: '', reviewerName: '', reviewerEmail: '' });
   }, 'Review link created — copy it and send it to your client');
+
+  const logBilling = () => run(async () => {
+    await api(`/sell/deals/${billingForm.dealId}/billing-events`, {
+      method: 'POST',
+      body: JSON.stringify({ kind: billingForm.kind, amount: billingForm.amount, note: billingForm.note }),
+    });
+    setBillingForm({ dealId: '', kind: 'payment_received', amount: '', note: '' });
+  }, 'Billing event recorded');
 
   return (
     <div className="space-y-6">
@@ -231,6 +247,77 @@ export default function ClientsPage() {
               {!reviews.length && <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">No client reviews yet — create a link above and send it to your client.</TableCell></TableRow>}
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Agency OS · Communications & billing</CardTitle>
+          <CardDescription>Every client touch in one timeline — enquiries, portal requests, review decisions, outreach sends, deal stage changes and billing events. The timeline fills itself as things happen.</CardDescription></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-end gap-2">
+            <div>
+              <label className="text-xs text-muted-foreground">Deal</label>
+              <Select value={billingForm.dealId} onValueChange={(v) => setBillingForm({ ...billingForm, dealId: v })}>
+                <SelectTrigger className="w-56"><SelectValue placeholder="Choose a deal" /></SelectTrigger>
+                <SelectContent>{deals.map((d) => <SelectItem key={d.id} value={d.id}>{d.business_name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Kind</label>
+              <Select value={billingForm.kind} onValueChange={(v) => setBillingForm({ ...billingForm, kind: v })}>
+                <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="invoice_issued">Invoice issued</SelectItem>
+                  <SelectItem value="payment_received">Payment received</SelectItem>
+                  <SelectItem value="payment_failed">Payment failed</SelectItem>
+                  <SelectItem value="note">Note</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Amount (CAD)</label>
+              <Input type="number" min={0} className="w-28" placeholder="1500" value={billingForm.amount} onChange={(e) => setBillingForm({ ...billingForm, amount: e.target.value })} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Note</label>
+              <Input className="w-52" placeholder="Deposit for March build" value={billingForm.note} onChange={(e) => setBillingForm({ ...billingForm, note: e.target.value })} />
+            </div>
+            <Button size="sm" disabled={!billingForm.dealId} onClick={logBilling}><Receipt className="h-4 w-4 mr-1" /> Record</Button>
+          </div>
+          <div className="grid lg:grid-cols-3 gap-4 items-start">
+            <div className="lg:col-span-2 rounded-md border">
+              <ul className="divide-y max-h-96 overflow-y-auto">
+                {timeline.map((e) => (
+                  <li key={e.id} className="px-3 py-2 flex items-start gap-2 text-sm">
+                    {e.direction === 'out' ? <ArrowUpRight className="h-4 w-4 mt-0.5 text-muted-foreground" /> : <ArrowDownLeft className="h-4 w-4 mt-0.5 text-muted-foreground" />}
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Badge variant="outline">{e.channel}</Badge>
+                        {e.business_name && <span className="text-xs font-medium">{e.business_name}</span>}
+                        <span className="text-xs text-muted-foreground">{new Date(e.created_at).toLocaleString()}</span>
+                      </div>
+                      <p className="text-xs mt-0.5 break-words">{e.summary}</p>
+                    </div>
+                  </li>
+                ))}
+                {!timeline.length && <li className="px-3 py-6 text-center text-sm text-muted-foreground">No activity yet — timeline entries appear when enquiries, requests, reviews, outreach and billing events happen.</li>}
+              </ul>
+            </div>
+            <div className="rounded-md border">
+              <ul className="divide-y max-h-96 overflow-y-auto">
+                {billing.map((b) => (
+                  <li key={b.id} className="px-3 py-2 text-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium capitalize">{b.kind.replaceAll('_', ' ')}</span>
+                      <span>{(b.amount_cents / 100).toLocaleString('en-CA', { style: 'currency', currency: b.currency.toUpperCase() })}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">{b.business_name} · {new Date(b.created_at).toLocaleDateString()}{b.note ? ` · ${b.note}` : ''}</div>
+                  </li>
+                ))}
+                {!billing.length && <li className="px-3 py-6 text-center text-sm text-muted-foreground">No billing events yet.</li>}
+              </ul>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

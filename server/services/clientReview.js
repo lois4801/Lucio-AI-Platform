@@ -4,6 +4,7 @@
 // linked deal — review decisions are never black holes.
 import crypto from 'node:crypto';
 import { db, audit } from '../db.js';
+import { logComm } from './agencyOS.js';
 
 export function createReview(orgId, { projectId = null, publishedSiteId = null, dealId = null, reviewerName = '', reviewerEmail = '' }, user, ip = '') {
   let site = null, project = null;
@@ -100,6 +101,7 @@ export function decideReview(token, { decision, message = '', reviewerName = '' 
   const status = decision === 'approve' ? 'approved' : 'changes_requested';
   db.prepare(`UPDATE client_reviews SET status = ?, message = ?, deal_id = ?, reviewer_name = ?, decided_at = datetime('now') WHERE id = ?`)
     .run(status, msg, dealId, name, r.id);
+  logComm(r.org_id, { dealId, channel: 'review', direction: 'in', summary: `Client review ${status.replaceAll('_', ' ')}${msg ? ': ' + msg.slice(0, 160) : ''}` });
   audit(r.org_id, 'client', decision === 'approve' ? 'review.approved' : 'review.changes_requested', 'client_review', r.id,
     { message: msg.slice(0, 200) }, ip);
   return db.prepare(`SELECT * FROM client_reviews WHERE id = ?`).get(r.id);

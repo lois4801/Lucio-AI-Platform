@@ -649,3 +649,31 @@ source; responsive, accessibility, factual, visual and performance QA pass.
   budget cap 30 -> budget_exceeded with skipped build step and continuation note,
   control-char sanitization.
 - Full regression: 590 assertions across 12 suites, 0 failures; tsc clean; build clean.
+
+## Phase 13 — Agency OS expansion (manual v28 Phase 13)
+
+### What shipped
+- Unified communications timeline: `comm_log` table + `server/services/agencyOS.js`
+  `logComm()` wired into every real surface — enquiries (recordEnquiry), portal
+  change requests (ownerCreateRequest), client review decisions (decideReview),
+  outreach delivery (deliverDraft/confirmManualSent) and deal stage changes
+  (updateDeal). `GET /api/sell/timeline?dealId=` (org-scoped, deal filter).
+  No synthetic backfill — only events that actually happen appear.
+- Billing events: `billing_events` table + POST/GET `/api/sell/deals/:id/billing-events`
+  (kind invoice_issued|payment_received|payment_failed|note, amount in cents,
+  validated kind, 404 on unknown deal). Every event mirrors into the comm
+  timeline (channel billing). Manual records — not a payment processor; Stripe
+  links remain the only card path and stay key-gated.
+- Client portal deepened: `ownerView` returns deal fee summary (build fee / monthly /
+  currency / stage) and any pending client_review token; the portal page shows the
+  fee stats and a "Review your new site" button when a review is pending.
+- UI: ClientsPage "Agency OS · Communications & billing" card — record form
+  (deal/kind/amount/note), self-filling activity timeline with channel badges and
+  direction arrows, billing event list.
+
+### Verification
+- scripts/test-phase13.js — 19 assertions, all green: all five surfaces log to the
+  timeline with correct channel/direction, exactly-5-events (no backfill), per-deal
+  filter, billing create/validation/404/list/timeline-mirror, portal fee summary +
+  stage + pending-review link, org isolation for both timeline and billing.
+- Full regression: 609 assertions across 13 suites, 0 failures; tsc clean; build clean.

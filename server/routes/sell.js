@@ -8,6 +8,7 @@ import {
   listDeployments, rollbackDeployment, addDomain, verifyDomain, listDomains,
 } from '../services/publish.js';
 import { createReview, listReviews, getReview } from '../services/clientReview.js';
+import { listTimeline, addBillingEvent, listBillingEvents } from '../services/agencyOS.js';
 
 export const sellRouter = Router();
 sellRouter.use(requireAuth);
@@ -66,6 +67,18 @@ sellRouter.get('/reviews/:id', (req, res) => {
   const review = getReview(req.user.orgId, req.params.id);
   if (!review) return res.status(404).json({ error: 'review not found' });
   res.json({ review });
+});
+
+// ---- Phase 13: Agency OS — communications timeline + billing events ----
+sellRouter.get('/timeline', (req, res) => {
+  res.json({ events: listTimeline(req.user.orgId, { dealId: req.query.dealId || null }) });
+});
+sellRouter.post('/deals/:id/billing-events', requireRole('member'), (req, res) => {
+  try { res.status(201).json({ event: addBillingEvent(req.user.orgId, req.params.id, req.body || {}, req.user, req.ip) }); }
+  catch (e) { res.status(e.status || 400).json({ error: String(e.message || e) }); }
+});
+sellRouter.get('/billing-events', (req, res) => {
+  res.json({ events: listBillingEvents(req.user.orgId, req.query.dealId || null) });
 });
 
 // Client deals (the sale: build fee + monthly, manual or Stripe)

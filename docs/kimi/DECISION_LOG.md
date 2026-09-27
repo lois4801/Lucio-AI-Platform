@@ -224,3 +224,4 @@
   cancel endpoint honestly 409s on finished runs instead of pretending. Demo publish
   is automatic; production publication remains behind the Phase 10 approval gate and
   the handoff states this. QA scores are carried verbatim into the handoff.
+- Phase 13: The communications timeline records only real events (wired into each surface at creation time — no backfill). Billing events are manual records mirrored to the timeline, not a payment processor; card payments remain exclusively behind the Stripe key gate.

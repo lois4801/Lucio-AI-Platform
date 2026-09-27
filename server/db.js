@@ -438,6 +438,31 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   finished_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_agent_runs_org ON agent_runs(org_id, created_at);
+CREATE TABLE IF NOT EXISTS comm_log (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  deal_id TEXT,
+  prospect_id TEXT,
+  channel TEXT NOT NULL DEFAULT 'system',  -- lead|portal|review|outreach|deal|billing
+  direction TEXT NOT NULL DEFAULT 'in',    -- in|out
+  summary TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_comm_org ON comm_log(org_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_comm_deal ON comm_log(deal_id);
+CREATE TABLE IF NOT EXISTS billing_events (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  deal_id TEXT NOT NULL REFERENCES client_deals(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL DEFAULT 'note',       -- invoice_issued|payment_received|payment_failed|note
+  amount_cents INTEGER NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'cad',
+  status TEXT NOT NULL DEFAULT 'recorded',
+  note TEXT NOT NULL DEFAULT '',
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_billing_deal ON billing_events(deal_id);
 `);
 
 // Lightweight migrations: add columns to pre-existing tables when missing.

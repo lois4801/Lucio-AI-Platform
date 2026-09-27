@@ -13,6 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveTxt } from 'node:dns/promises';
 import { db, audit } from '../db.js';
+import { logComm } from './agencyOS.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FILES_DIR = path.resolve(__dirname, '../../data/files');
@@ -68,6 +69,7 @@ export function recordEnquiry(slug, { name, email, message }) {
   db.prepare(`INSERT INTO leads (id, org_id, published_site_id, name, email, message) VALUES (?,?,?,?,?,?)`)
     .run(id, s.org_id, s.id, String(name || '').slice(0, 120), String(email || '').slice(0, 160), String(message || '').slice(0, 2000));
   db.prepare(`UPDATE published_sites SET enquiries = enquiries + 1 WHERE id = ?`).run(s.id);
+  logComm(s.org_id, { channel: 'lead', direction: 'in', summary: `Enquiry from ${String(name || 'someone').slice(0, 80)} on /${s.slug}${message ? ': ' + String(message).slice(0, 160) : ''}` });
   return { id, orgId: s.org_id, siteId: s.id };
 }
 
@@ -104,6 +106,9 @@ export function updateDeal(orgId, id, patch, user, ip = '') {
   if (!sets.length) return d;
   vals.id = id;
   db.prepare(`UPDATE client_deals SET ${sets.join(', ')} WHERE id = @id`).run(vals);
+  if (patch.stage && patch.stage !== d.stage) {
+    logComm(orgId, { dealId: id, channel: 'deal', direction: 'out', summary: `Deal stage ${d.stage} → ${patch.stage}` });
+  }
   audit(orgId, user.id, 'deal.update', 'client_deal', id, patch, ip);
   return getDeal(orgId, id);
 }
@@ -164,10 +169,12 @@ export function ownerView(token) {
   const requests = deal
     ? db.prepare(`SELECT * FROM change_requests WHERE deal_id = ? ORDER BY created_at DESC`).all(deal.id)
     : [];
+  const pendingReview = db.prepare(`SELECT token FROM client_reviews WHERE published_site_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1`).get(site.id);
   return {
     site: { slug: site.slug, org_id: site.org_id, project_id: site.project_id, visits: site.visits, enquiries: site.enquiries, status: site.status },
-    deal,
+    deal: deal ? { ...deal, build_fee: deal.build_fee_cents / 100, monthly: deal.monthly_cents / 100 } : null,
     requests,
+    pendingReviewToken: pendingReview?.token || null,
     display_name: deal?.business_name || project?.name || site.slug,
   };
 }
@@ -203,6 +210,7 @@ export function ownerCreateRequest(token, { message, photo = null }) {
   }
   db.prepare(`INSERT INTO change_requests (id, org_id, deal_id, message, photo_file_id) VALUES (?,?,?,?,?)`)
     .run(id, deal.org_id, deal.id, String(message || '').slice(0, 2000), photoId);
+  logComm(deal.org_id, { dealId: deal.id, channel: 'portal', direction: 'in', summary: `Owner request via portal: ${String(message || '').slice(0, 180)}` });
   return { id };
 }
 

@@ -6,6 +6,7 @@
 // platform never pretends a message was sent. Suppressed prospects are blocked.
 import crypto from 'node:crypto';
 import { db, audit } from '../db.js';
+import { logComm } from './agencyOS.js';
 
 const GAP_LINES = {
   NO_WEBSITE_FOUND: 'we could not find a website for your business online',
@@ -103,6 +104,7 @@ export async function deliverDraft(orgId, id, user, ip = '') {
     if (!res.ok) throw new Error(`delivery webhook returned ${res.status} — the message was NOT sent`);
     db.prepare(`UPDATE outreach_drafts SET status = 'sent', sent_at = datetime('now'), note = 'delivered via OUTREACH_WEBHOOK_URL' WHERE id = ?`).run(id);
     db.prepare(`UPDATE prospects SET outreach_status = 'CONTACTED' WHERE id = ?`).run(d.prospect_id);
+    logComm(orgId, { prospectId: d.prospect_id, channel: 'outreach', direction: 'out', summary: `Outreach sent via webhook: "${d.subject}"` });
     audit(orgId, user.id, 'outreach.sent', 'outreach_draft', id, { channel: 'webhook', manual: false }, ip);
     return { draft: getDraft(orgId, id), delivered: true, manual: false };
   }
@@ -120,6 +122,7 @@ export function confirmManualSent(orgId, id, user, ip = '') {
   if (d.status !== 'approved') throw Object.assign(new Error(`draft must be approved before marking sent (currently ${d.status})`), { status: 409 });
   db.prepare(`UPDATE outreach_drafts SET status = 'sent', sent_at = datetime('now'), note = 'sent manually by ' || ? WHERE id = ?`).run(user.email || user.id, id);
   db.prepare(`UPDATE prospects SET outreach_status = 'CONTACTED' WHERE id = ?`).run(d.prospect_id);
+  logComm(orgId, { prospectId: d.prospect_id, channel: 'outreach', direction: 'out', summary: `Outreach sent manually: "${d.subject}"` });
   audit(orgId, user.id, 'outreach.sent', 'outreach_draft', id, { manual: true }, ip);
   return getDraft(orgId, id);
 }

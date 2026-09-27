@@ -95,6 +95,8 @@ ul{list-style:none;padding:0;margin:1.5rem 0 0;display:grid;gap:.75rem}
 <p class="sub">Request changes any time — new photos, prices, hours, specials. Your builder is notified immediately.</p>
 <div class="stats"><div class="stat"><b>${site.visits}</b><span>visits</span></div><div class="stat"><b>${site.enquiries}</b><span>enquiries</span></div></div>
 <a class="site" href="${siteUrl}" target="_blank">View your live site</a>
+${view.pendingReviewToken ? `<a class="site" style="background:#16a34a;color:#fff" href="/review/${esc(view.pendingReviewToken)}" target="_blank">Review your new site →</a>` : ''}
+${view.deal ? `<div class="stats"><div class="stat"><b>${view.deal.build_fee.toLocaleString('en-CA', { style: 'currency', currency: view.deal.currency.toUpperCase() })}</b><span>build fee</span></div><div class="stat"><b>${view.deal.monthly.toLocaleString('en-CA', { style: 'currency', currency: view.deal.currency.toUpperCase() })}</b><span>monthly</span></div><div class="stat"><b>${esc(view.deal.stage)}</b><span>stage</span></div></div>` : ''}
 ${flash ? `<div class="flash">${esc(flash)}</div>` : ''}
 <form id="reqform">
   <label>What would you like changed?</label>
