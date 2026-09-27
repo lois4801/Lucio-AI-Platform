@@ -11,6 +11,7 @@ import crypto from 'node:crypto';
 import dns from 'node:dns/promises';
 import fs from 'node:fs';
 import path from 'node:path';
+import AdmZip from 'adm-zip';
 import * as cheerio from 'cheerio';
 import { db, DATA_DIR, audit } from '../db.js';
 import { assertSafeUrl, isPrivateIp } from './ssrfGuard.js';
@@ -331,8 +332,19 @@ function absolutizeUrlRef(value, pageUrl) {
   return u.pathname === '/' && !u.search ? u.toString().replace(/\/$/, '') : u.toString();
 }
 
+function inlineCodeSpans(html) {
+  const spans = [];
+  const re = /<script\b[^>]*>[\s\S]*?<\/script>/gi;
+  let m;
+  while ((m = re.exec(html))) spans.push([m.index, m.index + m[0].length]);
+  return spans;
+}
+const insideSpans = (idx, spans) => spans.some(([a, b]) => idx > a && idx < b);
+
 export function absolutizeResourceRefs(html, pageUrl) {
-  let out = html.replace(new RegExp(`<(${ASSET_TAGS})\\b([^>]*)>`, 'gi'), (whole, tag, attrs) => {
+  const spans = inlineCodeSpans(html);
+  let out = html.replace(new RegExp(`<(${ASSET_TAGS})\\b([^>]*)>`, 'gi'), (whole, tag, attrs, offset) => {
+    if (insideSpans(offset, spans)) return whole; // never rewrite code inside <script>
     const fixed = attrs.replace(/\b(src|href|poster)\s*=\s*(["'])(.*?)\2/gi, (a, name, quote, value) => {
       const abs = absolutizeUrlRef(value, pageUrl);
       return abs ? ` ${name}=${quote}${abs.replace(/"/g, '%22')}${quote}` : a;
@@ -527,10 +539,6 @@ export async function importSite(orgId, user, rawUrl, { inlineAssets = true } = 
   // Everything left relative (images, media, remote modules, overflow assets)
   // must resolve against the ORIGIN, not our preview URL.
   html = absolutizeResourceRefs(html, finalUrl);
-  const $ = cheerio.load(html);
-  const title = String(
-    $('meta[property="og:title"]').attr('content') || $('title').first().text() || new URL(finalUrl).hostname
-  ).replace(/\s+/g, ' ').trim().slice(0, 120) || 'Imported site';
   const texts = indexEditableTexts(html);
   const health = assessRenderHealth(html, texts.length, assets);
   if (host) {
@@ -540,7 +548,21 @@ export async function importSite(orgId, user, rawUrl, { inlineAssets = true } = 
       moduleStrategy: keepModulesRemote || health.jsRendered ? 'remote' : '',
     });
   }
+  return persistImportedSite(orgId, user, {
+    rawUrl: String(rawUrl), finalUrl, status, bytes, html, assets, health, strategy,
+  }, ip);
+}
 
+// Shared persistence tail — both URL and file imports land here: project row,
+// site artifact, pristine original, import record with health, audit, and the
+// uniform response shape the UI expects.
+function persistImportedSite(orgId, user, rec, ip = '') {
+  const { rawUrl, finalUrl, status, bytes, html, assets, health, strategy } = rec;
+  const $ = cheerio.load(html);
+  const title = String(
+    $('meta[property="og:title"]').attr('content') || $('title').first().text() || String(finalUrl).replace(/^upload:/, '')
+  ).replace(/\s+/g, ' ').trim().slice(0, 120) || 'Imported site';
+  const texts = indexEditableTexts(html);
   const projectId = crypto.randomUUID();
   const importId = crypto.randomUUID();
   db.prepare(`INSERT INTO projects (id, org_id, name, description, kind, created_by) VALUES (?,?,?,?,?,?)`)
@@ -552,6 +574,222 @@ export async function importSite(orgId, user, rawUrl, { inlineAssets = true } = 
     .run(importId, orgId, projectId, String(rawUrl), finalUrl, status, bytes, title, originalPath, texts.length, JSON.stringify(assets), JSON.stringify(health), user.id);
   audit(orgId, user.id, 'import.create', 'project', projectId, { source: String(rawUrl), finalUrl, bytes, texts: texts.length, assetsInlined: assets.filter((a) => a.inlined).length, jsRendered: health.jsRendered }, ip);
   return { projectId, importId, title, finalUrl, bytes, textsCount: texts.length, assets, health, strategy };
+}
+
+// ---------------------------------------------------------------------------
+// File-based import — upload a .zip, an .html file, or a whole site folder and
+// get the SAME editable, publishable, template-able project as a URL import.
+// Local files (css/js/images/media) are INLINED into the entry HTML — missing
+// photos, animations, effects and motions from the upload are fixed by capture,
+// the same deep-capture philosophy as URL imports.
+
+const ZIP_MAX_FILES = 300;
+const ZIP_MAX_TOTAL = 80 * 1024 * 1024;
+const ZIP_MAX_FILE = 12 * 1024 * 1024;
+const BINARY_INLINE_MAX = 3 * 1024 * 1024;
+const BINARY_INLINE_TOTAL_MAX = 40 * 1024 * 1024;
+const EXTERNAL_BASE = 'https://external-assets.invalid/';
+
+const MIME_BY_EXT = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+  webp: 'image/webp', avif: 'image/avif', svg: 'image/svg+xml', ico: 'image/x-icon',
+  bmp: 'image/bmp', mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime',
+  mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', m4a: 'audio/mp4',
+  woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf',
+};
+
+function normalizeZipPath(name) {
+  const parts = String(name || '').replace(/\\/g, '/').split('/');
+  const out = [];
+  for (const p of parts) {
+    if (p === '' || p === '.') continue;
+    if (p === '..') return null; // traversal rejected
+    out.push(p);
+  }
+  return out.join('/');
+}
+
+function joinSitePath(baseDir, ref) {
+  const stack = baseDir ? baseDir.split('/') : [];
+  for (const p of String(ref).replace(/\\/g, '/').split('/')) {
+    if (!p || p === '.') continue;
+    if (p === '..') { stack.pop(); continue; }
+    stack.push(p);
+  }
+  return stack.join('/');
+}
+
+function findEntryHtml(fileMap) {
+  const names = Object.keys(fileMap);
+  const htmls = names.filter((n) => /\.html?$/i.test(n));
+  if (!htmls.length) return null;
+  const depth = (n) => n.split('/').length;
+  const roots = htmls.filter((n) => /(^|\/)index\.html?$/i.test(n));
+  const pool = roots.length ? roots : htmls;
+  pool.sort((a, b) => depth(a) - depth(b) || a.localeCompare(b));
+  return pool[0];
+}
+
+// Inline every local reference that resolves to a file inside the upload:
+// css/js become inline tags (provenance data-imported-from="zip:<path>"),
+// images/media/fonts become data URIs. Unresolvable refs are recorded as
+// failed assets so the health report flags them. String surgery on the
+// original HTML — everything else stays byte-identical.
+function inlineLocalAssets(html, baseDir, lookup, assets) {
+  const binaryTotal = { n: 0 };
+  const resolveRef = (value) => {
+    const v = String(value || '').trim();
+    if (!v || /^(data:|blob:|mailto:|tel:|javascript:|#|\/\/)/i.test(v)) return { skip: true };
+    if (/^https?:/i.test(v)) return { external: true };
+    const rel = v.split(/[?#]/)[0];
+    if (!rel) return { skip: true };
+    const joined = joinSitePath(baseDir, rel);
+    const hit = lookup.get(joined.toLowerCase());
+    if (hit) return hit; // { path, data }
+    return { missing: joined || rel };
+  };
+
+  const tagRe = /<(img|script|link|source|video|audio|track|embed|input)\b([^>]*)>/gi;
+  const spans = inlineCodeSpans(html);
+  let out = '';
+  let last = 0;
+  let m;
+  while ((m = tagRe.exec(html))) {
+    if (insideSpans(m.index, spans)) continue; // never rewrite markup inside <script> code
+    const originalTag = m[0];
+    const tagName = m[1].toLowerCase();
+    let attrs = m[2];
+    let replacement = null; // whole-tag replacement (inline style/script block)
+    attrs = attrs.replace(/\b(src|href|poster)\s*=\s*(["'])(.*?)\2/gi, (whole, name, quote, value) => {
+      const r = resolveRef(value);
+      if (r.skip || r.external) return whole;
+      if (r.missing) {
+        if (!assets.some((a) => a.url === `zip-missing:${r.missing}`)) {
+          assets.push({ url: `zip-missing:${r.missing}`, kind: 'file', bytes: 0, inlined: false, reason: 'referenced file not found in the upload' });
+        }
+        return whole;
+      }
+      const ext = (r.path.split('.').pop() || '').toLowerCase();
+      if (ext === 'css' && tagName === 'link' && /rel\s*=\s*["']?stylesheet/i.test(originalTag)) {
+        const css = r.data.toString('utf8');
+        assets.push({ url: `zip:${r.path}`, kind: 'style', bytes: r.data.length, inlined: true, source: 'file' });
+        replacement = `<style data-imported-from="zip:${r.path}">\n${css}\n</style>`;
+        return whole;
+      }
+      if (ext === 'js' && tagName === 'script') {
+        const js = r.data.toString('utf8').replace(/<\/script/gi, '<\\/script');
+        const isModule = /type\s*=\s*["']module["']/i.test(originalTag);
+        assets.push({ url: `zip:${r.path}`, kind: 'script', bytes: r.data.length, inlined: true, source: 'file', isModule });
+        replacement = `<script${isModule ? ' type="module"' : ''} data-imported-from="zip:${r.path}">\n${js}\n</script>`;
+        return whole;
+      }
+      const mime = MIME_BY_EXT[ext];
+      if (!mime) return whole;
+      if (r.data.length > BINARY_INLINE_MAX || binaryTotal.n + r.data.length > BINARY_INLINE_TOTAL_MAX) {
+        assets.push({ url: `zip:${r.path}`, kind: ext, bytes: r.data.length, inlined: false, reason: 'file exceeds inline size cap' });
+        return whole;
+      }
+      binaryTotal.n += r.data.length;
+      if (!assets.some((a) => a.url === `zip:${r.path}`)) {
+        assets.push({ url: `zip:${r.path}`, kind: ext, bytes: r.data.length, inlined: true, source: 'file' });
+      }
+      return ` ${name}=${quote}data:${mime};base64,${r.data.toString('base64')}${quote}`;
+    });
+    // srcset candidates: rewrite each URL that resolves to a local file.
+    attrs = attrs.replace(/\bsrcset\s*=\s*(["'])(.*?)\1/gi, (whole, quote, value) => {
+      const parts = value.split(',').map((cand) => {
+        const t = cand.trim().split(/\s+/);
+        const r = resolveRef(t[0]);
+        if (!r || !r.path) return cand;
+        const ext = (r.path.split('.').pop() || '').toLowerCase();
+        const mime = MIME_BY_EXT[ext];
+        if (!mime || r.data.length > BINARY_INLINE_MAX) return cand;
+        if (!assets.some((a) => a.url === `zip:${r.path}`)) {
+          assets.push({ url: `zip:${r.path}`, kind: ext, bytes: r.data.length, inlined: true, source: 'file' });
+        }
+        t[0] = `data:${mime};base64,${r.data.toString('base64')}`;
+        return t.join(' ');
+      });
+      return ` srcset=${quote}${parts.join(', ')}${quote}`;
+    });
+    out += html.slice(last, m.index) + (replacement ?? `<${m[1]}${attrs}>`);
+    last = m.index + originalTag.length;
+  }
+  return out + html.slice(last);
+}
+
+// Turn a flat file list into a self-contained site: pick the entry HTML,
+// inline every local reference, then capture external stylesheets/scripts.
+export function buildSiteFromFiles(files) {
+  if (!Array.isArray(files) || !files.length) throw new Error('upload: no files received');
+  if (files.length > ZIP_MAX_FILES) throw new Error(`upload: too many files (max ${ZIP_MAX_FILES})`);
+  const fileMap = {};
+  const lookup = new Map(); // lowercase path → { path, data }
+  let total = 0;
+  for (const f of files) {
+    const name = normalizeZipPath(f.name);
+    if (!name) continue; // traversal entries rejected
+    const data = Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data);
+    total += data.length;
+    if (total > ZIP_MAX_TOTAL) throw new Error(`upload: archive exceeds the ${Math.round(ZIP_MAX_TOTAL / 1024 / 1024)}MB cap`);
+    if (data.length > ZIP_MAX_FILE) continue; // oversized side files skipped
+    fileMap[name] = data;
+    lookup.set(name.toLowerCase(), { path: name, data });
+  }
+  const entry = findEntryHtml(fileMap);
+  if (!entry) throw new Error('upload: no HTML file found in the archive');
+  let html = fileMap[entry].toString('utf8');
+  if (!/<(!doctype|html|head|body|main|section|div)[\s>]/i.test(html.slice(0, 8000))) {
+    throw new Error('upload: the entry file is not an HTML page');
+  }
+  const baseDir = entry.includes('/') ? entry.slice(0, entry.lastIndexOf('/')) : '';
+  const assets = [];
+  html = inlineLocalAssets(html, baseDir, lookup, assets);
+  return { html, assets, entry, fileMap };
+}
+
+export async function importSiteFromFiles(orgId, user, files, { sourceName = 'upload' } = {}, ip = '') {
+  const built = buildSiteFromFiles(files);
+  let { html, assets } = built;
+  // External references (fonts, CDNs) get the same deep capture as URL imports.
+  try {
+    const ext = await inlineExternalAssets(html, EXTERNAL_BASE, { keepModulesRemote: true });
+    html = ext.html;
+    assets = assets.concat(ext.assets);
+  } catch {
+    assets.push({ url: '(external scan)', kind: 'scan', bytes: 0, inlined: false, reason: 'external asset capture failed' });
+  }
+  const texts = indexEditableTexts(html);
+  const health = assessRenderHealth(html, texts.length, assets);
+  const source = `upload:${String(sourceName || 'upload').slice(0, 120)}`;
+  return persistImportedSite(orgId, user, {
+    rawUrl: source,
+    finalUrl: `${source}#${built.entry}`,
+    status: 200, bytes: html.length, html, assets, health,
+    strategy: { origin: 'files', entry: built.entry },
+  }, ip);
+}
+
+// Route entry point: raw body buffer + content type. Zips are unpacked (zip-slip
+// safe — we never write to disk, paths are normalized and traversal-dropped);
+// a bare text/html body becomes a single-file import.
+export async function importSiteFromUpload(orgId, user, buf, { contentType = '', sourceName = 'upload' } = {}, ip = '') {
+  if (!Buffer.isBuffer(buf) || !buf.length) throw new Error('upload: empty body');
+  const files = [];
+  if (/zip/i.test(contentType)) {
+    let zip;
+    try { zip = new AdmZip(buf); } catch { throw new Error('upload: not a valid zip archive'); }
+    for (const e of zip.getEntries()) {
+      if (e.isDirectory) continue;
+      files.push({ name: e.entryName, data: e.getData() });
+    }
+  } else if (/html/i.test(contentType)) {
+    const n = String(sourceName || 'index.html');
+    files.push({ name: /\.html?$/i.test(n) ? n : 'index.html', data: buf });
+  } else {
+    throw new Error('upload: send the file as application/zip or text/html');
+  }
+  return importSiteFromFiles(orgId, user, files, { sourceName }, ip);
 }
 
 export function getImportState(orgId, projectId) {

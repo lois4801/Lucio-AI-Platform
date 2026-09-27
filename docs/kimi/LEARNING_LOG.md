@@ -435,3 +435,10 @@ start of every new session to evolve instead of rediscovering.
 - Fix: adaptive fetch — UA retry on 401/403/406, www/bare host-variant retry on DNS failures, ordered by a per-host learnings registry (`import_host_learnings`); module scripts kept remote (absolutized) on hosts learned to be JS shells; all remaining relative refs absolutized against the origin (asset tags + CSS url(), never `<a href>`); render-health diagnosis (`health_json`) per import.
 - UI: amber "JS-rendered shell" banner in Import Studio; "Import intelligence" panel on Projects showing per-host learned strategies.
 - Tests: scripts/test-import-learning.js (31 assertions); all 37 suites green; tsc clean.
+
+## 2026-09-27 — File-based import: .zip / .html / site-folder uploads
+- New POST /api/imports/upload (raw body, 90mb): zips unpacked with adm-zip (zip-slip safe — never written to disk, traversal paths dropped), bare text/html becomes a single-file import, anything else rejected honestly. Folder uploads are zipped in-browser with fflate on the Projects page.
+- buildSiteFromFiles: entry = shallowest index.html (falls back to any html), local css/js INLINED as tags with data-imported-from="zip:<path>" provenance, images/media/fonts → data URIs (3MB/file, 40MB total caps), srcset candidates rewritten, refs that resolve to nothing recorded as failed assets (health flags them). External refs then get the same deep capture as URL imports, modules always kept remote for file imports.
+- Bug class found testing the owner's real aurelle-site.zip: inline <script> JS containing template strings like src="' + p.img + '" was being string-matched as a real tag. Fix: inlineCodeSpans() — both inlineLocalAssets AND absolutizeResourceRefs now skip matches inside <script>...</script> spans.
+- Real-file smoke: aurelle (27KB), meridian (7.4MB, 14 embedded images), Kimi_Agent_Luxury folder (6.3MB, 13 assets, 24 images) — all import clean, zero false asset failures.
+- Tests: scripts/test-import-upload.js (33 assertions); all 38 suites green; tsc clean.

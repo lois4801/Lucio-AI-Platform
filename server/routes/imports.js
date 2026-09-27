@@ -1,11 +1,12 @@
 // Site Importer API — import external websites, edit their texts, reset,
 // save as reusable templates, and spawn new projects from templates.
 import { Router } from 'express';
+import express from 'express';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import {
   importSite, getImportState, applyEdits, resetImport,
   saveAsTemplate, listTemplates, useTemplate, deleteTemplate, getImportSnippets,
-  listLearnings,
+  listLearnings, importSiteFromUpload,
 } from '../services/siteImporter.js';
 
 export const importsRouter = Router();
@@ -69,6 +70,23 @@ importsRouter.post('/project/:projectId/save-template', requireRole('member'), (
     if (!out) return res.status(404).json({ error: 'imported project not found' });
     res.status(201).json(out);
   } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+
+// Import a site from an UPLOADED file (.zip / .html / a zipped site folder).
+// Raw body (client zips folders in-browser): local css/js/images/media are
+// inlined into the entry HTML so nothing renders missing. Query: ?name=...
+importsRouter.post('/upload', requireRole('member'), express.raw({ type: () => true, limit: '90mb' }), async (req, res) => {
+  try {
+    const body = req.body;
+    if (!Buffer.isBuffer(body) || !body.length) return res.status(400).json({ error: 'empty upload' });
+    const sourceName = String(req.query.name || req.headers['x-file-name'] || 'upload.zip').slice(0, 120);
+    const out = await importSiteFromUpload(req.user.orgId, req.user, body, {
+      contentType: String(req.headers['content-type'] || ''), sourceName,
+    }, req.ip);
+    res.status(201).json(out);
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
 });
 
 // What the importer has LEARNED per host (UA walls, www/bare variants,

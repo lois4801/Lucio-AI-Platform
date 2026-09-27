@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
+import { useRef } from 'react';
+import { zipSync } from 'fflate';
 import { useNavigate } from 'react-router';
 import { api, type Project } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Hammer, Download, LayoutTemplate, Loader2, Sparkles, Brain } from 'lucide-react';
+import { Plus, Trash2, Hammer, Download, LayoutTemplate, Loader2, Sparkles, Brain, Upload, FolderOpen } from 'lucide-react';
 
 type HostLearning = {
   host: string; attempts: number; successes: number;
@@ -30,6 +32,8 @@ export default function ProjectsPage() {
   const [usingTpl, setUsingTpl] = useState('');
   const [error, setError] = useState('');
   const [learnings, setLearnings] = useState<HostLearning[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
 
   const load = () => {
     api<{ projects: Project[] }>('/projects').then((d) => setProjects(d.projects)).catch(() => {});
@@ -53,6 +57,39 @@ export default function ProjectsPage() {
         method: 'POST', body: JSON.stringify({ url: importUrl }),
       });
       setImportUrl(''); load();
+      navigate(`/import-studio/${out.projectId}`);
+    } catch (err: any) { setError(err.message); } finally { setImporting(false); }
+  };
+
+  // File/folder import: a .zip goes up as-is; a bare .html or a whole folder
+  // is zipped in-browser first. The server inlines every local asset so
+  // photos, animations, effects and motions all come through.
+  const doFileImport = async (list: FileList | File[]) => {
+    const files = Array.from(list || []);
+    if (!files.length) return;
+    setError(''); setImporting(true);
+    try {
+      let body: Uint8Array;
+      let name: string;
+      if (files.length === 1 && files[0].name.toLowerCase().endsWith('.zip')) {
+        body = new Uint8Array(await files[0].arrayBuffer());
+        name = files[0].name;
+      } else {
+        const entries: Record<string, Uint8Array> = {};
+        let total = 0;
+        for (const f of files) {
+          const buf = new Uint8Array(await f.arrayBuffer());
+          total += buf.length;
+          if (total > 60 * 1024 * 1024) throw new Error('Selection exceeds the 60MB upload cap');
+          entries[(f as any).webkitRelativePath || f.name] = buf;
+        }
+        body = zipSync(entries, { level: 0 });
+        name = files.length === 1 ? files[0].name : 'folder-import.zip';
+      }
+      const out = await api<{ projectId: string }>(`/imports/upload?name=${encodeURIComponent(name)}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/zip' }, body: body as unknown as string,
+      });
+      load();
       navigate(`/import-studio/${out.projectId}`);
     } catch (err: any) { setError(err.message); } finally { setImporting(false); }
   };
@@ -119,6 +156,17 @@ export default function ProjectsPage() {
               Import &amp; edit
             </Button>
           </form>
+          <div className="mt-3 pt-3 border-t flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Or bring the files themselves — photos, animations, effects and motions are captured into the project:</span>
+            <input ref={fileRef} type="file" accept=".zip,.html" className="hidden" onChange={(e) => { doFileImport(e.target.files || []); e.target.value = ''; }} />
+            <input ref={folderRef} type="file" multiple className="hidden" {...({ webkitdirectory: '' } as any)} onChange={(e) => { doFileImport(e.target.files || []); e.target.value = ''; }} />
+            <Button type="button" size="sm" variant="outline" disabled={importing} onClick={() => fileRef.current?.click()}>
+              {importing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1" />} Upload .zip / .html
+            </Button>
+            <Button type="button" size="sm" variant="outline" disabled={importing} onClick={() => folderRef.current?.click()}>
+              <FolderOpen className="h-3.5 w-3.5 mr-1" /> Upload site folder
+            </Button>
+          </div>
         </CardContent>
       </Card>
       {learnings.length > 0 && (
