@@ -732,6 +732,34 @@ CREATE TABLE IF NOT EXISTS claw_jobs (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   completed_at TEXT
 );
+-- Multi-Agent Auto-Fix: watcher/triager/specialist/verifier/guardian loop.
+CREATE TABLE IF NOT EXISTS autofix_incidents (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'manual',
+  type TEXT NOT NULL DEFAULT 'build',
+  error TEXT NOT NULL,
+  file TEXT NOT NULL DEFAULT '',
+  severity TEXT NOT NULL DEFAULT 'degraded',
+  dedupe_hash TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'open',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  pending_json TEXT NOT NULL DEFAULT '',
+  claw_job_id TEXT,
+  summary TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL DEFAULT '',
+  fixed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS autofix_events (
+  incident_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  actor TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(incident_id, seq)
+);
 `);
 
 // Lightweight migrations: add columns to pre-existing tables when missing.

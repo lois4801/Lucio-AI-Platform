@@ -10,6 +10,13 @@ import { runEvidenceSuite, mandatoryFailures, evidenceSummary } from './evidence
 import { generate, getBudget, budgetUsed } from './modelRouter.js';
 
 export const RUN_STATUSES = ['created', 'planning', 'building', 'testing', 'repairing', 'checkpointing', 'completed', 'blocked', 'failed', 'cancelled'];
+
+// Auto-intake failing mandatory checks as auto-fix incidents when a run blocks
+// (watcher dedupes; org auto_fix_mode governs whether anything runs). Import is
+// lazy so the nexus module graph stays acyclic; intake must never break a run.
+function autofixIntake(orgId, projectId, runId) {
+  import('../autofix.js').then((m) => m.intakeFromRun(orgId, projectId, runId)).catch((e) => console.error('[autofix intake failed]', e.message));
+}
 export const AGENT_ROLES = ['orchestrator', 'product-manager', 'architect', 'ux-architect', 'design-engineer', 'frontend-engineer', 'backend-engineer', 'database-engineer', 'ai-engineer', 'qa-engineer', 'security-reviewer', 'accessibility-reviewer', 'performance-engineer', 'devops-engineer', 'reality-checker', 'evidence-collector'];
 
 const activeRuns = new Map(); // runId -> { cancelled: boolean }
@@ -115,6 +122,7 @@ export async function executeRun(orgId, runId, userId) {
     if (!cond) {
       emit('run.blocked', 'orchestrator', { reason, requiredAction });
       setStatus(orgId, run, 'blocked', { error: reason });
+      autofixIntake(orgId, run.project_id, runId);
       return false;
     }
     return true;
@@ -175,6 +183,7 @@ export async function executeRun(orgId, runId, userId) {
       cycle++;
       if (cycle > budget.maxRepairCycles) {
         emit('run.blocked', 'orchestrator', { reason: `mandatory checks still failing after ${budget.maxRepairCycles} repair cycles`, requiredAction: 'edit files manually or start a new run' });
+        autofixIntake(orgId, run.project_id, runId);
         return setStatus(orgId, r, 'blocked', { error: 'repair budget exhausted' });
       }
       r = setStatus(orgId, r, 'repairing');
@@ -199,7 +208,9 @@ export async function executeRun(orgId, runId, userId) {
     });
     if (reality.stillFailing?.length) {
       emit('run.blocked', 'reality-checker', { reason: 'completion claims unsupported by evidence', requiredAction: 'fix failing mandatory checks' });
-      return setStatus(orgId, r, 'blocked');
+      const blocked = setStatus(orgId, r, 'blocked');
+      autofixIntake(orgId, run.project_id, runId);
+      return blocked;
     }
 
     // Immutable checkpoint

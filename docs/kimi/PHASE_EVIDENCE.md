@@ -949,3 +949,60 @@ source; responsive, accessibility, factual, visual and performance QA pass.
   SSE live lines + terminal status + snapshot, finished-job replay
   (interruption-safe), cross-org 404, viewer 403, audit rows.
 - Full regression: 920 assertions across 22 suites, 0 failures; tsc clean; build clean.
+
+## Multi-Agent Auto-Fix System (+ Claw Code combination)
+
+### What shipped
+- Spec implemented natively (docs/kimi/Lucio-AI-Multi-Agent-Auto-Fix-System.docx):
+  server/services/autofix.js runs the full Watcher → Triager → Specialist →
+  Verifier → Guardian loop on the platform stack.
+- New tables: autofix_incidents (structured incident, dedupe_hash, status
+  open/fixing/awaiting_approval/with_claw/fixed/escalated/dismissed, attempts,
+  pending_json staged patch, claw_job_id, plain-English summary) and
+  autofix_events (UNIQUE(incident_id,seq) actor/payload timeline).
+- WATCHER: intakeIncident normalizes raw strings or structured reports into
+  typed incidents and dedupes by hash while an incident is active.
+  intakeFromRun converts a blocked NEXUS run's failing mandatory evidence rows
+  into incidents — hooked into ALL THREE blocked transitions in the nexus
+  orchestrator (guard(), repair-budget exhaustion, reality-checker block) via a
+  lazy acyclic import that can never break a run.
+- TRIAGER: confirms against the real project tree (dismisses unconfirmable
+  noise) and routes to exactly ONE specialist: backend | frontend | database |
+  dependency.
+- SPECIALISTS: deterministic mechanical fixers only — missing referenced file →
+  clearly-labeled [EDIT:] placeholder; unbalanced CSS braces; missing JS closing
+  tokens at end of file; unclosed structural HTML tags. Returns null (escalate)
+  for anything non-mechanical. No fabrication.
+- VERIFIER: pure re-checks using the builder's own exported evidence CHECKS
+  (no DB writes): PASS / FAIL (incident condition still reproduces) /
+  REGRESSION (a mandatory check that passed now fails).
+- GUARDIAN: deterministic hardBlockCheck — destructive SQL, auth/payment/secret
+  surfaces, >5 files — before anything applies; loop limit 3 per incident;
+  escalation carries a plain-English human_summary (what broke / what was tried /
+  why stopped / recommended action).
+- Orchestrator: pre-verify on a scratch copy, checkpoint before every apply,
+  rollback to byte-identical state on FAIL/REGRESSION (verified by manifest
+  hash), verifier feedback fed into the next attempt.
+- Kill switch: org setting auto_fix_mode = off | ask-first (default; patches
+  staged for owner approval) | auto (full loop unattended). Admin-gated route.
+- CLAW CODE combination: escalated/open incidents dispatch to Claw Coder
+  (incident + prior attempts in the prompt; fails closed 501 with steps when
+  Claw is unconfigured); a completed claw job's workspace output applies back
+  into the project under the same guardian/verifier/checkpoint rules
+  (oversized/secret/destructive screened; rolled back on REGRESSION).
+- Routes /api/autofix: mode get/put(admin), incidents list/get/report,
+  run loop, approve, dismiss, dispatch-claw, apply-claw. UI: /autofix page —
+  mode switch, incident reporter, status board, per-incident actions
+  (run/approve/dismiss/dispatch/apply), full agent event timeline.
+
+### Verification
+- scripts/test-autofix.js — 41/41: watcher structuring + dedupe, triage routing
+  + dismissal of unconfirmable, guardian hard blocks (destructive/sensitive/>5),
+  verifier REGRESSION judgement, ask-first stage→approve→fixed with [EDIT:]
+  labeling, auto-mode unclosed-tag fix with verifier PASS in the timeline,
+  loop-limit escalation (attempts bounded at 3, human_summary present), rollback
+  byte-identical (manifest hash), claw dispatch 501 honesty + real fake-harness
+  run + apply-back → fixed, off-mode 409, invalid mode 400, cross-org 404,
+  viewer 403s, blocked-run auto-intake (all three block paths), no secret
+  material in incident records.
+- Full regression: 961 assertions across 23 suites, 0 failures; tsc clean; build clean.
