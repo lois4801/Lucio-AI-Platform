@@ -154,3 +154,29 @@ start of every new session to evolve instead of rediscovering.
   (photon.komoot.io) probed as a keyless alternative: 0.7s answers and real
   businesses, but geocoder recall (~1–3/category) is too weak to replace
   category scanning — noted for a future supplementary role.
+
+
+## Session 2026-09-27 (later) — Site Importer: import → edit → publish → template
+- **Heard:** "Allow me to import a created website (kimi.page) into my app and
+  make it live. Edit texts and components before sending to the client. Save as
+  my template. All animations, motions, effects must work on import. Reuse
+  components/effects/motions next time I build."
+- **Built:** `server/services/siteImporter.js` + `/api/imports` router +
+  Import Studio page (`/import-studio/:projectId`). Import creates a real
+  project whose working copy lives in `build_artifacts` (kind='site'), so the
+  existing preview, sell publish (`/live/:slug`) and client-delivery machinery
+  work unchanged. Text editing uses ONE deterministic cheerio walk shared by
+  index and apply (node ids `n0…nN`); edits replace only text-node data, so
+  `<style>`/`<script>`/event handlers survive byte-identical (asserted in
+  tests). Pristine original snapshot on disk (`data/imports/`) powers Reset.
+  Save-as-template snapshots the current site + extracted snippets (style
+  blocks, inline+referenced scripts, sections) into `site_templates`;
+  "Use template" spawns an independent copy. SSRF guard reused
+  (`assertSafeUrl` + per-hop redirect re-validation + DNS private-IP check on
+  the live fetch path only, so tests stub the fetch seam).
+- **Lesson:** the shared-walk id scheme needs a no-op guard — an all-rejected
+  edit round used to consume an artifact version, shifting later version
+  assertions. Don't version what didn't change.
+- **Lesson:** template copies are deliberately NOT `site_imports` rows — the
+  import-texts endpoint rejects them honestly and they flow through the normal
+  builder lane, avoiding a two-headed editing model for the same HTML.

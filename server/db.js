@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = process.env.LUCIO_DATA_DIR || path.resolve(__dirname, '../data');
+export const DATA_DIR = process.env.LUCIO_DATA_DIR || path.resolve(__dirname, '../data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(path.join(DATA_DIR, 'files'), { recursive: true });
 fs.mkdirSync(path.join(DATA_DIR, 'builds'), { recursive: true });
@@ -230,6 +230,41 @@ CREATE TABLE IF NOT EXISTS build_artifacts (
   content TEXT NOT NULL,
   version INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Imported external websites: original snapshot on disk (data/imports/<id>.html),
+-- working copy lives in build_artifacts like any other site so preview / publish
+-- / sell architecture all work unchanged on imported projects.
+CREATE TABLE IF NOT EXISTS site_imports (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL REFERENCES organizations(id),
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  source_url TEXT NOT NULL,
+  final_url TEXT NOT NULL DEFAULT '',
+  http_status INTEGER NOT NULL DEFAULT 0,
+  bytes INTEGER NOT NULL DEFAULT 0,
+  title TEXT NOT NULL DEFAULT '',
+  original_path TEXT NOT NULL,
+  texts_count INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- User-saved site templates: full HTML snapshot on disk + indexed texts +
+-- extracted snippets (style blocks, scripts, sections) for reuse in future builds.
+CREATE TABLE IF NOT EXISTS site_templates (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL REFERENCES organizations(id),
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  source_import_id TEXT,
+  project_id TEXT,
+  html_path TEXT NOT NULL,
+  texts_json TEXT NOT NULL DEFAULT '[]',
+  snippets_json TEXT NOT NULL DEFAULT '[]',
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS agent_registry (

@@ -1,0 +1,216 @@
+// Site Importer regression suite — import external site → edit texts (animations
+// byte-preserved) → reset → save as template → reuse template → publish live.
+// Run: node scripts/test-imports.js
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lucio-import-'));
+process.env.LUCIO_DATA_DIR = tmp;
+
+let passed = 0, failed = 0;
+function ok(cond, name, extra = '') {
+  if (cond) { passed++; console.log(`  PASS  ${name}`); }
+  else { failed++; console.log(`  FAIL  ${name} ${extra}`); }
+}
+
+// A luxury-photography-style single-file site: keyframe CSS, an inline motion
+// script, semantic sections — the shape of a kimi.page build.
+const MOTION_JS = `(function () {\n  const titles = document.querySelectorAll('.hero-title');\n  titles.forEach((t, i) => { t.style.animationDelay = (i * 120) + 'ms'; });\n  console.log('atelier-motion-ready');\n})();`;
+const MOTION_CSS = `@keyframes rise { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: none; } }\n.hero-title { animation: rise 1.2s cubic-bezier(.22,1,.36,1) both; }`;
+const SAMPLE_HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta property="og:title" content="Atelier Lumière — Fine Art Photography">
+<title>Atelier Lumière — Fine Art Photography</title>
+<style>
+${MOTION_CSS}
+</style>
+</head>
+<body>
+<header class="site-header"><nav><a href="#works">Works</a><a href="#journal">Journal</a><a href="#commission" class="cta">Begin a Commission</a></nav></header>
+<main>
+<section class="hero" id="hero">
+  <p class="kicker">Fine Art Photography — Weddings &amp; The Stage</p>
+  <h1 class="hero-title">Light, remembered.</h1>
+  <p class="lede">Weddings, concerts, and the people who live inside both — photographed like they already hang in a museum.</p>
+  <a class="cta" href="#commission">Begin a Commission</a>
+</section>
+<section class="works" id="works">
+  <h2>01 — Selected Works</h2>
+  <p class="section-sub">A quiet archive of loud days</p>
+  <figure><figcaption>The Veil, Château de Chantilly Wedding — 2025</figcaption></figure>
+  <figure><figcaption>Vows Over Positano Destination — 2025</figcaption></figure>
+</section>
+<section class="commission" id="commission">
+  <h2>06 — Commissions</h2>
+  <p>No. 01 The Wedding — full weekend · heirloom album from $12,000</p>
+</section>
+</main>
+<footer>
+  <p class="footer-brand">Atelier Lumière</p>
+  <p>14 Rue de Sévigné, Paris III</p>
+  <p><a href="mailto:studio@example.com">studio@example.com</a></p>
+</footer>
+<script>
+${MOTION_JS}
+</script>
+</body>
+</html>`;
+
+function fakeResponse(html, status = 200) {
+  const buf = Buffer.from(html, 'utf8');
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: (k) => (String(k).toLowerCase() === 'content-type' ? 'text/html; charset=utf-8' : null) },
+    body: {
+      getReader: () => {
+        let sent = false;
+        return { read: async () => (sent ? { done: true } : (sent = true, { done: false, value: buf })) };
+      },
+    },
+  };
+}
+
+async function main() {
+  const importer = await import('../server/services/siteImporter.js');
+  importer.setImporterFetchForTests(async (url) => {
+    const u = String(url);
+    if (u.includes('not-html')) return fakeResponse('{"json": true}');
+    if (u.includes('http-error')) return fakeResponse('boom', 500);
+    return fakeResponse(SAMPLE_HTML);
+  });
+
+  const idx = await import('../server/index.js');
+  const app = idx.createApp();
+  const server = await new Promise((resolve) => { const s = app.listen(0, () => resolve(s)); });
+
+  const base = () => `http://127.0.0.1:${server.address().port}`;
+  let cookie = '';
+  async function call(method, p, body) {
+    const res = await fetch(base() + p, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const sc = res.headers.get('set-cookie');
+    if (sc) cookie = sc.split(';')[0];
+    const text = await res.text();
+    return { status: res.status, json: text ? JSON.parse(text) : null, text };
+  }
+  async function callText(method, p) {
+    const res = await fetch(base() + p, { method, headers: { ...(cookie ? { Cookie: cookie } : {}) } });
+    return { status: res.status, text: await res.text() };
+  }
+
+  const reg = await call('POST', '/api/auth/register', { email: 'owner@import.test', password: 'pass1234', name: 'Owner' });
+  ok(reg.status === 200, 'owner registered');
+
+  // --- import ------------------------------------------------------------------
+  const bad1 = await call('POST', '/api/imports', { url: 'http://localhost:9999/x' });
+  ok(bad1.status === 400 && /unsafe-url/i.test(bad1.json.error), 'SSRF: localhost import rejected');
+  const bad2 = await call('POST', '/api/imports', { url: 'file:///etc/passwd' });
+  ok(bad2.status === 400, 'SSRF: non-http scheme rejected');
+  const bad3 = await call('POST', '/api/imports', { url: 'https://example.com/not-html' });
+  ok(bad3.status === 400 && /not an HTML/i.test(bad3.json.error), 'non-HTML response rejected');
+  const bad4 = await call('POST', '/api/imports', { url: 'https://example.com/http-error' });
+  ok(bad4.status === 400 && /HTTP 500/i.test(bad4.json.error), 'HTTP error surfaced honestly');
+
+  const imp = await call('POST', '/api/imports', { url: 'https://ujpbg4wm5dg2i.kimi.page' });
+  ok(imp.status === 201 && imp.json.projectId, 'site imported (201)', JSON.stringify(imp.json).slice(0, 140));
+  ok(imp.json.textsCount > 15, 'editable texts indexed', `got ${imp.json.textsCount}`);
+  ok(/Atelier Lumière/.test(imp.json.title), 'title extracted from og:title');
+  const projectId = imp.json.projectId;
+
+  const st = await call('GET', `/api/imports/project/${projectId}`);
+  ok(st.status === 200 && st.json.texts.length === imp.json.textsCount, 'import state + texts served');
+  const hero = st.json.texts.find((t) => t.text === 'Light, remembered.');
+  ok(Boolean(hero), 'hero headline indexed');
+  const kick = st.json.texts.find((t) => t.text.includes('Weddings & The Stage'));
+  ok(Boolean(kick) && kick.tag === 'p', 'entity-decoded kicker text indexed with tag');
+  ok(!st.json.texts.some((t) => t.text.includes('console.log')), 'script contents not editable');
+
+  // --- edit texts ----------------------------------------------------------------
+  const edits = [
+    { id: hero.id, text: 'Love, composed.' },
+    ...(kick ? [{ id: kick.id, text: 'Editorial Photography — Worldwide' }] : []),
+    { id: 'nope-999', text: 'ghost' },
+  ];
+  const put = await call('PUT', `/api/imports/project/${projectId}/texts`, { edits });
+  ok(put.status === 200 && put.json.applied === edits.length - 1, 'edits applied', JSON.stringify(put.json));
+  ok(put.json.rejected.length === 1 && /not found/i.test(put.json.rejected[0].reason), 'unknown node id rejected honestly');
+  ok(put.json.version === 2, 'artifact version bumped to 2');
+
+  const prev = await callText('GET', `/api/builder/project/${projectId}/preview`);
+  ok(prev.status === 200, 'preview serves edited site');
+  ok(prev.text.includes('Love, composed.') && !prev.text.includes('Light, remembered.'), 'new headline in preview, old gone');
+  ok(prev.text.includes('Editorial Photography — Worldwide'), 'kicker edit in preview');
+  ok(prev.text.includes(MOTION_JS), 'motion script byte-preserved after edit');
+  ok(prev.text.includes(MOTION_CSS), 'keyframe CSS byte-preserved after edit');
+  ok(prev.text.includes('animation: rise 1.2s cubic-bezier(.22,1,.36,1) both'), 'animation declarations intact');
+
+  const tooLong = await call('PUT', `/api/imports/project/${projectId}/texts`, { edits: [{ id: hero.id, text: 'x'.repeat(2100) }] });
+  ok(tooLong.status === 400 && /exceeds/i.test(tooLong.json.error) || tooLong.json?.rejected?.length === 1, 'oversized edit rejected');
+
+  // --- reset ---------------------------------------------------------------------
+  const reset = await call('POST', `/api/imports/project/${projectId}/reset`);
+  ok(reset.status === 200 && reset.json.version === 3, 'reset restores original as new version');
+  const prev2 = await callText('GET', `/api/builder/project/${projectId}/preview`);
+  ok(prev2.text.includes('Light, remembered.') && prev2.text.includes(MOTION_JS), 'original headline + script back after reset');
+
+  // --- templates -------------------------------------------------------------------
+  const tpl = await call('POST', `/api/imports/project/${projectId}/save-template`, { name: 'Atelier Lumière Base', description: 'Luxury photography one-pager' });
+  ok(tpl.status === 201 && tpl.json.templateId, 'saved as template (201)');
+  ok(tpl.json.snippets >= 3, 'template carries reusable snippets', `got ${tpl.json.snippets}`);
+  const list = await call('GET', '/api/imports/templates');
+  ok(list.json.templates.length === 1 && list.json.templates[0].textsCount > 15, 'template listed with text count');
+  const kinds = list.json.templates[0].snippets.map((s) => s.kind);
+  ok(kinds.includes('style') && kinds.includes('script') && kinds.includes('section'), 'style + script + section snippets extracted');
+
+  const use = await call('POST', `/api/imports/templates/${tpl.json.templateId}/use`, { name: 'Client Copy' });
+  ok(use.status === 201 && use.json.projectId !== projectId, 'template used → new project');
+  const copyState = await call('GET', `/api/imports/project/${use.json.projectId}`);
+  ok(copyState.status === 404, 'template copy is a plain project (not re-linked as import)');
+
+  // edit the copy, prove isolation from the original
+  const copyPrev = await callText('GET', `/api/builder/project/${use.json.projectId}/preview`);
+  ok(copyPrev.text.includes('Light, remembered.'), 'template copy has original content');
+  const copyStateTexts = await call('GET', `/api/imports/project/${projectId}`);
+  const hero2 = copyStateTexts.json.texts.find((t) => t.text === 'Light, remembered.');
+  // note: copy isn't an import — editing must fail honestly
+  const copyEdit = await call('PUT', `/api/imports/project/${use.json.projectId}/texts`, { edits: [{ id: hero2.id, text: 'Copied headline.' }] });
+  ok(copyEdit.status === 400 && /not an imported site/i.test(copyEdit.json.error), 'template copy rejects import-only edit endpoint (plain build path applies)');
+
+  // --- publish live ------------------------------------------------------------------
+  const pub = await call('POST', '/api/sell/publish', { projectId });
+  ok(pub.status === 201 && pub.json.site.slug, 'imported site published live', JSON.stringify(pub.json).slice(0, 120));
+  const live = await callText('GET', `/live/${pub.json.site.slug}`);
+  ok(live.status === 200 && live.text.includes('Light, remembered.'), 'live URL serves the site');
+  ok(live.text.includes(MOTION_JS), 'live site keeps the motion script');
+
+  // authed owner can delete the template
+  const delOk = await call('DELETE', `/api/imports/templates/${tpl.json.templateId}`);
+  ok(delOk.status === 200, 'owner deletes template');
+  const listAfter = await call('GET', '/api/imports/templates');
+  ok(listAfter.json.templates.length === 0, 'template list empty after delete');
+
+  // --- org isolation + cleanup --------------------------------------------------------
+  cookie = '';
+  await call('POST', '/api/auth/register', { email: 'other@import.test', password: 'pass1234', name: 'Other' });
+  const foreign = await call('GET', `/api/imports/project/${projectId}`);
+  ok(foreign.status === 404, 'other org cannot read the import');
+  const foreignTpl = await call('POST', `/api/imports/templates/${tpl.json.templateId}/use`, {});
+  ok(foreignTpl.status === 404, 'other org cannot use the template');
+
+  cookie = '';
+  const delTpl = await call('DELETE', `/api/imports/templates/${tpl.json.templateId}`);
+  ok(delTpl.status === 401, 'anonymous template delete blocked');
+
+  console.log(`\nIMPORTS RESULT: ${passed} passed, ${failed} failed`);
+  server.close();
+  process.exit(failed ? 1 : 0);
+}
+
+main().catch((e) => { console.error(e); process.exit(1); });
