@@ -10,6 +10,7 @@ import CreationModePicker, {
   CREATION_MODES, buildCreationPayload, defaultCreationOptions,
   type CreationMode, type CreationOptions,
 } from '@/components/CreationModePicker';
+import KeylessLocationMap from '@/components/KeylessLocationMap';
 import { CheckCircle2, XCircle, Hammer, ShieldCheck, Save, RotateCcw, Globe, ScrollText, Clapperboard, FileDown } from 'lucide-react';
 
 const SAMPLE_GOALS = [
@@ -448,11 +449,32 @@ export default function BuilderPage() {
             </CardContent>
           </Card>
 
+          {(plan?.location || goal) && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Location map</CardTitle>
+                <CardDescription>
+                  {plan?.location
+                    ? `Live keyless OpenStreetMap layer for “${plan.location}” — the same pin your generated site's contact section embeds.`
+                    : 'Live keyless OpenStreetMap layer — add a city or region to your goal (e.g. “in Kingston”) to pin it.'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {plan?.location ? (
+                  <KeylessLocationMap query={plan.location} label={plan.siteName || plan.location} />
+                ) : (
+                  <div className="h-40 rounded-lg border border-dashed flex items-center justify-center text-muted-foreground text-sm">
+                    No location in the plan yet — include one in your goal and the map lights up automatically.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {qa && (
             <Card>
               <CardHeader><CardTitle className="flex items-center gap-2">
-                <ShieldCheck className="h-5 w-5 text-primary" />
-                Design QA — {qa.grade} · {qa.score}/100
+                <ShieldCheck className="h-5 w-5 text-primary" />                Design QA — {qa.grade} · {qa.score}/100
               </CardTitle>
               <CardDescription>Automatic audit against this site&rsquo;s design universe tokens (runs on every build).</CardDescription></CardHeader>
               <CardContent>

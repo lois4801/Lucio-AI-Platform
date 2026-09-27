@@ -69,19 +69,24 @@ export function generateFiles(brief) {
   const pack = brief.contentPack || null;
   const tagline = brief.tagline || (pack ? pickPackLine(pack.heroes, name) : '') || placeholder('one-line value proposition');
   const industry = brief.industry || 'General';
+  // Keyless live map: coordinates resolved by the orchestrator via OSM Nominatim.
+  // Sites embed the live OpenStreetMap layer with no API key; offline/miss = no map.
+  const geo = brief.geo && Number.isFinite(Number(brief.geo.lat)) && Number.isFinite(Number(brief.geo.lng))
+    ? { lat: Number(brief.geo.lat), lng: Number(brief.geo.lng), displayName: String(brief.geo.displayName || '') }
+    : null;
 
   const css = renderCss(tokens);
   const files = {};
   if (appType === 'website') {
-    files['index.html'] = renderSiteHtml({ name, tagline, industry, facts, tokens, sections: ['hero', 'about', 'services', ...(pack && Array.isArray(pack.faqs) && pack.faqs.length ? ['faq'] : []), 'gallery', 'contact'], pack });
+    files['index.html'] = renderSiteHtml({ name, tagline, industry, facts, tokens, sections: ['hero', 'about', 'services', ...(pack && Array.isArray(pack.faqs) && pack.faqs.length ? ['faq'] : []), 'gallery', 'contact'], pack, geo });
     files['styles.css'] = css;
     files['app.js'] = renderAppJs({ name, kind: 'website', facts });
-    files['data.json'] = JSON.stringify({ name, industry, facts, generated: 'lucio-nexus', universe, content_pack: packMeta(pack) }, null, 2);
+    files['data.json'] = JSON.stringify({ name, industry, facts, generated: 'lucio-nexus', universe, content_pack: packMeta(pack), geo }, null, 2);
   } else if (appType === 'saas-landing') {
-    files['index.html'] = renderSiteHtml({ name, tagline, industry, facts, tokens, sections: ['hero', 'features', 'pricing', 'faq', 'contact'], saas: true, pack });
+    files['index.html'] = renderSiteHtml({ name, tagline, industry, facts, tokens, sections: ['hero', 'features', 'pricing', 'faq', 'contact'], saas: true, pack, geo });
     files['styles.css'] = css;
     files['app.js'] = renderAppJs({ name, kind: 'saas', facts });
-    files['data.json'] = JSON.stringify({ name, industry, facts, generated: 'lucio-nexus', universe, plans: ['Starter', 'Growth', 'Scale'], content_pack: packMeta(pack) }, null, 2);
+    files['data.json'] = JSON.stringify({ name, industry, facts, generated: 'lucio-nexus', universe, plans: ['Starter', 'Growth', 'Scale'], content_pack: packMeta(pack), geo }, null, 2);
   } else if (appType === 'dashboard') {
     files['index.html'] = renderDashboardHtml({ name, tokens });
     files['styles.css'] = css;
@@ -115,7 +120,16 @@ function packMeta(pack) {
   if (!pack) return undefined;
   return { industry: pack.industry, family: pack.family, heroes: pack.heroes, taglines: pack.taglines, services: pack.services, faqs: pack.faqs, ctas: pack.ctas, seo: pack.seo };
 }
-function renderSiteHtml({ name, tagline, industry, facts, tokens, sections, saas = false, pack = null }) {
+// Live keyless map — OpenStreetMap embed, no API key. Coordinates come from the
+// orchestrator's Nominatim lookup at build time; if none, no map is rendered.
+function osmMapEmbed(geo, name) {
+  const dLng = 0.014, dLat = 0.009;
+  const bbox = `${(geo.lng - dLng).toFixed(6)}%2C${(geo.lat - dLat).toFixed(6)}%2C${(geo.lng + dLng).toFixed(6)}%2C${(geo.lat + dLat).toFixed(6)}`;
+  const marker = `${geo.lat.toFixed(6)}%2C${geo.lng.toFixed(6)}`;
+  const bigger = `https://www.openstreetmap.org/?mlat=${geo.lat.toFixed(6)}&amp;mlon=${geo.lng.toFixed(6)}#map=16/${geo.lat.toFixed(6)}/${geo.lng.toFixed(6)}`;
+  return `<div class="map-wrap"><iframe title="Map — ${esc(name)}" src="https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&amp;layer=mapnik&amp;marker=${marker}" loading="lazy"></iframe></div><p class="map-credit"><a href="${bigger}" target="_blank" rel="noreferrer">View larger map</a> · live OpenStreetMap · no API key</p>`;
+}
+function renderSiteHtml({ name, tagline, industry, facts, tokens, sections, saas = false, pack = null, geo = null }) {
   const packServices = pack && Array.isArray(pack.services) && pack.services.length
     ? pack.services.slice(0, 6).map((s) => `<li><strong>${esc(s.name)}</strong> — ${esc(s.description)}</li>`).join('')
     : null;
@@ -127,7 +141,8 @@ function renderSiteHtml({ name, tagline, industry, facts, tokens, sections, saas
   const seoKeywords = pack && Array.isArray(pack.keywords) ? esc(pack.keywords.slice(0, 8).join(', ')) : '';
   const phone = facts.phone ? `<a href="tel:${esc(facts.phone)}">${esc(facts.phone)}</a>` : placeholder('phone number');
   const email = facts.email ? `<a href="mailto:${esc(facts.email)}">${esc(facts.email)}</a>` : placeholder('email address');
-  const address = facts.address ? esc(facts.address) : placeholder('street address');
+  const address = facts.address ? esc(facts.address) : (geo && geo.displayName ? esc(geo.displayName) : placeholder('street address'));
+  const mapBlock = geo ? osmMapEmbed(geo, name) : '';
   const body = {
     hero: `<section id="hero" class="hero"><h1>${esc(name)}</h1><p class="tagline">${esc(tagline)}</p><a class="cta" href="#contact">${saas ? 'Start free trial' : 'Get in touch'}</a></section>`,
     about: `<section id="about"><h2>About</h2><p>${facts.about ? esc(facts.about) : placeholder('short, factual about text — verified facts only')}</p></section>`,
@@ -136,7 +151,7 @@ function renderSiteHtml({ name, tagline, industry, facts, tokens, sections, saas
     pricing: `<section id="pricing"><h2>Pricing</h2><div class="cards" id="pricing-cards"></div></section>`,
     faq: `<section id="faq"><h2>FAQ</h2>${packFaqs || `<details><summary>${placeholder('question')}</summary><p>${placeholder('answer')}</p></details><details><summary>${placeholder('question')}</summary><p>${placeholder('answer')}</p></details>`}</section>`,
     gallery: `<section id="gallery"><h2>Gallery</h2><div class="gallery" role="img" aria-label="Photo gallery placeholder"><div class="tile"></div><div class="tile"></div><div class="tile"></div></div></section>`,
-    contact: `<section id="contact"><h2>Contact</h2><p>${phone} · ${email}</p><p>${address}</p><form id="contact-form"><label for="cf-name">Name</label><input id="cf-name" name="name" required /><label for="cf-email">Email</label><input id="cf-email" name="email" type="email" required /><label for="cf-msg">Message</label><textarea id="cf-msg" name="message" required></textarea><button type="submit">Send</button><p id="form-status" role="status"></p></form></section>`,
+    contact: `<section id="contact"><h2>Contact</h2><p>${phone} · ${email}</p><p>${address}</p>${mapBlock}<form id="contact-form"><label for="cf-name">Name</label><input id="cf-name" name="name" required /><label for="cf-email">Email</label><input id="cf-email" name="email" type="email" required /><label for="cf-msg">Message</label><textarea id="cf-msg" name="message" required></textarea><button type="submit">Send</button><p id="form-status" role="status"></p></form></section>`,
   };
   return `<!doctype html>
 <html lang="en">
@@ -211,6 +226,10 @@ input:focus-visible, textarea:focus-visible, a:focus-visible, button:focus-visib
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid color-mix(in srgb, var(--muted) 25%, transparent); }
 footer { color: var(--muted); text-align: center; padding: 2rem 1rem; }
+.map-wrap { margin: 1.25rem 0; border-radius: var(--radius); overflow: hidden; border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent); }
+.map-wrap iframe { display: block; width: 100%; height: 320px; border: 0; }
+.map-credit { font-size: 0.78rem; color: var(--muted); margin-top: 0.35rem; }
+.map-credit a { color: var(--accent); }
 @media (prefers-reduced-motion: no-preference) {
   .hero .cta { transition: transform 150ms ease; }
   .hero .cta:hover { transform: translateY(-2px); }
@@ -284,12 +303,15 @@ export function briefFromIntent(intent, opts = {}) {
   const appType = APP_TYPES.find((t) => lower.includes(t.replace('-landing', ' landing').replace('-storefront', ' storefront').replace('-tool', ' tool'))) || (lower.includes('dashboard') ? 'dashboard' : lower.includes('store') || lower.includes('shop') ? 'ecommerce-storefront' : lower.includes('saas') || lower.includes('pricing') ? 'saas-landing' : lower.includes('tool') || lower.includes('internal') ? 'internal-tool' : 'website');
   const nameMatch = text.match(/(?:for|called|named)\s+["']?([A-Z][\w&'’. -]{2,40})["']?/);
   const industryMatch = text.match(/\b(restaurant|plumb\w+|salon|bakery|clinic|law|real estate|fitness|coffee|retail|construction|automotive|dental|hotel)\b/i);
+  const locationMatch = text.match(/\b(?:in|near)\s+([A-Z][A-Za-z'.-]+(?:\s+[A-Z][A-Za-z'.-]+)?)(?:,?\s+(?:Ontario|Quebec|British Columbia|Alberta|Manitoba|Saskatchewan|Nova Scotia|New Brunswick|Newfoundland(?: and Labrador)?|Prince Edward Island|Yukon|Northwest Territories|Nunavut|ON|QC|BC|AB|MB|SK|NS|NB|NL|PE|YT|NT|NU)\b)?/);
   return {
     name: opts.name || (nameMatch ? nameMatch[1].trim() : 'Untitled Project'),
     appType: opts.appType || appType,
     industry: opts.industry || (industryMatch ? industryMatch[1] : 'General'),
+    location: opts.location || (locationMatch ? locationMatch[1].trim() : ''),
     tagline: opts.tagline || '',
     facts: opts.facts || {}, // verified facts only (CRM launch attaches these with source ids)
+    geo: opts.geo || null, // { lat, lng, displayName } — keyless Nominatim, set by the orchestrator at build time
     intent: text.slice(0, 500),
   };
 }

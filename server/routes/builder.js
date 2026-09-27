@@ -4,7 +4,8 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { makePlan, buildFromGoal, getLatestSite, getLatestQA, listArtifacts, getLatestRecipe, recomposePlan, changeComponent, getLatestPdf } from '../services/appBuilder.js';
 import { DESIGN_UNIVERSES, MOTION_PERSONALITIES } from '../services/designUniverses.js';
 import { CREATION_MODES } from '../services/ldStyles.js';
-import { chat } from '../services/modelGateway.js';
+import { chat, parseGoal } from '../services/modelGateway.js';
+import { geocodeLocation } from '../services/geo.js';
 import { inlineMediaRefs } from '../services/pdfView.js';
 import {
   proposeEdit, listEdits, decideEdit, setLock, getLocks,
@@ -49,13 +50,20 @@ builderRouter.post('/project/:projectId/plan', requireRole('member'), (req, res)
   res.json({ plan: makePlan(goal, withProjectSiteName(p, { styleId, creationMode, siteName, industry, tagline, verifiedFacts, motionIntensity, projectId: p.id })) });
 });
 
-// Step 2 — Build: scaffold the site from a goal + options
-builderRouter.post('/project/:projectId/build', requireRole('member'), (req, res) => {
+// Step 2 — Build: scaffold the site from a goal + options. The build route also
+// pins the parsed location to real coordinates via keyless OSM Nominatim so the
+// scaffolded contact section embeds a live OpenStreetMap map (no API key).
+builderRouter.post('/project/:projectId/build', requireRole('member'), async (req, res) => {
   const p = ownProject(req, res); if (!p) return;
   const { goal } = req.body || {};
   if (!goal) return res.status(400).json({ error: 'goal is required' });
   const { styleId, creationMode, siteName, industry, tagline, verifiedFacts, motionIntensity } = req.body || {};
-  res.status(201).json(buildFromGoal(req.params.projectId, goal, withProjectSiteName(p, { styleId, creationMode, siteName, industry, tagline, verifiedFacts, motionIntensity }), req.user, req.ip));
+  let geo = null;
+  try {
+    const loc = parseGoal(goal).location;
+    if (loc) geo = await geocodeLocation(loc, { countrycodes: 'ca' });
+  } catch { /* maps are additive — build without a map rather than fail */ }
+  res.status(201).json(buildFromGoal(req.params.projectId, goal, withProjectSiteName(p, { styleId, creationMode, siteName, industry, tagline, verifiedFacts, motionIntensity, geo }), req.user, req.ip));
 });
 
 builderRouter.get('/project/:projectId/artifacts', (req, res) => {

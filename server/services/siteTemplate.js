@@ -273,6 +273,22 @@ html.cine-on .cine-nav.nav-solid{background:color-mix(in srgb,var(--bg) 82%,tran
 // stays byte-identical to earlier phases.
 export const SECTION_SLOTS = ['marquee', 'story', 'cinematic_break', 'services', 'trust', 'process', 'gallery', 'faq', 'about', 'contact'];
 
+// Live keyless map — OpenStreetMap embed, no API key. plan.geo is { lat, lng }
+// resolved from plan.location via keyless Nominatim at build time; when absent
+// the contact section simply ships without a map.
+function osmSiteMap(geo, siteName) {
+  const f = (n) => Number(n).toFixed(6);
+  const dLng = 0.014, dLat = 0.009;
+  const bbox = `${f(Number(geo.lng) - dLng)}%2C${f(Number(geo.lat) - dLat)}%2C${f(Number(geo.lng) + dLng)}%2C${f(Number(geo.lat) + dLat)}`;
+  const marker = `${f(Number(geo.lat))}%2C${f(Number(geo.lng))}`;
+  const bigger = `https://www.openstreetmap.org/?mlat=${f(Number(geo.lat))}&amp;mlon=${f(Number(geo.lng))}#map=16/${f(Number(geo.lat))}/${f(Number(geo.lng))}`;
+  return `
+    <div class="relative mt-10 overflow-hidden" style="border-radius:var(--radius);border:1px solid var(--line)">
+      <iframe title="Map — ${esc(siteName)}" src="https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&amp;layer=mapnik&amp;marker=${marker}" loading="lazy" class="w-full h-72 md:h-80" style="border:0;display:block"></iframe>
+    </div>
+    <p class="text-xs mt-2 relative" style="color:var(--muted)"><a href="${bigger}" target="_blank" rel="noreferrer" style="color:var(--accent)">View larger map</a> · live OpenStreetMap · no API key</p>`;
+}
+
 export function orderAndFilter(items, recipe) {
   const order = Array.isArray(recipe?.sectionOrder) ? recipe.sectionOrder : null;
   const hidden = new Set(Array.isArray(recipe?.hiddenSlots) ? recipe.hiddenSlots : []);
@@ -500,6 +516,7 @@ export function scaffoldSite(plan) {
     <div class="absolute -top-24 -right-24 h-72 w-72 rounded-full opacity-20 blur-3xl" style="background:var(--accent)"></div>
     <h2 class="font-display text-3xl md:text-4xl font-bold mb-2 relative">${esc(contactCta)}</h2>
     <p class="mb-8 relative" style="color:var(--muted)">We reply within one business day.</p>
+    ${plan.geo && Number.isFinite(Number(plan.geo.lat)) && Number.isFinite(Number(plan.geo.lng)) ? osmSiteMap(plan.geo, plan.siteName) : ''}
     <form class="relative grid gap-4 max-w-xl" data-enquire>
       <input required placeholder="Your name" name="name" class="px-5 py-4"/>
       <input required type="email" name="email" placeholder="Email" class="px-5 py-4"/>

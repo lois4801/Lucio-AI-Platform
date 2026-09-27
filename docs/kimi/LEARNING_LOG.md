@@ -82,3 +82,23 @@ start of every new session to evolve instead of rediscovering.
 - **Open:** still deterministic on-device. A BYOK model provider would take the
   drafts from structured to open-ended; the intent router + deliverable
   scaffolding is the seam where a provider plugs in.
+
+
+## Session 2026-09-27 (later) — Keyless live maps in Builder + NEXUS sites
+- **Heard:** "wire the keyless live OSM map layer into the Builder and NEXUS
+  preview maps so every map in the app works without any API keys."
+- **Built:** `server/services/geo.js` (Nominatim geocode, 2.5s timeout, 24h
+  in-memory cache, NEVER throws — miss means "no map"), `/api/geo/lookup`
+  route, NEXUS orchestrator geocodes the brief location and persists it,
+  `briefFromIntent` extracts "in <City>" locations, NEXUS + Builder site
+  generators embed the live OSM iframe in the contact section when coords
+  exist, Builder page gained a Location map panel on the shared
+  `src/lib/keylessMap.ts` Leaflet helper (same 4 keyless tile sources as the
+  scanner).
+- **Lesson:** build-time geocoding beats runtime geocoding for generated sites
+  — the platform's untrusted-app contract forbids runtime network calls in
+  generated output, so coordinates must be resolved server-side and baked in.
+  Additive-only wiring (no coords → no map) kept all 29 existing suites green
+  untouched.
+- **Lesson:** the scanner's tile-fallback list is now a single shared constant
+  (`KEYLESS_TILE_SOURCES`) — future provider changes touch one file.

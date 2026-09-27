@@ -196,6 +196,9 @@ export function makePlan(goal, opts = {}) {
     tagline: opts.tagline || copy.hero,
     industry: opts.industry || parsed.industry,
     location: parsed.location,
+    geo: opts.geo && Number.isFinite(Number(opts.geo.lat)) && Number.isFinite(Number(opts.geo.lng))
+      ? { lat: Number(opts.geo.lat), lng: Number(opts.geo.lng), displayName: String(opts.geo.displayName || '') }
+      : null, // keyless Nominatim coords, injected by the build route — contact map renders when present
     tone: parsed.tone,
     style: { id: style.id, name: style.name, source: styleSource },
     recommendedStyles: recommendStyles(goal, opts.industry),
@@ -331,6 +334,7 @@ export function recomposePlan(projectId, creationMode) {
       motionIntensity: prev.motionIntensity,
       projectId,
       universeId: prev.universe?.id,
+      geo: prev.geo || null, // keep the pinned map across creation-mode converts
     });
   }
   // Fallback for projects built before Phase 7 plan persistence: recompose from the

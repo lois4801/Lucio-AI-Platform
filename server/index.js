@@ -42,6 +42,7 @@ import { optimizeRouter } from './routes/optimize.js';
 import { nexusRouter } from './routes/nexus.js';
 import { agentsRouter } from './routes/agents.js';
 import { clawRouter } from './routes/claw.js';
+import { geoRouter } from './routes/geo.js';
 import { autofixRouter } from './routes/autofix.js';
 import { autoDataRouter } from './routes/autoData.js';
 import { ensureCatalog } from './services/autoData.js';
@@ -106,6 +107,7 @@ app.use('/api/apps', appStudioRouter);
   app.use('/api/claw', clawRouter);
   app.use('/api/autofix', autofixRouter);
   app.use('/api/autodata', autoDataRouter);
+  app.use('/api/geo', geoRouter);
   // Public surface (no auth): live client sites, enquiries, owner portal.
   // Mounted BEFORE the SPA fallback so /live and /portal are never swallowed.
   app.use(publicRouter);

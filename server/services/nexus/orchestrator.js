@@ -157,6 +157,21 @@ export async function executeRun(orgId, runId, userId) {
       }
     } catch { /* content packs are additive — never break a build */ }
     const briefWithPack = contentPack ? { ...brief, contentPack } : brief;
+    // Keyless live map: pin the brief location to real coordinates via OSM
+    // Nominatim so the generated contact section embeds a live OpenStreetMap
+    // map — no API key, real data. Additive only: a miss/offline means no map.
+    try {
+      const loc = String(briefWithPack.location || briefWithPack.facts?.address || '').trim();
+      if (loc && !briefWithPack.geo) {
+        const { geocodeLocation } = await import('../geo.js');
+        const geo = await geocodeLocation(loc, { countrycodes: 'ca' });
+        if (geo) {
+          briefWithPack.geo = geo;
+          db.prepare(`UPDATE builder_projects SET brief_json = ? WHERE id = ?`)
+            .run(JSON.stringify({ ...getProject(orgId, run.project_id).brief, geo }), run.project_id);
+        }
+      }
+    } catch { /* maps are additive — never break a build on geocoding */ }
     const plan = buildPlan(briefWithPack);
     emit('plan.created', 'product-manager', { planId: `${runId}-plan-1`, steps: plan.steps.map((s) => s.task) });
     if (contentPack) emit('content.pack', 'product-manager', { industry: contentPack.industry, family: contentPack.family, heroes: contentPack.heroes.length, services: contentPack.services.length, faqs: contentPack.faqs.length, seoTemplates: contentPack.seo?.title_templates?.length || 0 });
@@ -182,7 +197,7 @@ export async function executeRun(orgId, runId, userId) {
         for (const [path, content] of Object.entries(files)) {
           emit('file.created', 'frontend-engineer', { path, content: content.slice(0, 4000), hash: (db.prepare(`SELECT hash FROM builder_files WHERE project_id = ? AND path = ?`).get(run.project_id, path))?.hash });
         }
-        return { messages: [`${meta.fileCount} files written through the VFS`, `Template: ${meta.appType} · tokens: ${meta.tokenLabel}`] };
+        return { messages: [`${meta.fileCount} files written through the VFS`, `Template: ${meta.appType} · tokens: ${meta.tokenLabel}`, briefWithPack.geo ? `Location pinned on live OpenStreetMap map (${briefWithPack.geo.lat.toFixed(4)}, ${briefWithPack.geo.lng.toFixed(4)}) — keyless` : 'No location pinned — contact section ships without a map'].filter(Boolean) };
       });
     }
     await agentStep(r, 'backend-engineer', 'api-contract', async () => ({ messages: ['API contract: documented only — preview runtime is static; no server code is generated or executed'] }));
