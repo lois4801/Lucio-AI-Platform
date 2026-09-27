@@ -677,3 +677,31 @@ source; responsive, accessibility, factual, visual and performance QA pass.
   filter, billing create/validation/404/list/timeline-mirror, portal fee summary +
   stage + pending-review link, org isolation for both timeline and billing.
 - Full regression: 609 assertions across 13 suites, 0 failures; tsc clean; build clean.
+
+## Phase 14 — App Studio / Vertical SaaS (manual v28 Phase 14)
+
+### What shipped
+- Reusable AppDefinition runtime: `app_definitions` + `app_records` tables and
+  `server/services/appStudio.js`. `validateSchema()` whitelists field types
+  (text|number|select|date|checkbox) and workflow actions (setStatus|
+  setStatusIfExpired|requireField) — schemas are data, never code. Records are
+  validated against the schema (required, type checks, select options) and
+  workflow rules fire in order on every create/update; status outcomes are rule
+  results, never compliance claims.
+- Two vertical apps seeded idempotently at boot from the same primitives:
+  **Lucio Safety** (incident reporting; Critical -> escalated, Major ->
+  needs_review) and **Lucio Contractor** (insured=false -> blocked;
+  license_expiry in the past -> license_expired).
+- Custom apps: any org can publish its own AppDefinition (slug-unique, 409 on
+  conflict); system apps are visible to every org, private apps org-scoped.
+- Routes /api/apps (definitions CRUD + records create/list/update); UI: App
+  Studio page (/studio + nav) — app tiles, schema-generated record forms,
+  records table with workflow status badges, JSON schema editor with validation.
+
+### Verification
+- scripts/test-phase14.js — 24 assertions, all green: seeded apps + schema shape,
+  all workflow rules for both vertical apps, record validation (required/select/
+  date), updateRecord re-runs rules, custom app creation, five schema-validation
+  rejections (type/options/duplicate key/workflow field/slug 409), custom workflow
+  fires, org isolation (system visible, private hidden, no records), audit rows.
+- Full regression: 633 assertions across 14 suites, 0 failures; tsc clean; build clean.

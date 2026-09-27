@@ -33,7 +33,11 @@ import { assistantRouter } from './routes/assistant.js';
 import { publicRouter } from './routes/public.js';
 import { sellRouter } from './routes/sell.js';
 import { agentRunsRouter } from './routes/agentRuns.js';
+import { appStudioRouter } from './routes/appStudio.js';
+import { seedVerticalApps } from './services/appStudio.js';
 import { libraryRouter } from './routes/componentLibrary.js';
+
+seedVerticalApps();
 
 export function createApp() {
   const app = express();
@@ -76,6 +80,7 @@ export function createApp() {
   app.use('/api/assistant', assistantRouter);
   app.use('/api/sell', sellRouter);
 app.use('/api/agent-runs', agentRunsRouter);
+app.use('/api/apps', appStudioRouter);
   app.use('/api/library', libraryRouter);
   // Public surface (no auth): live client sites, enquiries, owner portal.
   // Mounted BEFORE the SPA fallback so /live and /portal are never swallowed.

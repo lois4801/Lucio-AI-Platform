@@ -463,6 +463,28 @@ CREATE TABLE IF NOT EXISTS billing_events (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_billing_deal ON billing_events(deal_id);
+CREATE TABLE IF NOT EXISTS app_definitions (
+  id TEXT PRIMARY KEY,
+  org_id TEXT,                              -- NULL = system app visible to every org
+  slug TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  schema_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'published',
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS app_records (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  app_id TEXT NOT NULL REFERENCES app_definitions(id) ON DELETE CASCADE,
+  data_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'open',
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_app_records ON app_records(org_id, app_id);
 `);
 
 // Lightweight migrations: add columns to pre-existing tables when missing.
