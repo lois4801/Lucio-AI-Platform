@@ -40,6 +40,14 @@ const NEARBY_TTL_MS = 3600_000;
 const DEFAULT_BUDGET = Math.max(0, Math.min(20, Number(process.env.OSM_REQ_BUDGET || 8)));
 export const OSM_NEARBY_RADIUS_M = 3000;
 
+// Owner directive 2026-09-27: a bad Overpass window must cost SECONDS per city,
+// not a minute — total scan wait is dominated by the slowest city. The cap and
+// persistence are env-tunable for future tuning without a code change.
+const CITY_CAP_MS = Math.max(10_000, Number(process.env.OVERPASS_CITY_CAP_MS || 25_000));
+const REQ_TIMEOUT_MS = Math.max(5_000, Number(process.env.OVERPASS_REQ_TIMEOUT_MS || 10_000));
+const RACE_ENDPOINTS = Math.max(1, Math.min(3, Number(process.env.OVERPASS_RACE_ENDPOINTS || 2)));
+const FALLBACK_ENDPOINTS = Math.max(0, Math.min(4, Number(process.env.OVERPASS_FALLBACK_ENDPOINTS || 2)));
+
 export function isOsmLiveEnabled() { return process.env.OSM_LIVE_ENABLED === 'true'; }
 
 // Injected by the pipeline (avoids a providers.js import cycle).
@@ -135,7 +143,7 @@ export function bboxForCity(city) {
 
 async function queryOverpass(query, budget) {
   const errors = [];
-  const deadline = Date.now() + 60_000; // per-city cap: never let one city burn the scan
+  const deadline = Date.now() + CITY_CAP_MS; // hard per-city cap: worst case ~25s
   // One request attempt. Every request that reached a server counts against
   // the scan budget (racing fires two), so public-infra load is honest.
   const attempt = async (endpoint) => {
@@ -143,9 +151,11 @@ async function queryOverpass(query, budget) {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': USER_AGENT, Accept: 'application/json' },
       body: `data=${encodeURIComponent(query)}`,
-      // 15s per request: healthy mirrors answer in 1.4–8s (measured), so a
-      // hanging instance is cut early and the budget moves on.
-      signal: AbortSignal.timeout(15_000),
+      // 10s per request: healthy mirrors answer in 1.4–8s (measured), so a
+      // hanging instance is cut early and the scan moves on. The old 15s
+      // timeout was the single biggest lever on total scan wait — a dead
+      // mirror burned a quarter of the per-city budget per try.
+      signal: AbortSignal.timeout(REQ_TIMEOUT_MS),
     });
     if (budget) budget.http = (budget.http || 0) + 1;
     if (res.status === 429 || res.status >= 500) throw new Error(`${endpoint} HTTP ${res.status}`);
@@ -160,20 +170,18 @@ async function queryOverpass(query, budget) {
   // osm.fr timeout, then 3 min later osm.fr 200 in 1.4s and api.de 200 in
   // 4s). Serial rotation burns the whole budget inside ONE bad window; a
   // race crosses it. Both requests count against the scan budget.
-  const raced = await Promise.allSettled(ENDPOINTS.slice(0, 2).map(attempt));
+  const raced = await Promise.allSettled(ENDPOINTS.slice(0, RACE_ENDPOINTS).map(attempt));
   const winner = raced.find((r) => r.status === 'fulfilled');
   if (winner) return winner.value;
   for (const r of raced) if (r.status === 'rejected') errors.push(short(r.reason));
 
-  // Serial fallback through the remaining mirrors: two passes with a short
-  // pause so a transient overload window can settle between passes.
-  const rest = ENDPOINTS.slice(2);
-  for (let pass = 0; pass < 2 && Date.now() < deadline; pass++) {
-    for (const endpoint of rest) {
-      if (Date.now() > deadline) break;
-      try { return await attempt(endpoint); } catch (e) { errors.push(short(e)); }
-    }
-    if (pass === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 1500));
+  // ONE serial fallback pass through at most FALLBACK_ENDPOINTS more mirrors —
+  // no second pass, no settle pause. Under a bad window the city now costs
+  // race (~seconds) + up to 2 tries instead of the old 2×4-endpoint crawl,
+  // and the 25s deadline guarantees the cap regardless.
+  for (const endpoint of ENDPOINTS.slice(RACE_ENDPOINTS, RACE_ENDPOINTS + FALLBACK_ENDPOINTS)) {
+    if (Date.now() > deadline) break;
+    try { return await attempt(endpoint); } catch (e) { errors.push(short(e)); }
   }
   throw new Error(`all Overpass endpoints failed (${errors.join(' | ')})`);
 }

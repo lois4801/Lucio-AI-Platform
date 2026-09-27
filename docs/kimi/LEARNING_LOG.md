@@ -442,3 +442,9 @@ start of every new session to evolve instead of rediscovering.
 - Bug class found testing the owner's real aurelle-site.zip: inline <script> JS containing template strings like src="' + p.img + '" was being string-matched as a real tag. Fix: inlineCodeSpans() — both inlineLocalAssets AND absolutizeResourceRefs now skip matches inside <script>...</script> spans.
 - Real-file smoke: aurelle (27KB), meridian (7.4MB, 14 embedded images), Kimi_Agent_Luxury folder (6.3MB, 13 assets, 24 images) — all import clean, zero false asset failures.
 - Tests: scripts/test-import-upload.js (33 assertions); all 38 suites green; tsc clean.
+
+## 2026-09-27 — Overpass per-city cap 60s → 25s, retry persistence cut
+- Owner directive: a bad Overpass window must cost seconds per city, not a minute — total scan wait is dominated by the slowest city.
+- queryOverpass: per-city deadline 60s → 25s (OVERPASS_CITY_CAP_MS), per-request timeout 15s → 10s (OVERPASS_REQ_TIMEOUT_MS; healthy mirrors answer 1.4–8s measured), fallback reduced from 2 passes × 4 mirrors + 1.5s settle pause to ONE pass × 2 mirrors (OVERPASS_FALLBACK_ENDPOINTS), race-first strategy kept (OVERPASS_RACE_ENDPOINTS=2). Worst case is now race + 2 tries, hard-trimmed at 25s — roughly half the old worst case and typically a few seconds.
+- All knobs env-tunable without code changes. Full regression: 38 suites green; tsc clean.
+- Standing directive logged: every change commits AND pushes to github.com/lois4801/Lucio-AI-Platform immediately (owner works across ChatGPT/Claude and needs the repo always current).
