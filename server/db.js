@@ -534,6 +534,28 @@ CREATE TABLE IF NOT EXISTS route_championship (
   decided_by TEXT,
   updated_at TEXT
 );
+CREATE TABLE IF NOT EXISTS route_performance (
+  org_id TEXT NOT NULL,
+  task_family TEXT NOT NULL,
+  route TEXT NOT NULL,
+  runs INTEGER NOT NULL DEFAULT 0,
+  successes INTEGER NOT NULL DEFAULT 0,
+  avg_score REAL NOT NULL DEFAULT 0,
+  promoted INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT,
+  PRIMARY KEY (org_id, task_family, route)
+);
+CREATE TABLE IF NOT EXISTS promotion_log (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  task_family TEXT NOT NULL,
+  from_route TEXT,
+  to_route TEXT,
+  reason TEXT NOT NULL,
+  reverted INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `);
 
 // Lightweight migrations: add columns to pre-existing tables when missing.

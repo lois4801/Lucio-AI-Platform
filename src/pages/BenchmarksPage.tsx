@@ -10,6 +10,7 @@ type Suite = { id: string; task_family: string; name: string; pass_threshold: nu
 type Run = { id: string; route: string; seed: number; total_score: number; passed: number; failure_class: string | null; scores: { name: string; weight: number; pass: boolean }[]; created_at: string };
 type Claim = { id: string; text: string; run_id: string; created_at: string };
 type Champ = { task_family: string; champion_route: string; challenger_route: string | null; best_score: number };
+type Perf = { task_family: string; route: string; runs: number; successes: number; avg_score: number; promoted: number };
 
 export default function BenchmarksPage() {
   const { user } = useOutletContext<{ user: User }>();
@@ -17,6 +18,8 @@ export default function BenchmarksPage() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
   const [champs, setChamps] = useState<Champ[]>([]);
+  const [perf, setPerf] = useState<Perf[]>([]);
+  const [policyTier, setPolicyTier] = useState('3');
   const [meta, setMeta] = useState<any>(null);
   const [family, setFamily] = useState('website-build');
   const [route, setRoute] = useState('champion');
@@ -31,6 +34,8 @@ export default function BenchmarksPage() {
     api('/benchmarks/runs').then((r) => setRuns(r.runs));
     api('/benchmarks/claims').then((r) => setClaims(r.claims));
     api('/benchmarks/championships').then((r) => setChamps(r.championships));
+    api('/optimize/performance').then((r) => setPerf(r.performance));
+    api('/admin/settings').then((r) => { if (r.settings?.policy_max_tier) setPolicyTier(r.settings.policy_max_tier.value); }).catch(() => {});
     api('/benchmarks/meta').then(setMeta);
   };
   useEffect(load, []);
@@ -48,6 +53,21 @@ export default function BenchmarksPage() {
   const setChamp = async (taskFamily: string, championRoute: string, challengerRoute: string) => {
     setMsg('');
     try { await api('/benchmarks/championships', { method: 'POST', body: JSON.stringify({ taskFamily, championRoute, challengerRoute }) }); load(); }
+    catch (err: any) { setMsg(err.message); }
+  };
+  const promote = async () => {
+    setMsg('');
+    try { const r = await api('/optimize/promote', { method: 'POST', body: JSON.stringify({ taskFamily: family }) }); setMsg(`Promoted: ${r.promotion.reason}`); load(); }
+    catch (err: any) { setMsg(err.message); }
+  };
+  const rollback = async () => {
+    setMsg('');
+    try { const r = await api('/optimize/rollback', { method: 'POST', body: JSON.stringify({ taskFamily: family }) }); setMsg(`Rolled back: ${r.rollback.restored} restored as champion`); load(); }
+    catch (err: any) { setMsg(err.message); }
+  };
+  const savePolicy = async () => {
+    setMsg('');
+    try { await api('/admin/settings', { method: 'POST', body: JSON.stringify({ key: 'policy_max_tier', value: policyTier }) }); setMsg(`Policy updated: auto-promotion capped at tier ${policyTier}.`); }
     catch (err: any) { setMsg(err.message); }
   };
 
@@ -139,6 +159,47 @@ export default function BenchmarksPage() {
                   <span className="text-xs text-muted-foreground">best {c.best_score}</span>
                 </div>
               ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>Adaptive optimization</CardTitle>
+              <CardDescription>The platform reroutes itself only on measured, deterministic evidence — enough clean runs, a strictly better average, and never above the human policy cap. Every promotion can be rolled back.</CardDescription></CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              {perf.length > 0 && (
+                <table className="w-full text-xs">
+                  <thead><tr className="text-left text-muted-foreground">
+                    <th className="py-1">family</th><th>route</th><th>runs</th><th>clean</th><th>avg</th><th></th>
+                  </tr></thead>
+                  <tbody>
+                    {perf.filter((p) => p.task_family === family).map((p) => (
+                      <tr key={p.route} className="border-t">
+                        <td className="py-1 font-mono">{p.task_family}</td>
+                        <td className="font-mono">{p.route}</td>
+                        <td>{p.runs}</td>
+                        <td>{p.successes}/{p.runs}</td>
+                        <td>{p.avg_score}</td>
+                        <td>{p.promoted === 1 && <Badge>champion</Badge>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {isAdmin && (
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="text-xs space-y-1">
+                    <div className="text-muted-foreground">policy_max_tier (human cap on auto-promotion)</div>
+                    <select className="rounded-md border bg-background p-2 text-sm" value={policyTier} onChange={(e) => setPolicyTier(e.target.value)}>
+                      <option value="1">1 — baseline only</option>
+                      <option value="2">2 — challenger allowed</option>
+                      <option value="3">3 — full auto-promotion</option>
+                    </select>
+                  </label>
+                  <Button size="sm" variant="outline" onClick={savePolicy}>Save policy</Button>
+                  <Button size="sm" onClick={promote}>Promote challenger ({family})</Button>
+                  <Button size="sm" variant="outline" onClick={rollback}>Roll back ({family})</Button>
+                </div>
+              )}
             </CardContent>
           </Card>
 

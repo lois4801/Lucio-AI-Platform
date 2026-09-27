@@ -776,3 +776,34 @@ source; responsive, accessibility, factual, visual and performance QA pass.
   all four rejection paths + acceptance, org isolation of runs/evidence, championship
   record + chaotic-title ban, audit rows.
 - Full regression: 711 assertions across 16 suites, 0 failures; tsc clean; build clean.
+
+## Phase 17 — Adaptive Self-Optimization (manual v28 Phase 17, final phase)
+
+### What shipped
+- `route_performance` (org-scoped, per task_family+route: runs, successes, running
+  avg_score, promoted flag) + `promotion_log` (from/to routes, evidence reason,
+  reverted flag) + `server/services/adaptive.js`.
+- recordOutcome: deterministic-only (nondeterministic outcomes rejected 400 —
+  they can never feed promotion), score bounds checked, chaotic route ineligible,
+  running mean, audited `optimize.record`.
+- promoteChallenger — gated in order: championship exists, challenger tier within
+  the human policy cap (`policy_max_tier` org setting, default 3), ≥3 recorded
+  runs, zero failing runs, strictly better average than the champion ("no verified
+  superiority" otherwise). Success swaps the title, sets the promoted flag, writes
+  promotion_log with the evidence reason, audits `optimize.promote`.
+- rollbackPromotion: restores the previous champion, marks the log reverted, audits
+  `optimize.rollback`; a second rollback is a safe 404.
+- Benchmark isolation by construction: promotion code never writes benchmark_suites
+  or fixtures — verified byte-identical fixtures and reproducible runs after a full
+  promote+rollback cycle.
+- Routes /api/optimize (performance, record, promote, rollback, promotions —
+  mutations admin-gated) + Benchmarks page "Adaptive optimization" card: per-family
+  performance table, policy cap editor, Promote / Rollback controls.
+
+### Verification
+- scripts/test-phase17.js — 26 assertions, all green: running mean, score bounds,
+  deterministic-only recording, chaotic ineligible, every promotion gate (insufficient
+  runs, failing runs, weaker avg, unknown family), policy cap block, successful
+  promotion (swap + flag + log + reason), rollback (restore + reverted + double-404),
+  benchmark isolation, authz (member 403 on mutations, org-scoped reads), audit rows.
+- Full regression: 737 assertions across 17 suites, 0 failures; tsc clean; build clean.
