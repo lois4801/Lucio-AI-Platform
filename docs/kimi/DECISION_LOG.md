@@ -219,3 +219,8 @@
   an explicit manual confirmation. Suppression is a hard block (423). Client review
   decisions must produce work: "request changes" creates a change_request on the
   linked deal — a review can never vanish into a status field.
+- Phase 12: The agent router automates ONLY a fixed step registry with agents from
+  the embedded squad — no arbitrary skill execution. Runs are synchronous and the
+  cancel endpoint honestly 409s on finished runs instead of pretending. Demo publish
+  is automatic; production publication remains behind the Phase 10 approval gate and
+  the handoff states this. QA scores are carried verbatim into the handoff.

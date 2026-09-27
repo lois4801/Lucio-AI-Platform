@@ -619,3 +619,33 @@ source; responsive, accessibility, factual, visual and performance QA pass.
   local receiver with payload check, review page render, approve flow, 409 re-decide,
   changes flow creates the change_request revision + deal, review-before-build 400.
 - Full regression: 560 assertions across 11 suites, 0 failures; tsc clean; build clean.
+
+## Phase 12 — Agent Router Website Automation (manual v28 Phase 12)
+
+### What shipped
+- `agent_runs` table + `server/services/agentRouter.js`: one natural-language goal
+  drives a fixed 7-step registry — research (10cr) → plan (5cr) → build (40cr) →
+  test (15cr) → preview (5cr) → demo-publish (10cr) → handoff (5cr) = 90cr against
+  an AGENT_RUN_BUDGET cap (default 100). Agents are selected ONLY from the embedded
+  v9.6 squad registry; the plan records which bounded agents run each step and why.
+  Steps persist a full timeline (status/cost/duration/output); failures carry a
+  taxonomy reason (<step>_failed | budget_exceeded | invalid_goal).
+- Research uses the provenance-carrying research gateway; build uses buildFromGoal
+  (editor layers preserved); test reads the QA artifact's four siteAudits verbatim
+  (never inflated); publish uses the DEMO lane only — the Phase 10 production gate
+  stays intact and the handoff says so; handoff assembles live/preview/device URLs,
+  QA scores, evidence refs, agents used and gated next actions.
+- Budget-exceeded runs stop honestly: affordable steps are recorded ok, the
+  unaffordable step is 'skipped', and the handoff note explains how to continue.
+  Cancel on a finished run returns 409 (runs are synchronous — no fake cancels).
+- Routes /api/agent-runs (POST/GET/GET :id/POST :id/cancel); UI: Agent Runs page
+  (/agents + nav) with goal box, run list, step timeline and handoff card.
+
+### Verification
+- scripts/test-phase12.js — 30 assertions, all green: invalid/oversized goal 400,
+  full happy path (7 steps ok, 90/100 budget, plan rationale, universe + artifact +
+  QA outputs, live slug), handoff completeness + gated-production wording, /live
+  200, zero production deployments created, audit rows, list/get/404, cancel 409,
+  budget cap 30 -> budget_exceeded with skipped build step and continuation note,
+  control-char sanitization.
+- Full regression: 590 assertions across 12 suites, 0 failures; tsc clean; build clean.

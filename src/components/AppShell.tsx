@@ -5,13 +5,13 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import {
   LayoutDashboard, Hammer, FolderKanban, Radar, Search, Files, TerminalSquare, ScrollText,
-  Cpu, LogOut, ScanSearch, BriefcaseBusiness, Blocks, PencilRuler,
-} from 'lucide-react';
+  Cpu, LogOut, ScanSearch, BriefcaseBusiness, Blocks, PencilRuler, Bot } from 'lucide-react';
 import AssistantPanel from '@/components/AssistantPanel';
 
 const NAV = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/builder', label: 'App Builder', icon: Hammer },
+  { to: '/agents', label: 'Agent Runs', icon: Bot },
   { to: '/editor', label: 'Website Editor', icon: PencilRuler },
   { to: '/library', label: 'Component Library', icon: Blocks },
   { to: '/scanner', label: 'Market Scanner', icon: ScanSearch },

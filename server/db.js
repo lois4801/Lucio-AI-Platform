@@ -421,6 +421,23 @@ CREATE TABLE IF NOT EXISTS outreach_drafts (
 );
 CREATE INDEX IF NOT EXISTS idx_outreach_org ON outreach_drafts(org_id, status);
 CREATE INDEX IF NOT EXISTS idx_outreach_prospect ON outreach_drafts(prospect_id);
+CREATE TABLE IF NOT EXISTS agent_runs (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  goal TEXT NOT NULL,
+  project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'running',   -- running|completed|failed|cancelled
+  plan_json TEXT NOT NULL DEFAULT '{}',
+  steps_json TEXT NOT NULL DEFAULT '[]',
+  budget_cap INTEGER NOT NULL DEFAULT 100,
+  budget_used INTEGER NOT NULL DEFAULT 0,
+  handoff_json TEXT,
+  failure_reason TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_org ON agent_runs(org_id, created_at);
 `);
 
 // Lightweight migrations: add columns to pre-existing tables when missing.

@@ -16,6 +16,7 @@ import AuditPage from '@/pages/AuditPage';
 import GatewayPage from '@/pages/GatewayPage';
 import MarketScanPage from '@/pages/MarketScanPage';
 import ClientsPage from '@/pages/ClientsPage';
+import AgentRunsPage from '@/pages/AgentRunsPage';
 import { Button } from '@/components/ui/button';
 
 // A page crash must never leave the user staring at a blank screen — show the
@@ -66,6 +67,7 @@ export default function App() {
       <Route element={user ? <AppShell user={user} onLogout={() => setUser(null)} /> : <Navigate to="/" replace />}>
         <Route path="/dashboard" element={page(<DashboardPage />)} />
         <Route path="/builder" element={page(<BuilderPage />)} />
+        <Route path="/agents" element={page(<AgentRunsPage />)} />
         <Route path="/editor" element={page(<EditorPage />)} />
         <Route path="/library" element={page(<ComponentLibraryPage />)} />
         <Route path="/scanner" element={page(<MarketScanPage />)} />

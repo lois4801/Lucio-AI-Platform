@@ -7,7 +7,7 @@ Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 - Phase: 0 PASS · 1 PASS · 2 PASS · 3 PASS + expansion · 4 PASS · 5 PASS · 6 PASS · 7 PASS · 8 PASS · 9 PASS · 10 PASS — Phase 11 next
 - Branch: main
 - Last passing checkpoint: see git log
-- Next action: Phase 11 — per manual v28 phase list. Build contract: docs/kimi/PHASE11_CONTRACT.md (Phase 11, completed)
+- Next action: Phase 11 — per manual v28 phase list. Build contract: docs/kimi/PHASE12_CONTRACT.md (Phase 12, completed)
 - Release posture: local development build, not production
 
 ## Phase summary
@@ -37,4 +37,4 @@ Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 - Dev server: `npm run dev -- --port 7100` (log: lucio_dev.log); tests: `node scripts/test-phase3.js` (58) + `node scripts/test-phase4.js` (39).
 - ORPHANED VITE WATCH: dev.js's Vite child survives parent taskkill. Kill BOTH the :8787 PID and the :7100 PID, verify with netstat, before restart — a zombie Vite on [::1]:7100 served stale code during the Phase 4 E2E.
 - Sell architecture: dev.js Vite proxy now also forwards /live and /portal to :8787 — any preview server started before this change must be restarted or public links 404 through the dev port.
-- Test suites: test-sell.js (33) + test-google-places.js (38) + test-phase3.js (58) + test-phase4.js (39) + test-phase6.js (55) + test-assistant.js (34) + test-phase7.js (134) + test-phase8.js (65) + test-phase9.js (36) + test-phase10.js (38) + test-phase11.js (30) = 560 assertions.
+- Test suites: test-sell.js (33) + test-google-places.js (38) + test-phase3.js (58) + test-phase4.js (39) + test-phase6.js (55) + test-assistant.js (34) + test-phase7.js (134) + test-phase8.js (65) + test-phase9.js (36) + test-phase10.js (38) + test-phase11.js (30) + test-phase12.js (30) = 590 assertions.
