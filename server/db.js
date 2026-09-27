@@ -388,6 +388,39 @@ CREATE TABLE IF NOT EXISTS site_domains (
 CREATE INDEX IF NOT EXISTS idx_deploy_site ON site_deployments(published_site_id, status);
 CREATE INDEX IF NOT EXISTS idx_pubreq_site ON publish_requests(published_site_id, status);
 CREATE INDEX IF NOT EXISTS idx_domains_site ON site_domains(published_site_id);
+CREATE TABLE IF NOT EXISTS client_reviews (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+  published_site_id TEXT REFERENCES published_sites(id) ON DELETE CASCADE,
+  deal_id TEXT REFERENCES client_deals(id) ON DELETE SET NULL,
+  token TEXT NOT NULL UNIQUE,
+  reviewer_name TEXT NOT NULL DEFAULT '',
+  reviewer_email TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',        -- pending|approved|changes_requested
+  message TEXT NOT NULL DEFAULT '',
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  decided_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_reviews_org ON client_reviews(org_id, status);
+CREATE TABLE IF NOT EXISTS outreach_drafts (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  prospect_id TEXT NOT NULL REFERENCES prospects(id) ON DELETE CASCADE,
+  channel TEXT NOT NULL DEFAULT 'email',
+  subject TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending_approval', -- pending_approval|approved|sent|rejected
+  note TEXT NOT NULL DEFAULT '',
+  created_by TEXT,
+  approved_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  decided_at TEXT,
+  sent_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_outreach_org ON outreach_drafts(org_id, status);
+CREATE INDEX IF NOT EXISTS idx_outreach_prospect ON outreach_drafts(prospect_id);
 `);
 
 // Lightweight migrations: add columns to pre-existing tables when missing.

@@ -7,6 +7,7 @@ import {
   requestProductionPublish, decidePublishRequest, listPublishRequests,
   listDeployments, rollbackDeployment, addDomain, verifyDomain, listDomains,
 } from '../services/publish.js';
+import { createReview, listReviews, getReview } from '../services/clientReview.js';
 
 export const sellRouter = Router();
 sellRouter.use(requireAuth);
@@ -53,6 +54,18 @@ sellRouter.get('/published/:id/domains', (req, res) => {
 sellRouter.post('/domains/:id/verify', requireRole('member'), async (req, res) => {
   try { res.json({ domain: await verifyDomain(req.user.orgId, req.params.id, null, req.user, req.ip) }); }
   catch (e) { res.status(e.status || 400).json({ error: String(e.message || e) }); }
+});
+
+// ---- Phase 11: client reviews (token link the CLIENT opens — approve / request changes) ----
+sellRouter.post('/reviews', requireRole('member'), (req, res) => {
+  try { res.status(201).json({ review: createReview(req.user.orgId, req.body || {}, req.user, req.ip) }); }
+  catch (e) { res.status(e.status || 400).json({ error: String(e.message || e) }); }
+});
+sellRouter.get('/reviews', (req, res) => res.json({ reviews: listReviews(req.user.orgId) }));
+sellRouter.get('/reviews/:id', (req, res) => {
+  const review = getReview(req.user.orgId, req.params.id);
+  if (!review) return res.status(404).json({ error: 'review not found' });
+  res.json({ review });
 });
 
 // Client deals (the sale: build fee + monthly, manual or Stripe)

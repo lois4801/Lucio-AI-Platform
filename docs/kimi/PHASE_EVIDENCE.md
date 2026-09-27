@@ -585,3 +585,37 @@ source; responsive, accessibility, factual, visual and performance QA pass.
 - Full regression: sell(33) + google-places(38) + phase3(58) + phase4(39) +
   phase6(55) + assistant(34) + phase7(134) + phase8(65) + phase9(36) + phase10(38)
   = 530 assertions, 0 failures; tsc clean; vite build clean.
+
+## Phase 11 — Website CRM + Prospect / Outreach Integration (manual v28 Phase 11)
+
+### What shipped
+- Client review (new token-based, no-account surface): `client_reviews` table +
+  `server/services/clientReview.js` + `GET /review/:token` server-rendered page
+  (site iframe + Approve / Request changes form) + `POST /api/review/:token/decide`
+  (rate-limited). Approving closes the review; requesting changes creates a REAL
+  revision work item — a change_request on the linked deal (deal auto-created from
+  the site when missing, mirroring the owner portal). Re-decide -> 409. Review
+  before build -> 400.
+- Approved outreach: `outreach_drafts` table + `server/services/outreach.js`.
+  Sovereign drafts built ONLY from verified prospect facts; the website-gap claim
+  is phrased from the actual gap signal (NO_WEBSITE_FOUND/BROKEN_OR_PARKED direct;
+  otherwise soft upgrade framing). Gates: owner/admin approval (member 403);
+  delivery only via configured OUTREACH_WEBHOOK_URL (real POST) or an explicit
+  manual-send confirmation — status becomes `sent` only when the message actually
+  left the platform. Suppressed prospects -> 423 and drafting is blocked;
+  `POST /api/prospects/:id/suppress` sets do-not-contact (audited).
+- UI: ClientsPage "Client reviews" card (create link per published site, copy/open
+  link, status + client message); ProspectsPage outreach drafts table (approve/
+  reject for owner, copy body, deliver with honest note, confirm-sent) plus
+  per-prospect Draft outreach / Suppress buttons.
+- CRM chain now end-to-end: prospect -> website_opportunity -> project ->
+  published site -> deal -> client review -> change_request revision.
+
+### Verification
+- scripts/test-phase11.js — 30 assertions, all green: draft creation + verified-fact
+  phrasing for both gap signals, suppression 423, member 403, owner approve, 409
+  re-decide, honest no-webhook delivery (stays approved + manual note), 409 early
+  deliver, manual confirm -> sent + prospect CONTACTED, real webhook delivery to a
+  local receiver with payload check, review page render, approve flow, 409 re-decide,
+  changes flow creates the change_request revision + deal, review-before-build 400.
+- Full regression: 560 assertions across 11 suites, 0 failures; tsc clean; build clean.

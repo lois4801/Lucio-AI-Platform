@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { BriefcaseBusiness, Copy, ExternalLink, Flag, CreditCard, CheckCircle2, HandCoins, Globe, Rocket, RotateCcw, ShieldCheck, Download, Plus, X } from 'lucide-react';
+import { BriefcaseBusiness, Copy, ExternalLink, Flag, CreditCard, CheckCircle2, HandCoins, Globe, Rocket, RotateCcw, ShieldCheck, Download, Plus, X, ClipboardCheck } from 'lucide-react';
 
 type Deal = {
   id: string; business_name: string; stage: string; build_fee_cents: number; monthly_cents: number;
@@ -23,6 +23,7 @@ type PublishedSite = { id: string; project_id: string; project_name: string; slu
 type PublishReq = { id: string; project_id: string; published_site_id: string; artifact_version: number; status: string; note: string; created_at: string };
 type Deployment = { id: string; artifact_version: number; status: string; note: string; created_at: string };
 type SiteDomain = { id: string; domain: string; verification_status: string; verification_token: string; verification_note: string | null; ssl_status: string; ssl_note: string | null; verified_at: string | null; created_at: string };
+type Review = { id: string; project_id: string; project_name: string; site_slug: string | null; business_name: string | null; token: string; reviewer_name: string; reviewer_email: string; status: string; message: string; created_at: string; decided_at: string | null };
 
 const STAGES = ['pitched', 'active', 'paused', 'churned'];
 const PAY_STATUSES = ['unknown', 'paid', 'failed'];
@@ -44,17 +45,20 @@ export default function ClientsPage() {
   const [domains, setDomains] = useState<Record<string, SiteDomain[]>>({});
   const [prodFor, setProdFor] = useState<PublishedSite | null>(null);
   const [newDomain, setNewDomain] = useState('');
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewForm, setReviewForm] = useState({ siteId: '', reviewerName: '', reviewerEmail: '' });
 
   const load = async () => {
-    const [m, d, r, l, s, q] = await Promise.all([
+    const [m, d, r, l, s, q, v] = await Promise.all([
       api<{ user: { role: string } }>('/auth/me'),
       api<{ deals: Deal[] }>('/sell/deals'),
       api<{ requests: Request[] }>('/sell/requests'),
       api<{ leads: Lead[] }>('/sell/leads'),
       api<{ sites: PublishedSite[] }>('/sell/published'),
       api<{ requests: PublishReq[] }>('/sell/publish-requests'),
+      api<{ reviews: Review[] }>('/sell/reviews'),
     ]);
-    setMe(m.user); setDeals(d.deals); setRequests(r.requests); setLeads(l.leads); setSites(s.sites); setPubReqs(q.requests);
+    setMe(m.user); setDeals(d.deals); setRequests(r.requests); setLeads(l.leads); setSites(s.sites); setPubReqs(q.requests); setReviews(v.reviews);
     const siteList = s.sites;
     const [depPairs, domPairs] = await Promise.all([
       Promise.all(siteList.map((site) => api<{ deployments: Deployment[] }>(`/sell/published/${site.id}/deployments`).then((x) => [site.id, x.deployments] as const))),
@@ -119,6 +123,20 @@ export default function ClientsPage() {
     run(() => api(`/sell/domains/${dom.id}/verify`, { method: 'POST', body: JSON.stringify({}) }),
       dom.verification_status === 'verified' ? 'Domain verified' : 'DNS checked — see the note on the domain');
 
+  const createReview = () => run(async () => {
+    const site = sites.find((s) => s.id === reviewForm.siteId);
+    await api('/sell/reviews', {
+      method: 'POST',
+      body: JSON.stringify({
+        publishedSiteId: reviewForm.siteId || null,
+        projectId: site?.project_id || null,
+        reviewerName: reviewForm.reviewerName,
+        reviewerEmail: reviewForm.reviewerEmail,
+      }),
+    });
+    setReviewForm({ siteId: '', reviewerName: '', reviewerEmail: '' });
+  }, 'Review link created — copy it and send it to your client');
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between">
@@ -166,6 +184,51 @@ export default function ClientsPage() {
                 </TableRow>
               ))}
               {!sites.length && <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">No published sites yet — build a site in the App Builder, then hit “Publish live link”.</TableCell></TableRow>}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Client reviews</CardTitle>
+          <CardDescription>Send a client a review link — they see their site and either approve it or request changes. Change requests become revision work items in the change-request inbox above automatically.</CardDescription></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-end gap-2">
+            <div>
+              <label className="text-xs text-muted-foreground">Site</label>
+              <Select value={reviewForm.siteId} onValueChange={(v) => setReviewForm({ ...reviewForm, siteId: v })}>
+                <SelectTrigger className="w-64"><SelectValue placeholder="Choose a published site" /></SelectTrigger>
+                <SelectContent>{sites.map((s) => <SelectItem key={s.id} value={s.id}>{s.project_name} (/{s.slug})</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Reviewer name</label>
+              <Input className="w-48" placeholder="Jane Owner" value={reviewForm.reviewerName} onChange={(e) => setReviewForm({ ...reviewForm, reviewerName: e.target.value })} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Reviewer email (optional)</label>
+              <Input className="w-56" placeholder="jane@business.com" value={reviewForm.reviewerEmail} onChange={(e) => setReviewForm({ ...reviewForm, reviewerEmail: e.target.value })} />
+            </div>
+            <Button size="sm" disabled={!reviewForm.siteId} onClick={createReview}><ClipboardCheck className="h-4 w-4 mr-1" /> Create review link</Button>
+          </div>
+          <Table>
+            <TableHeader><TableRow><TableHead>Project</TableHead><TableHead>Reviewer</TableHead><TableHead>Status</TableHead><TableHead>Client message</TableHead><TableHead>Review link</TableHead></TableRow></TableHeader>
+            <TableBody>
+              {reviews.map((rv) => (
+                <TableRow key={rv.id}>
+                  <TableCell className="font-medium">{rv.project_name}<div className="text-xs text-muted-foreground font-normal">{rv.business_name || '—'}</div></TableCell>
+                  <TableCell>{rv.reviewer_name || '—'}</TableCell>
+                  <TableCell><Badge variant={rv.status === 'approved' ? 'default' : rv.status === 'changes_requested' ? 'destructive' : 'secondary'}>{rv.status.replaceAll('_', ' ')}</Badge></TableCell>
+                  <TableCell className="max-w-64"><span className="text-xs line-clamp-2">{rv.message || '—'}</span></TableCell>
+                  <TableCell>
+                    <span className="flex items-center gap-1">
+                      <Button size="sm" variant="ghost" title="Open review page" onClick={() => window.open(`/review/${rv.token}`, '_blank')}><ExternalLink className="h-3.5 w-3.5" /></Button>
+                      <Button size="sm" variant="ghost" title="Copy review link" onClick={() => copy(`${window.location.origin}/review/${rv.token}`, 'Review link')}><Copy className="h-3.5 w-3.5" /></Button>
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!reviews.length && <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">No client reviews yet — create a link above and send it to your client.</TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>

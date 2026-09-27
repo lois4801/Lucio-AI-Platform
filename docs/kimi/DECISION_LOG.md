@@ -213,3 +213,9 @@
   that TLS is issued by the DNS/hosting provider. Export is a self-contained
   single-file HTML via the existing §57 inlineMediaRefs (no zip library in deps);
   media inlines as base64 within budget, remainder absolute.
+- Phase 11: Outreach is never auto-sent. A draft is generated from verified prospect
+  facts only (gap claims phrased from the actual signal), requires owner/admin
+  approval, and reaches `sent` ONLY via a real delivery (configured webhook POST) or
+  an explicit manual confirmation. Suppression is a hard block (423). Client review
+  decisions must produce work: "request changes" creates a change_request on the
+  linked deal — a review can never vanish into a status field.

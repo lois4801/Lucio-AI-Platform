@@ -10,6 +10,7 @@ import {
   getPublishedBySlug, recordVisit, recordEnquiry, getLatestSiteArtifact,
   ownerView, ownerCreateRequest, getPublicArtifact, getSiteByVerifiedDomain,
 } from '../services/publish.js';
+import { reviewView, decideReview } from '../services/clientReview.js';
 
 export const publicRouter = Router();
 
@@ -153,4 +154,73 @@ publicRouter.get('/api/portal/:token/photo/:fileId', (req, res) => {
   if (!f || !fs.existsSync(f.storage_path)) return res.status(404).send('not found');
   res.setHeader('Content-Type', f.mime);
   fs.createReadStream(f.storage_path).pipe(res);
+});
+
+// ---- Phase 11: client review (token-based — the client approves or requests changes) ----
+function reviewHtml(view, token, flash = '', flashOk = false) {
+  const done = view.review.status !== 'pending';
+  const flashHtml = flash ? `<p class="flash" style="${flashOk ? '' : 'background:#7f1d1d;color:#fecaca'}">${esc(flash)}</p>` : '';
+  const statusBadge = done
+    ? `<p class="badge ${view.review.status === 'approved' ? 'ok' : 'chg'}">${view.review.status === 'approved' ? '✓ Approved' : 'Changes requested'}</p>`
+    : '';
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Review your website — ${esc(view.project_name)}</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;background:#0c0a09;color:#fafaf9;margin:0;padding:1.5rem 1rem}
+main{max-width:60rem;margin:0 auto}h1{font-size:1.4rem;margin:0 0 .25rem}p.sub{color:#a8a29e;margin:0 0 1rem;font-size:.9rem}
+.badge{display:inline-block;border-radius:9999px;padding:.35rem 1rem;font-weight:700;font-size:.85rem;margin:.5rem 0}
+.badge.ok{background:#14532d;color:#bbf7d0}.badge.chg{background:#78350f;color:#fde68a}
+.frame{width:100%;height:60vh;border:1px solid #44403c;border-radius:.75rem;background:#fff;margin:1rem 0}
+form{background:#1c1917;border-radius:.75rem;padding:1.25rem;display:grid;gap:.75rem;max-width:34rem}
+label{font-size:.8rem;color:#a8a29e}textarea,input{background:#292524;border:1px solid #44403c;color:#fafaf9;border-radius:.5rem;padding:.7rem;font:inherit;width:100%;box-sizing:border-box}
+.row{display:flex;gap:.75rem;flex-wrap:wrap}
+button{border:0;border-radius:.5rem;padding:.8rem 1.4rem;font-size:1rem;font-weight:700;cursor:pointer}
+button.approve{background:#16a34a;color:#fff}button.changes{background:#d4af37;color:#0c0a09}
+button[disabled]{opacity:.6}.flash{border-radius:.5rem;padding:.6rem .9rem;margin-bottom:1rem;font-size:.9rem}
+</style></head><body><main>
+<h1>Review your website</h1>
+<p class="sub">Hi ${esc(view.display_name)} — here is <b>${esc(view.project_name)}</b>. Take a look around, then approve it or tell us what to change. ${done ? 'This review is already complete.' : ''}</p>
+${statusBadge}${flashHtml}
+<iframe class="frame" src="${esc(view.previewUrl)}" title="Website preview"></iframe>
+${done ? '' : `
+<form id="f">
+  <div><label>Your name</label><input name="reviewerName" value="${esc(view.review.reviewer_name || '')}" placeholder="Jane Owner"></div>
+  <div><label>Message (required when requesting changes — optional notes when approving)</label><textarea name="message" rows="4" placeholder="e.g. Please use our new logo and change the phone number on the contact section."></textarea></div>
+  <div class="row">
+    <button type="button" class="approve" data-decision="approve">✓ Approve this site</button>
+    <button type="button" class="changes" data-decision="changes">Request changes</button>
+  </div>
+</form>
+<script>
+document.querySelectorAll('button[data-decision]').forEach((btn) => btn.addEventListener('click', async () => {
+  const fd = new FormData(document.getElementById('f'));
+  if (btn.dataset.decision === 'changes' && !String(fd.get('message') || '').trim()) { alert('Please describe the changes you would like.'); return; }
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/review/${encodeURIComponent(token)}/decide', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision: btn.dataset.decision, message: fd.get('message'), reviewerName: fd.get('reviewerName') }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'submit failed');
+    location.reload();
+  } catch (err) { alert('Could not submit: ' + err.message); btn.disabled = false; }
+}));
+</script>`}
+</main></body></html>`;
+}
+
+publicRouter.get('/review/:token', (req, res) => {
+  const view = reviewView(req.params.token);
+  if (!view) return res.status(404).send('Review link not found.');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(reviewHtml(view, req.params.token));
+});
+
+publicRouter.post('/api/review/:token/decide', (req, res) => {
+  if (!rateOk(`review:${req.ip}`, 20, 60_000)) return res.status(429).json({ error: 'too many requests — please try later' });
+  try {
+    const out = decideReview(req.params.token, req.body || {}, req.ip);
+    if (!out) return res.status(404).json({ error: 'review link not found' });
+    res.json({ ok: true, status: out.status });
+  } catch (e) { res.status(e.status || 400).json({ error: String(e.message || e) }); }
 });
