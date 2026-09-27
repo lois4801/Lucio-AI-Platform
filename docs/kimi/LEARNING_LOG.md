@@ -121,3 +121,36 @@ start of every new session to evolve instead of rediscovering.
   failed 15/29 for exactly that gap. Maintain a generous type list.
 - **Lesson:** extraction runs on the already-fetched, SSRF-guarded, 20KB-capped
   HTML — real data at zero added network cost per scan.
+
+
+## Session 2026-09-27 (later) — Stuck scans: parallel verify + Overpass race
+- **Heard:** "The scanning of clients is not working. It gets stuck and not
+  loading any data." (Plumbing × Nova Scotia scan sat on "Scanning…".)
+- **Root causes (three compounding):** (1) `resolveWebsitePresence` verified
+  each business **sequentially** with a live fetch (up to 6s × 44 businesses ≈
+  8 min per region scan — confirmed in `data/lucio.db` timestamps); (2) the
+  Overpass query builder emitted **7 union clauses** (2 tag + 5 per-key name
+  regex) — the public instances answer that with **HTTP 504** (measured: same
+  query flips 504/200/504 across retries), so live OSM silently failed every
+  scan and users only got fixture rows; (3) a 30s per-request timeout let one
+  hung city eat the whole scan.
+- **Built:** `verifyAllPresences` — a 6-worker pool with a 90s wall budget
+  (`runNearbyScan` gets 45s); leftovers get an honest UNKNOWN resolution with a
+  "Verify again" note, never a silent skip. `buildOverpassQuery` now emits ONE
+  generic `["name"~"...",i]` clause (2s vs 504, same businesses). Endpoint
+  rotation grew to 6 public mirrors and `queryOverpass` now **races the two
+  healthiest** (api.de + openstreetmap.fr — availability flips at minute
+  scale, measured both directions) then falls back serially, 2 passes, 15s per
+  request, 60s per-city cap. Raced requests count honestly against the scan
+  budget. Scanner page got a progress hint under the Scan button.
+- **Lesson:** public Overpass 504s are transient overload, not query errors —
+  rotation + racing + retry beats any single endpoint; verify provenance in a
+  debug harness (wrapped `globalThis.fetch` logging per-URL timing) before
+  blaming the network path.
+- **Lesson:** heavy testing against rate-limited public infra puts the host IP
+  in a throttled state (queued 504s/hangs across ALL mirrors) — the app
+  degrades honestly (60s cap → `source_errors` → labeled fixture fallback →
+  24h cache means one good window fixes a city for a day). Photon
+  (photon.komoot.io) probed as a keyless alternative: 0.7s answers and real
+  businesses, but geocoder recall (~1–3/category) is too weak to replace
+  category scanning — noted for a future supplementary role.

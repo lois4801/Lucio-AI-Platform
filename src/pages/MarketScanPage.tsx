@@ -494,6 +494,12 @@ export default function MarketScanPage() {
             </div>
             <Button onClick={startScan} disabled={scanning}>{scanning ? 'Scanning…' : 'Start Scan'}</Button>
           </div>
+          {scanning && (
+            <p className="text-xs text-muted-foreground">
+              Live scan in progress — businesses are being verified against their real websites in parallel.
+              Region-wide scans typically finish in 1–3 minutes; keep this tab open.
+            </p>
+          )}
           {error && <p className="text-sm text-destructive">{error}</p>}
           {notice && <p className="text-sm text-green-600 dark:text-green-400">{notice}</p>}
         </CardContent>

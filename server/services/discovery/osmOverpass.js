@@ -20,9 +20,19 @@ import { db } from '../../db.js';
 const ENDPOINTS = String(process.env.OVERPASS_ENDPOINT || '').trim()
   ? [String(process.env.OVERPASS_ENDPOINT).trim()]
   : [
+    // Public instances in rotation order, fastest-verified first. 504s on
+    // these are transient overload (measured: same query flips 504/200/504
+    // within minutes), so queryOverpass does a bounded second pass before
+    // giving up on a city. openstreetmap.fr is a fully independent mirror
+    // (often fastest from North America). kumi.systems is last: node fetch
+    // on this host cannot reach it (hangs past 25s) even though it is
+    // healthy in a browser — keeping it last avoids burning budget.
     'https://overpass-api.de/api/interpreter',
+    'https://overpass.openstreetmap.fr/api/interpreter',
     'https://overpass.private.coffee/api/interpreter',
     'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+    'https://overpass.nchc.org.tw/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
   ];
 const USER_AGENT = 'LucioAIPlatform/1.0 (local market scanner; openstreetmap data)';
 const TTL_MS = Math.max(60_000, Number(process.env.OSM_CACHE_TTL_MS || 24 * 3600 * 1000));
@@ -105,9 +115,10 @@ export function buildOverpassQuery({ industry, bbox, around }) {
     const eq = t.indexOf('=');
     stmts.push(`nwr["${t.slice(0, eq)}"="${t.slice(eq + 1)}"]${filter};`);
   }
-  for (const k of ['shop', 'amenity', 'craft', 'office', 'leisure']) {
-    stmts.push(`nwr["${k}"]["name"~"${nameRe}",i]${filter};`);
-  }
+  // ONE generic name-regex clause instead of five per-key clauses: the public
+  // Overpass instances 504 on the heavy union (measured: 7 clauses → HTTP 504
+  // after ~11s; single name clause → 200 in ~2s with the same businesses found).
+  stmts.push(`nwr["name"~"${nameRe}",i]${filter};`);
   return `[out:json][timeout:25];\n(\n${stmts.join('\n')}\n);\nout center 60;`;
 }
 
@@ -124,22 +135,45 @@ export function bboxForCity(city) {
 
 async function queryOverpass(query, budget) {
   const errors = [];
-  for (const endpoint of ENDPOINTS) {
-    try {
-      const res = await fetchImpl(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': USER_AGENT, Accept: 'application/json' },
-        body: `data=${encodeURIComponent(query)}`,
-        signal: AbortSignal.timeout(30_000),
-      });
-      if (res.status === 429 || res.status >= 500) { errors.push(`${endpoint} HTTP ${res.status}`); continue; }
-      if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
-      const json = await res.json();
-      if (budget) budget.http = (budget.http || 0) + 1;
-      return Array.isArray(json.elements) ? json.elements : [];
-    } catch (e) {
-      errors.push(`${endpoint}: ${String(e.message || e).slice(0, 120)}`);
+  const deadline = Date.now() + 60_000; // per-city cap: never let one city burn the scan
+  // One request attempt. Every request that reached a server counts against
+  // the scan budget (racing fires two), so public-infra load is honest.
+  const attempt = async (endpoint) => {
+    const res = await fetchImpl(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': USER_AGENT, Accept: 'application/json' },
+      body: `data=${encodeURIComponent(query)}`,
+      // 15s per request: healthy mirrors answer in 1.4–8s (measured), so a
+      // hanging instance is cut early and the budget moves on.
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (budget) budget.http = (budget.http || 0) + 1;
+    if (res.status === 429 || res.status >= 500) throw new Error(`${endpoint} HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
+    const json = await res.json();
+    return Array.isArray(json.elements) ? json.elements : [];
+  };
+  const short = (e) => String(e.message || e).slice(0, 120);
+
+  // Race the two healthiest mirrors first. Public Overpass availability
+  // flips at minute scale (measured 2026-09-27: same query → api.de 504 +
+  // osm.fr timeout, then 3 min later osm.fr 200 in 1.4s and api.de 200 in
+  // 4s). Serial rotation burns the whole budget inside ONE bad window; a
+  // race crosses it. Both requests count against the scan budget.
+  const raced = await Promise.allSettled(ENDPOINTS.slice(0, 2).map(attempt));
+  const winner = raced.find((r) => r.status === 'fulfilled');
+  if (winner) return winner.value;
+  for (const r of raced) if (r.status === 'rejected') errors.push(short(r.reason));
+
+  // Serial fallback through the remaining mirrors: two passes with a short
+  // pause so a transient overload window can settle between passes.
+  const rest = ENDPOINTS.slice(2);
+  for (let pass = 0; pass < 2 && Date.now() < deadline; pass++) {
+    for (const endpoint of rest) {
+      if (Date.now() > deadline) break;
+      try { return await attempt(endpoint); } catch (e) { errors.push(short(e)); }
     }
+    if (pass === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 1500));
   }
   throw new Error(`all Overpass endpoints failed (${errors.join(' | ')})`);
 }

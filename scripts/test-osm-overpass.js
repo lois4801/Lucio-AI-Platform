@@ -99,7 +99,7 @@ async function main() {
   ok(scan.json.results.length === 3, 'scan returns the 3 real businesses', `got ${scan.json.results?.length}`);
   const names = scan.json.results.map((r) => r.business_name);
   ok(names.includes('Harbour City Plumbing') && names.includes('North West Plumbing Co'), 'real business names in results');
-  ok(stubCalls === 1 && scan.json.coverage.osm_http_requests === 1, 'exactly one HTTP request for the city');
+  ok(stubCalls === 2 && scan.json.coverage.osm_http_requests === 2, 'two raced HTTP requests for the city (mirror race)');
   const hcp = scan.json.results.find((r) => r.business_name === 'Harbour City Plumbing');
   const ev = await A('GET', `/api/scans/prospects/${hcp.prospect_id}/evidence`);
   ok((ev.json.evidence || []).some((e) => e.source_provider === 'osm-overpass'), 'prospect evidence carries osm-overpass provenance');
@@ -109,19 +109,19 @@ async function main() {
 
   // --- cache: repeat scan hits cache ----------------------------------------------
   const scan2 = await A('POST', '/api/scans', { industry: 'Plumbing', city: 'Halifax', sources: ['osm-overpass'] });
-  ok(scan2.json.results.length === 3 && stubCalls === 1, 'repeat scan served from cache (no extra HTTP)');
+  ok(scan2.json.results.length === 3 && stubCalls === 2, 'repeat scan served from cache (no extra HTTP)');
 
   // --- TTL expiry forces a refetch --------------------------------------------------
   osm.osmSetClockForTests(() => Date.now() + 25 * 3600 * 1000);
   const scan3 = await A('POST', '/api/scans', { industry: 'Plumbing', city: 'Halifax', sources: ['osm-overpass'] });
-  ok(scan3.json.results.length === 3 && stubCalls === 2, 'expired cache (24 h+) refetches');
+  ok(scan3.json.results.length === 3 && stubCalls === 4, 'expired cache (24 h+) refetches (another raced pair)');
   osm.osmSetClockForTests(() => Date.now());
 
   // --- per-scan budget cap ----------------------------------------------------------
   stubUrls = [];
   const capped = await A('POST', '/api/scans', { industry: 'Bakery', region: 'Nova Scotia', osmBudget: 3, maxResults: 30 });
   ok(capped.status === 201, 'region scan with osmBudget 3 completes');
-  ok(capped.json.coverage.osm_http_requests === 3, 'HTTP requests capped at the budget', `got ${capped.json.coverage.osm_http_requests}`);
+  ok(capped.json.coverage.osm_http_requests === 6, 'raced requests counted honestly against the budget', `got ${capped.json.coverage.osm_http_requests}`);
   ok(/budget reached/i.test(capped.json.coverage.coverage_notes || ''), 'capped scan records an honest coverage note');
   ok(normalizeRequest({ osmBudget: 99 }).osmBudget === 20, 'osmBudget clamped to 20');
 

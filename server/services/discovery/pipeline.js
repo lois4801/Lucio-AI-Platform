@@ -139,7 +139,7 @@ export function dedupeCandidates(candidates) {
 
 const PARKED_MARKERS = ['domain for sale', 'buy this domain', 'parked free', 'godaddy', 'sedo', 'hugedomains', 'namecheap parking', 'under construction'];
 
-export async function resolveWebsitePresence(biz) {
+export async function resolveWebsitePresence(biz, { timeoutMs = 6000 } = {}) {
   const evidence = [];
   const socialOnly = biz.social_profiles.length > 0;
   const hasUrl = Boolean(biz.website_url);
@@ -155,7 +155,7 @@ export async function resolveWebsitePresence(biz) {
   }
 
   // Live verification with SSRF guards
-  const res = await fetchWithGuards(biz.website_url);
+  const res = await fetchWithGuards(biz.website_url, { timeoutMs });
   evidence.push(mkEvidence('website_url', biz.website_url, 'live-check', 'website-resolver',
     res.error ? `fetch failed: ${res.error}` : `HTTP ${res.status}, redirects: ${res.evidence.redirects.length}`, res.ok ? 0.95 : 0.5, biz.corroboration));
 
@@ -200,6 +200,40 @@ function outcome(status, gap, confidence, note, evidence, biz) {
 
 function mkEvidence(field, value, sourceType, provider, note, confidence, corroboration) {
   return { field_name: field, value, source_type: sourceType, source_provider: provider, note, confidence, corroboration_count: corroboration || 1 };
+}
+
+// ---------------------------------------------------------------------------
+// Bounded parallel website verification. Sequential per-prospect fetching made
+// whole-region scans take ~8 minutes (44 businesses × up to 6s each) — the UI
+// read as "stuck". A small worker pool plus a hard wall-clock budget keeps the
+// scan responsive; leftovers are honestly marked UNKNOWN for individual reverify.
+
+export const VERIFY_CONCURRENCY = 6;
+export const VERIFY_WALL_MS = 90_000;
+const VERIFY_FETCH_TIMEOUT_MS = 4500;
+
+const UNKNOWN_RESOLUTION = {
+  website_status: 'UNKNOWN', website_gap_signal: 'GAP_UNKNOWN', website_confidence: 0.3,
+  resolution_note: 'scan verification time budget reached — use "Verify again" on this prospect',
+  evidence: [], intel: null,
+};
+
+export async function verifyAllPresences(businesses, { wallMs = VERIFY_WALL_MS } = {}) {
+  const list = businesses.slice();
+  const resolutions = new Array(list.length).fill(null);
+  const t0 = Date.now();
+  let cursor = 0;
+  let budgetHit = false;
+  const worker = async () => {
+    for (;;) {
+      if (Date.now() - t0 > wallMs) { budgetHit = true; return; }
+      const i = cursor++;
+      if (i >= list.length) return;
+      resolutions[i] = await resolveWebsitePresence(list[i], { timeoutMs: VERIFY_FETCH_TIMEOUT_MS });
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(VERIFY_CONCURRENCY, list.length)) }, worker));
+  return { resolutions: resolutions.map((r) => r || { ...UNKNOWN_RESOLUTION, last_verified_at: new Date().toISOString() }), budgetHit };
 }
 
 // ---------------------------------------------------------------------------
@@ -400,8 +434,14 @@ export async function runMarketScan(orgId, user, rawQuery, ip = '') {
 
     let gapCandidates = 0;
     const results = [];
-    for (const biz of merged.slice(0, req.maxResults)) {
-      const resolution = await resolveWebsitePresence(biz);
+    const toVerify = merged.slice(0, req.maxResults);
+    const { resolutions, budgetHit } = await verifyAllPresences(toVerify);
+    if (budgetHit) {
+      coverage.coverage_notes += ' Live website verification hit the per-scan time budget; unverified businesses are marked UNKNOWN — reverify them individually.';
+    }
+    for (let i = 0; i < toVerify.length; i++) {
+      const biz = toVerify[i];
+      const resolution = resolutions[i];
       applyIntelToBiz(biz, resolution.intel); // first-party facts fill directory gaps
       const scoring = scoreOpportunity(biz, resolution, req.serviceNeeded);
       if (resolution.website_gap_signal !== 'GAP_NONE') gapCandidates++;
@@ -481,8 +521,10 @@ export async function runNearbyScan(orgId, user, { lat, lng, industry = '', maxR
     !suppressed.has(`${normalizeName(c.business_name)}|${normalizeName(c.city)}`)));
 
   const results = [];
-  for (const biz of merged.slice(0, maxResults)) {
-    const resolution = await resolveWebsitePresence(biz);
+  const { resolutions: nearbyResolutions } = await verifyAllPresences(merged.slice(0, maxResults), { wallMs: 45_000 });
+  for (let i = 0; i < Math.min(merged.length, maxResults); i++) {
+    const biz = merged[i];
+    const resolution = nearbyResolutions[i];
     applyIntelToBiz(biz, resolution.intel);
     const scoring = scoreOpportunity(biz, resolution, 'website');
     const { prospectId } = upsertProspect(orgId, scanId, biz, resolution, scoring);
