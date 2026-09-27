@@ -12,6 +12,10 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lucio-afx-'));
 process.env.LUCIO_DATA_DIR = tmp;
 process.env.BUILDER_RUNTIME_ENABLED = 'true';
 delete process.env.CLAW_RUNNER_CMD;
+// Simulate an unconfigured Claw host for the 501-gate assertion even on
+// machines where the real vendored binary has been built (test hook).
+process.env.CLAW_VENDOR_DIR = path.join(tmp, 'empty-vendor');
+fs.mkdirSync(process.env.CLAW_VENDOR_DIR, { recursive: true });
 
 let passed = 0, failed = 0;
 function ok(cond, name, extra = '') {

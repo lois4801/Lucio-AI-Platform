@@ -1030,3 +1030,11 @@ on; suppression respected; delivery still honest — `sent` only via webhook or 
   recorded, scanner meta union ≥170 industries, anonymous 401, viewer read 200 / build 403 /
   build-all 403.
 - Full regression: 1008 assertions across 24 suites, 0 failures; tsc clean; build clean.
+
+### Claw Coder activation (2026-09-27)
+- cargo 1.98.1 found at C:\Users\USER\.cargo\bin (PATH artifact explained the earlier "no cargo" note);
+  `cargo build --release -p claw-analog` green in 58s → vendor/claw-code/rust/target/release/claw-analog.exe.
+- Flag fix from real clap defs: `--output-format json` (was ndjson) + `--permission workspace-write` added.
+- scripts/test-claw-coder.js — 31/31 (+2): binary mode detected over HTTP on configured hosts; fail-closed
+  phase now runs under a CLAW_VENDOR_DIR empty-dir hook so both paths are deterministic everywhere.
+- Full regression: 1010 assertions across 24 suites, 0 failures.

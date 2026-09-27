@@ -11,6 +11,10 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lucio-claw-'));
 process.env.LUCIO_DATA_DIR = tmp;
 process.env.BUILDER_RUNTIME_ENABLED = 'true';
 delete process.env.CLAW_RUNNER_CMD;
+// Simulate an unconfigured host for the fail-closed phase even on machines
+// where the real vendored binary has been built (CLAW_VENDOR_DIR test hook).
+process.env.CLAW_VENDOR_DIR = path.join(tmp, 'empty-vendor');
+fs.mkdirSync(process.env.CLAW_VENDOR_DIR, { recursive: true });
 
 let passed = 0, failed = 0;
 function ok(cond, name, extra = '') {
@@ -70,6 +74,16 @@ if (await bootApp()) {
   ok(gated.status === 501 && /Steps:/.test(gated.json?.error || '') && (gated.json?.steps || []).length >= 3,
     'job creation fails closed with enablement steps (501)');
 
+  // ---- built vendored binary activates the service (this host) -----------------
+  delete process.env.CLAW_VENDOR_DIR;
+  const { clawStatus } = await import('../server/services/clawCoder.js');
+  const stBin = clawStatus();
+  ok(stBin.configured === true && stBin.mode === 'binary' && /claw-analog/.test(stBin.binary || ''),
+    'vendored claw-analog binary activates the service (mode: binary)', JSON.stringify(stBin).slice(0, 140));
+  const stBinHttp = await A('GET', '/api/claw/status');
+  ok(stBinHttp.json.claw.configured === true && stBinHttp.json.claw.mode === 'binary',
+    'status reflects the built binary over HTTP');
+
   // ---- configure via runner override + fake harness ----------------------------
   const fake = path.join(tmp, 'fake-claw.cjs');
   fs.writeFileSync(fake, `
@@ -87,7 +101,6 @@ setTimeout(() => {
 setTimeout(() => { emit({ event: 'done' }); process.exit(0); }, 120);
 `);
   process.env.CLAW_RUNNER_CMD = `${process.execPath} ${fake}`;
-  const { clawStatus } = await import('../server/services/clawCoder.js');
   const st1 = clawStatus();
   ok(st1.configured === true && st1.mode === 'runner-override', 'runner override configures the service');
   const stHttp = await A('GET', '/api/claw/status');

@@ -25,12 +25,17 @@ const ENABLEMENT_STEPS = [
   'Optional: set ANTHROPIC_BASE_URL to a proxy or local OpenAI-compatible endpoint.',
 ];
 
+// Test/dev hook: point the detector at a different vendor dir (an empty dir
+// simulates an unconfigured host deterministically, even on machines where
+// the real binary has been built).
+function vendorDir() { return process.env.CLAW_VENDOR_DIR || VENDOR_RUST; }
+
 function findBinary() {
   const names = process.platform === 'win32'
     ? ['target/release/claw-analog.exe', 'target/debug/claw-analog.exe']
     : ['target/release/claw-analog', 'target/debug/claw-analog'];
   for (const n of names) {
-    const p = path.join(VENDOR_RUST, n);
+    const p = path.join(vendorDir(), n);
     if (fs.existsSync(p)) return p;
   }
   return null;
@@ -155,7 +160,11 @@ export function executeJob(orgId, jobId, key = '') {
     child = spawn(cmd, argv, { env, cwd: job.workspace_dir });
   } else {
     const sessionPath = path.join(job.workspace_dir, 'session.json');
-    argv = ['--workspace', job.workspace_dir, '--stream', '--output-format', 'ndjson', '--accept-danger-non-interactive', '--max-turns', '24', '--session', sessionPath, job.prompt];
+    // Flags verified against the vendored clap definitions (RunCli in
+    // crates/claw-analog/src/main.rs): --output-format is rich|json where
+    // `json` streams NDJSON events; --permission workspace-write jails the
+    // agent to the scaffolded workspace with write access.
+    argv = ['--workspace', job.workspace_dir, '--stream', '--output-format', 'json', '--permission', 'workspace-write', '--accept-danger-non-interactive', '--max-turns', '24', '--session', sessionPath, job.prompt];
     child = spawn(status.binary, argv, { env, cwd: job.workspace_dir });
   }
 
