@@ -5,9 +5,9 @@ import crypto from 'node:crypto';
 import { db, audit } from '../../db.js';
 import { appendEvent, appendAndPublish, eventCount, listEvents } from './protocol.js';
 import { applyOps, fileContents, createCheckpoint, snapshotContents, listCheckpoints, restoreCheckpoint } from './vfs.js';
-import { buildPlan, briefFromIntent, generateFiles } from './templates.js';
+import { buildPlan, briefFromIntent, generateFiles, aiFilePrompt, generateFilesWithAi } from './templates.js';
 import { runEvidenceSuite, mandatoryFailures, evidenceSummary } from './evidence.js';
-import { generate, getBudget, budgetUsed } from './modelRouter.js';
+import { generate, getBudget, budgetUsed, AI_FIRST_POLICY } from './modelRouter.js';
 
 export const RUN_STATUSES = ['created', 'planning', 'building', 'testing', 'repairing', 'checkpointing', 'completed', 'blocked', 'failed', 'cancelled'];
 
@@ -132,11 +132,13 @@ export async function executeRun(orgId, runId, userId) {
     emit('run.started', 'orchestrator', { projectId: run.project_id, intent: run.intent, candidate: run.candidate, modelPolicy: run.model_policy });
     let r = setStatus(orgId, run, 'planning');
 
-    // Product Manager: intent -> structured brief + acceptance criteria (model router)
-    const policy = ['sovereign-engine', 'ollama-local'];
+    // Product Manager: intent -> structured brief + acceptance criteria. The
+    // org's configured AI models (ChatGPT/Claude/Kimi via the multi-AI vault)
+    // draft first; the deterministic local engine is the honest fallback.
     const pmOut = await agentStep(r, 'product-manager', 'brief', async () => {
-      const gen = await generate({ runId, prompt: r.intent, purpose: 'plan', policy });
-      return { messages: [`Structured brief drafted (${gen.provider})`], brief: null, planNote: gen.content };
+      const gen = await generate({ runId, prompt: r.intent, purpose: 'plan', policy: AI_FIRST_POLICY });
+      const via = gen.provider === 'ai-gateway' ? `${gen.label || gen.model || 'configured AI'} (your AI provider)` : gen.provider;
+      return { messages: [`Structured brief drafted by ${via}`], brief: null, planNote: gen.content };
     });
     const brief = { ...getProject(orgId, run.project_id).brief, ...briefFromIntent(r.intent, getProject(orgId, run.project_id).brief) };
     // Wire the Auto Data Engine content pack for this industry (when covered) so
@@ -183,21 +185,43 @@ export async function executeRun(orgId, runId, userId) {
     await agentStep(r, 'ux-architect', 'ia+flows', async () => ({ messages: ['Responsive breakpoints: mobile-first, max-width 60rem', 'Keyboard paths and focus-visible states declared'] }));
     await agentStep(r, 'design-engineer', 'tokens', async () => ({ messages: [`Design universe applied: ${plan.meta || plan.universe} — Lucio Design Engine tokens (palette, fonts, radius)`] }));
 
-    // Engineer: generate files through the VFS (never direct writes). A /verify intent
-    // skips generation entirely — it checks the CURRENT working tree, which is how
-    // edited files get re-evaluated without being overwritten.
+    // Engineer: generate files. The org's configured AI writes the actual site
+    // (strict JSON contract, validated against the mandatory evidence rules);
+    // deterministic templates are the honest fallback when no AI is configured
+    // or the model's output is rejected. Everything goes through the VFS.
     const verifyOnly = r.intent.trim().startsWith('/verify');
     if (verifyOnly) {
       await agentStep(r, 'qa-engineer', 'verify-only', async () => ({ messages: ['verify mode: preserving working tree, running evidence suite on current files'] }));
     } else {
       const engOut = await agentStep(r, 'frontend-engineer', 'implement', async () => {
-        const { files, meta } = generateFiles(briefWithPack);
+        let files; let meta; let via;
+        // When the org has no AI keys configured, say so honestly and go straight
+        // to the deterministic templates — don't burn a "fallback" round-trip that
+        // would masquerade as an AI attempt.
+        const { hasAnyKey } = await import('../aiVault.js');
+        if (!hasAnyKey(orgId)) {
+          const fb = generateFiles(briefWithPack);
+          files = fb.files; meta = fb.meta; via = 'deterministic templates';
+          emit('ai.fallback', 'frontend-engineer', { reason: 'no AI providers configured — add ChatGPT/Claude/Kimi keys in AI Providers, or keep using templates' });
+        } else {
+          try {
+            const gen = await generate({ runId: r.id, prompt: aiFilePrompt(briefWithPack), purpose: 'implement', policy: AI_FIRST_POLICY, tokens: 6000 });
+            const ai = generateFilesWithAi(briefWithPack, gen.content);
+            files = ai.files; meta = ai.meta; via = gen.provider === 'ai-gateway' ? (gen.label || gen.model || 'your AI') : gen.provider;
+            emit('ai.authored', 'frontend-engineer', { provider: via, fileCount: meta.fileCount });
+          } catch (e) {
+            const fb = generateFiles(briefWithPack);
+            files = fb.files; meta = fb.meta;
+            via = 'deterministic templates';
+            emit('ai.fallback', 'frontend-engineer', { reason: String(e.message || e).slice(0, 200) });
+          }
+        }
         const ops = Object.entries(files).map(([path, content]) => ({ op: getFileExists(run.project_id, path) ? 'update' : 'create', path, content }));
         applyOps(run.project_id, ops);
         for (const [path, content] of Object.entries(files)) {
           emit('file.created', 'frontend-engineer', { path, content: content.slice(0, 4000), hash: (db.prepare(`SELECT hash FROM builder_files WHERE project_id = ? AND path = ?`).get(run.project_id, path))?.hash });
         }
-        return { messages: [`${meta.fileCount} files written through the VFS`, `Template: ${meta.appType} · tokens: ${meta.tokenLabel}`, briefWithPack.geo ? `Location pinned on live OpenStreetMap map (${briefWithPack.geo.lat.toFixed(4)}, ${briefWithPack.geo.lng.toFixed(4)}) — keyless` : 'No location pinned — contact section ships without a map'].filter(Boolean) };
+        return { messages: [`${meta.fileCount} files written through the VFS`, `Built by: ${via}`, briefWithPack.geo ? `Location pinned on live OpenStreetMap map (${briefWithPack.geo.lat.toFixed(4)}, ${briefWithPack.geo.lng.toFixed(4)}) — keyless` : 'No location pinned — contact section ships without a map'].filter(Boolean) };
       });
     }
     await agentStep(r, 'backend-engineer', 'api-contract', async () => ({ messages: ['API contract: documented only — preview runtime is static; no server code is generated or executed'] }));

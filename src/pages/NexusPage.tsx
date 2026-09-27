@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
-import AgentAssist from '@/components/AgentAssist';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +28,10 @@ export default function NexusPage() {
   const [shareUrl, setShareUrl] = useState('');
   const [deployUrl, setDeployUrl] = useState('');
   const [msg, setMsg] = useState('');
+  const [newName, setNewName] = useState('');
+  const [showNew, setShowNew] = useState(false);
+  const [cpLabel, setCpLabel] = useState('');
+  const [showCp, setShowCp] = useState(false);
   const sseRef = useRef<EventSource | null>(null);
 
   const loadProjects = () => api('/nexus/projects').then((r) => setProjects(r.projects)).catch((e) => setMsg(e.message));
@@ -85,10 +88,11 @@ export default function NexusPage() {
 
   const createProject = async () => {
     setMsg('');
+    const name = newName.trim();
+    if (!name) return;
     try {
-      const name = window.prompt('Project name?') || '';
-      if (!name.trim()) return;
       const r = await api('/nexus/projects', { method: 'POST', body: JSON.stringify({ name, appType: 'website' }) });
+      setNewName(''); setShowNew(false);
       await loadProjects();
       openProject(r.project);
     } catch (err: any) { setMsg(err.message); }
@@ -96,8 +100,9 @@ export default function NexusPage() {
 
   const makeCheckpoint = async () => {
     if (!active) return;
-    const label = window.prompt('Checkpoint label?') || 'manual';
+    const label = cpLabel.trim() || 'manual';
     await api(`/nexus/projects/${active.id}/checkpoints`, { method: 'POST', body: JSON.stringify({ label }) });
+    setCpLabel(''); setShowCp(false);
     await refreshFiles();
   };
   const restore = async (cp: Cp) => {
@@ -129,12 +134,22 @@ export default function NexusPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">NEXUS Builder</h1>
-          <p className="text-muted-foreground">Atoms-style multi-agent app builder: describe an app in plain language — a team of AI agents plans, builds, tests, and ships it, with evidence at every step.</p>
+          <p className="text-muted-foreground">Your AI builds it: the ChatGPT / Claude / Kimi keys you configured in AI Providers write the plan and the actual site — with deterministic evidence gates at every step, and template fallback when no AI is configured.</p>
         </div>
-        <Button onClick={createProject}>New project</Button>
+        {showNew ? (
+          <div className="flex gap-2 items-center">
+            <Input autoFocus className="w-64" placeholder="Project name" value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') createProject(); if (e.key === 'Escape') { setShowNew(false); setNewName(''); } }} />
+            <Button onClick={createProject} disabled={!newName.trim()}>Create</Button>
+            <Button variant="outline" onClick={() => { setShowNew(false); setNewName(''); }}>Cancel</Button>
+          </div>
+        ) : (
+          <Button onClick={() => setShowNew(true)}>New project</Button>
+        )}
       </div>
       {msg && <p className="text-sm text-destructive">{msg}</p>}
 
@@ -150,10 +165,9 @@ export default function NexusPage() {
 
       {active && (
         <>
-          <AgentAssist context="builder" industry={active.brief?.industry || ''} projectId={active.id} />
           <Card>
             <CardHeader><CardTitle>Build from a prompt</CardTitle>
-              <CardDescription>One intent → plan → NEXUS team → files → evidence → checkpoint. Competition mode runs two independent candidates with the same checks.</CardDescription></CardHeader>
+              <CardDescription>One intent → your AI writes the brief and the full site → deterministic evidence suite → immutable checkpoint. Competition mode asks your AI for two independent candidates and lets you pick the winner.</CardDescription></CardHeader>
             <CardContent className="flex flex-wrap items-center gap-2">
               <Input className="flex-1 min-w-64" placeholder="e.g. A SaaS landing page for a Kingston fitness studio called Iron Harbour with pricing" value={intent} onChange={(e) => setIntent(e.target.value)} />
               <label className="flex items-center gap-2 text-sm">
@@ -168,14 +182,14 @@ export default function NexusPage() {
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
-              <CardHeader><CardTitle>Agent timeline {run && <Badge className="ml-2">{run.status}{run.candidate !== 'main' ? ` · ${run.candidate}` : ''}</Badge>}</CardTitle></CardHeader>
+              <CardHeader><CardTitle>Build timeline {run && <Badge className="ml-2">{run.status}{run.candidate !== 'main' ? ` · ${run.candidate}` : ''}</Badge>}</CardTitle></CardHeader>
               <CardContent>
                 <div className="max-h-72 overflow-y-auto space-y-1 text-xs font-mono">
                   {events.map((e) => (
                     <div key={e.seq} className="flex gap-2">
                       <span className="text-muted-foreground w-8 shrink-0">{e.seq}</span>
-                      <span className="shrink-0 text-accent">{e.type}</span>
-                      <span className="truncate">{e.payload?.message || e.payload?.path || e.payload?.reason || e.payload?.summary || e.payload?.taskId || ''}</span>
+                      <span className={`shrink-0 ${e.type.startsWith('ai.') ? 'text-green-600 dark:text-green-400 font-bold' : 'text-accent'}`}>{e.type}</span>
+                      <span className="truncate">{e.payload?.message || e.payload?.path || e.payload?.reason || e.payload?.provider || e.payload?.summary || e.payload?.taskId || ''}</span>
                     </div>
                   ))}
                   {events.length === 0 && <p className="text-muted-foreground">No events yet — run a build.</p>}
@@ -235,7 +249,17 @@ export default function NexusPage() {
                     <a className="text-xs text-accent underline" href={`/api/nexus/checkpoints/${cp.id}/export?projectId=${active.id}`}>ZIP</a>
                   </div>
                 ))}
-                <Button size="sm" variant="outline" onClick={makeCheckpoint}>+ Checkpoint</Button>
+                {showCp ? (
+                  <div className="flex gap-2 items-center">
+                    <Input autoFocus className="w-48" placeholder="Checkpoint label" value={cpLabel}
+                      onChange={(e) => setCpLabel(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') makeCheckpoint(); if (e.key === 'Escape') { setShowCp(false); setCpLabel(''); } }} />
+                    <Button size="sm" onClick={makeCheckpoint} disabled={!cpLabel.trim()}>Save</Button>
+                    <Button size="sm" variant="outline" onClick={() => { setShowCp(false); setCpLabel(''); }}>Cancel</Button>
+                  </div>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={() => setShowCp(true)}>+ Checkpoint</Button>
+                )}
                 {shareUrl && <p className="text-xs break-all">Share: {shareUrl}</p>}
                 {deployUrl && <p className="text-xs break-all">Deployed: <a className="text-accent underline" href={deployUrl} target="_blank" rel="noreferrer">{deployUrl}</a></p>}
               </CardContent>

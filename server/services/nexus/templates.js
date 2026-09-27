@@ -317,3 +317,104 @@ export function briefFromIntent(intent, opts = {}) {
 }
 export function planHash(plan) { return hashContent(JSON.stringify(plan)); }
 export function runId() { return crypto.randomUUID(); }
+
+// ---------------------------------------------------------------------------
+// AI-authored file generation (the org's configured AI models write the actual
+// site). The contract is strict: one JSON object {"files": {path: content}}.
+// Every acceptance rule below mirrors a MANDATORY evidence check, so a response
+// that would fail the suite is rejected HERE and the build falls back to the
+// deterministic templates — an AI typo must never block a run.
+export const AI_MAX_TOTAL_BYTES = 128 * 1024;
+
+export function aiFilePrompt(brief) {
+  const plan = buildPlan(brief);
+  const pack = brief.contentPack || null;
+  const geo = brief.geo || null;
+  const facts = factsFromBrief(brief);
+  return `You are the senior frontend engineer inside the Lucio NEXUS builder. Build a complete, production-quality ${plan.appType} for this business. Reply with ONE raw JSON object and nothing else — no markdown fences, no commentary. Shape: {"files": {"index.html": "…", "styles.css": "…", "app.js": "…", "README.md": "…", "data.json": "…"}}.
+
+BUSINESS BRIEF (every fact here is verified — use them, do not invent replacements):
+- Name: ${brief.name || 'Untitled Project'}
+- Industry: ${brief.industry || 'General'}${brief.tagline ? `\n- Tagline: ${brief.tagline}` : ''}${brief.location ? `\n- Location: ${brief.location}` : ''}
+- App type: ${plan.appType}${Object.keys(facts).length ? `\n- Facts: ${JSON.stringify(facts)}` : ''}
+${pack ? `- Industry content pack (use this real copy verbatim where it fits — hero headlines: ${(pack.heroes || []).slice(0, 3).join(' | ')}; services: ${(pack.services || []).map((s) => s.name).slice(0, 5).join(', ')}; CTAs: ${(pack.ctas || []).slice(0, 3).join(' | ')})` : ''}
+${geo ? `- Map: embed a live OpenStreetMap iframe (no API key): <iframe src="https://www.openstreetmap.org/export/embed.html?bbox=${(geo.lng - 0.02).toFixed(4)}%2C${(geo.lat - 0.02).toFixed(4)}%2C${(geo.lng + 0.02).toFixed(4)}%2C${(geo.lat + 0.02).toFixed(4)}&layer=mapnik&marker=${geo.lat}%2C${geo.lng}" …>` : ''}
+
+HARD REQUIREMENTS (an automated evidence suite rejects anything that violates these):
+1. index.html starts with <!doctype html>, has <html lang="en">, <meta name="viewport" …>, a <title>, and references styles.css and app.js.
+2. styles.css defines CSS custom properties --bg: #rrggbb and --text: #rrggbb whose contrast is >= 4.5:1 (WCAG AA), and styles the whole page (cinematic hero, animated buttons/transitions encouraged).
+3. app.js is plain valid JavaScript that runs standalone in a sandboxed browser (no network calls, no modules, no imports). It must add real interactivity (nav, forms with client validation, filters or galleries).
+4. NEVER use eval(, new Function(, or document.write( anywhere.
+5. Total size of all files together must stay under 120 KB. No external URLs for CSS/JS/fonts — everything self-contained except the OSM map iframe above.
+6. README.md: 5–10 lines — what the app is, how to open it, the API contract (static demo), and the data model.
+7. data.json: valid JSON seed data for the app.
+8. Placeholders the owner must edit MUST be marked [EDIT: label].
+
+Make it genuinely impressive: luxury-grade visual design, smooth motion, responsive.`;
+}
+
+// Parse + validate an AI reply. Throws with human-readable reasons when the
+// response cannot be accepted; otherwise returns { files, meta }.
+export function generateFilesWithAi(brief, aiContent) {
+  const reasons = [];
+  let parsed = null;
+  let raw = String(aiContent || '').trim();
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) raw = fence[1].trim();
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start === -1 || end === -1) reasons.push('no JSON object in the reply');
+  else {
+    try { parsed = JSON.parse(raw.slice(start, end + 1)); }
+    catch (e) { reasons.push(`JSON parse failed: ${String(e.message).slice(0, 100)}`); }
+  }
+  const files = parsed && typeof parsed.files === 'object' && parsed.files ? parsed.files : null;
+  if (!files) reasons.push('missing "files" object');
+  else {
+    for (const [path, content] of Object.entries(files)) {
+      if (typeof content !== 'string') reasons.push(`${path}: content is not a string`);
+      else if (content.length > 60_000) reasons.push(`${path}: exceeds 60 KB`);
+    }
+  }
+  const get = (p) => (files && typeof files[p] === 'string' ? files[p] : '');
+  const html = get('index.html');
+  if (html) {
+    if (!/<!doctype html/i.test(html)) reasons.push('index.html: missing doctype');
+    if (!/<html[^>]*\blang="[a-z-]+"/.test(html)) reasons.push('index.html: missing lang attribute');
+    if (!/<meta\s+name="viewport"/.test(html)) reasons.push('index.html: missing viewport meta');
+    if (!/<title>[^<]+<\/title>/.test(html)) reasons.push('index.html: missing title');
+  }
+  const css = get('styles.css');
+  if (css) {
+    const grab = (v) => { const m = css.match(new RegExp(`--${v}:\\s*(#[0-9a-fA-F]{6})`)); return m?.[1]; };
+    if (!grab('bg') || !grab('text')) reasons.push('styles.css: --bg/--text hex tokens missing');
+  }
+  const js = get('app.js');
+  if (js) {
+    try { new Function(js); } catch (e) { reasons.push(`app.js: syntax error — ${String(e.message).slice(0, 80)}`); }
+  }
+  for (const [path, content] of Object.entries(files || {})) {
+    if (typeof content !== 'string') continue;
+    if (/\beval\s*\(|new\s+Function\s*\(|document\.write\s*\(/.test(content)) reasons.push(`${path}: unsafe dynamic execution (eval/new Function/document.write)`);
+    if (/(api[_-]?key|secret|bearer\s+[a-z0-9]{16,})/i.test(content) && /sk-[a-z0-9]{16,}/i.test(content)) reasons.push(`${path}: looks like a hardcoded API key`);
+  }
+  const total = Object.values(files || {}).reduce((a, c) => a + (typeof c === 'string' ? c.length : 0), 0);
+  if (total > AI_MAX_TOTAL_BYTES) reasons.push(`total size ${Math.round(total / 1024)} KB exceeds ${AI_MAX_TOTAL_BYTES / 1024} KB`);
+
+  if (reasons.length) {
+    const err = new Error(`AI output rejected (${reasons.length}): ${reasons.slice(0, 4).join('; ')}`);
+    err.reasons = reasons;
+    throw err;
+  }
+
+  // Files the model commonly forgets are synthesized deterministically so the
+  // mandatory "required files present" check always has a chance to pass.
+  const name = brief.name || 'Untitled Project';
+  if (!files['README.md']) {
+    files['README.md'] = `# ${name}\n\nBuilt by the Lucio NEXUS builder (AI-authored, evidence-gated).\n\nOpen index.html in a browser. Static demo — no server required.\nAPI contract: local-first, forms validate client-side only.\nData model: see data.json. Edit [EDIT:] placeholders before publishing.`;
+  }
+  if (!files['data.json']) {
+    files['data.json'] = JSON.stringify({ name, industry: brief.industry || 'General', generated: 'lucio-nexus-ai', intent: String(brief.intent || '').slice(0, 200) }, null, 2);
+  }
+  return { files, meta: { fileCount: Object.keys(files).length, appType: buildPlan(brief).appType, tokenLabel: 'ai-authored', via: 'ai' } };
+}

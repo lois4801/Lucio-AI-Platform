@@ -13,7 +13,7 @@ export const CAPABILITIES = {
   'kimi-external': { contextWindow: 131072, structuredOutput: true, toolCalling: true, costClass: 'paid', latencyClass: 'low', codingSpecialization: 'code' },
 };
 
-export const DEFAULT_BUDGET = { maxTokens: 20000, maxRetries: 2, maxParallelTeams: 2, maxRepairCycles: 2, maxEvents: 400 };
+export const DEFAULT_BUDGET = { maxTokens: 40000, maxRetries: 2, maxParallelTeams: 2, maxRepairCycles: 2, maxEvents: 400 };
 
 export function getBudget(run) {
   return { ...DEFAULT_BUDGET, ...(JSON.parse(run?.budget_json || '{}')) };
@@ -25,8 +25,11 @@ export function budgetUsed(runId) {
 }
 
 // Provider-neutral generate(). Local sovereign engine executes deterministic local
-// handlers; external providers go through the existing gateway adapter when enabled.
-// A provider failure produces a controlled fallback to the next policy entry.
+// handlers; 'ai-gateway' fans out to the org's configured BYOK providers
+// (ChatGPT/Claude/Kimi/Gemini via the multi-AI vault — the same models wired into
+// the rest of the app); external registry providers go through the gateway
+// adapter when enabled. A provider failure produces a controlled fallback to the
+// next policy entry.
 export async function generate({ runId, prompt, purpose = 'general', policy = ['sovereign-engine'], tokens = 500 }) {
   const run = db.prepare(`SELECT * FROM builder_runs WHERE id = ?`).get(runId);
   const budget = getBudget(run);
@@ -37,7 +40,7 @@ export async function generate({ runId, prompt, purpose = 'general', policy = ['
   let lastErr = null;
   for (const providerId of policy) {
     try {
-      const result = await executeProvider(providerId, { prompt, purpose, tokens });
+      const result = await executeProvider(providerId, { prompt, purpose, tokens, orgId: run?.org_id });
       recordUsage(runId, providerId, result.tokensUsed || tokens, purpose);
       return { provider: providerId, ...result };
     } catch (err) {
@@ -48,7 +51,20 @@ export async function generate({ runId, prompt, purpose = 'general', policy = ['
   throw Object.assign(new Error(`all providers failed; last error: ${lastErr?.message || lastErr}`), { status: 502, code: 'provider_failure' });
 }
 
-async function executeProvider(providerId, { prompt, purpose }) {
+// Default build policy: the owner's configured AI models first, deterministic
+// local engine as the honest fallback when no keys are configured (or every
+// provider errors). Exported so the orchestrator and tests share one order.
+export const AI_FIRST_POLICY = ['ai-gateway', 'sovereign-engine', 'ollama-local'];
+
+async function executeProvider(providerId, { prompt, purpose, tokens, orgId }) {
+  if (providerId === 'ai-gateway') {
+    // The org's BYOK vault: fallback chain across every enabled provider key.
+    // Lazy import keeps the nexus module graph acyclic.
+    const { aiChat } = await import('../multiAi.js');
+    if (!orgId) throw new Error('ai-gateway needs an org context');
+    const reply = await aiChat(orgId, { messages: [{ role: 'user', content: String(prompt) }], maxTokens: tokens });
+    return { content: reply.text, tokensUsed: Math.ceil(reply.text.length / 4) + Math.ceil(String(prompt).length / 4), structured: false, label: reply.label, model: reply.model };
+  }
   const row = db.prepare(`SELECT * FROM provider_registry WHERE id = ?`).get(providerId);
   if (!row) throw new Error(`provider not registered: ${providerId}`);
   if (!row.enabled) throw new Error(`provider disabled: ${providerId}`);

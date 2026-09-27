@@ -345,3 +345,41 @@ start of every new session to evolve instead of rediscovering.
 - **Lesson:** adding a SELECT column without adding the column to the schema +
   migration is a crash waiting for the first fresh DB. Every SELECT column
   must exist in CREATE TABLE, the migration block, and the upsert path.
+
+
+## Session 2026-09-27 (later) — NEXUS builder now built by your AI providers
+- **Heard:** "fix the nexus builder. Instead of agents helping out. It would be
+  the ai chatgpt, or claude that was integrated inside the app." (Screenshot:
+  the page was hard-broken — `prompt() is not supported.` — because New
+  project / Checkpoint used `window.prompt`, which the host webview blocks.)
+- **Fixed the crash:** both `window.prompt` calls replaced with inline forms
+  (Enter/Escape handled). Removed the AgentAssist widget from the builder page
+  per the request — the builder is now AI-driven, not agent-assisted.
+- **Wired the Multi-AI layer into the build path:** `modelRouter.generate()`
+  gained an `ai-gateway` policy that delegates to `multiAi.aiChat` — the org's
+  encrypted BYOK vault (ChatGPT/Claude/Kimi/Gemini/OpenRouter/DeepSeek), the
+  same fallback chain used everywhere else in the app. `AI_FIRST_POLICY =
+  ['ai-gateway','sovereign-engine','ollama-local']`: your AI models first, the
+  deterministic local engine as the honest fallback. The PM step drafts the
+  brief through it; the engineer step asks the AI for the COMPLETE site as a
+  strict `{"files": {...}}` JSON contract (`aiFilePrompt`/`generateFilesWithAi`
+  in templates.js) — doctype/lang/viewport/--bg+--text tokens/no-eval/size
+  limits mirror the MANDATORY evidence checks, so anything that would fail the
+  suite is rejected pre-emptively and the build falls back to deterministic
+  templates with an `ai.fallback` event carrying the reason. `hasAnyKey` check
+  skips the AI round-trip entirely when no key is configured (honest reason,
+  no masquerade). Missing README.md/data.json are synthesized from the brief.
+- **Protocol:** new `ai.authored` / `ai.fallback` event types + payload key
+  allowlist in protocol.js — the allowlist REJECTS unknown event types at
+  append time (learned by crash: the first run died with "unknown event type:
+  ai.fallback" and no files). Extend EVENT_TYPES + ALLOWED_PAYLOAD_KEYS
+  together, always.
+- **Verified** by test-nexus-ai.js (26 assertions, stubbed wire): AI-authored
+  run completes with the model's files in the VFS, provider credited in
+  events, mandatory evidence all green, live preview serving the AI site;
+  no-key org falls back to templates with an honest reason and zero provider
+  calls; contract-violating AI output (prose instead of JSON) falls back
+  without blocking the run.
+- **Lesson:** when a sandboxed webview hosts the app, ANY `window.prompt` /
+  `alert` / `confirm` is a page-killer — use inline UI patterns everywhere;
+  grep for them when a page renders a raw exception string.
