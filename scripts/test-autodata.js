@@ -14,6 +14,9 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lucio-ad-'));
 process.env.LUCIO_DATA_DIR = tmp;
 process.env.BUILDER_RUNTIME_ENABLED = 'true';
 process.env.OSM_LIVE_ENABLED = '';   // fixture-mode scan assertions (.env would re-add it)
+// REV2: generated demo businesses enter scans ONLY with demo market data
+// explicitly allowed — this suite tests the auto engine itself, so it opts in.
+process.env.ALLOW_DEMO_MARKET_DATA = 'true';
 
 let passed = 0, failed = 0;
 function ok(cond, name, extra = '') {
@@ -104,6 +107,9 @@ async function main() {
   // --- scan integration ------------------------------------------------------
   const scan = await owner('POST', '/api/scans', { industry: 'Solar Installation', region: 'Nova Scotia', maxResults: 10 });
   ok(scan.status === 201 && scan.json.results.length >= 4, 'scan returns auto-built businesses', `got ${scan.json.results?.length}`);
+  ok(scan.json.results.every((r) => r.is_demo), 'auto-built businesses all carry the demo flag');
+  ok(scan.json.results.every((r) => !r.can_render_live), 'auto-built businesses are blocked from live map rendering');
+  ok(scan.json.coverage.demo_records === scan.json.results.filter((r) => r.is_demo).length, 'coverage counts demo records honestly');
   ok(Boolean(scan.json.auto) && scan.json.auto.snapshot.demand_index === s1.demand_index, 'scan attaches auto snapshot');
   ok(scan.json.auto.content_pack.keywords.length >= 3 && scan.json.auto.content_pack.heroes.length >= 2, 'scan attaches content pack');
   ok(scan.json.results.every((r) => r.prospect_id), 'every result upserted as a prospect');

@@ -8,6 +8,8 @@
 //  - user-list: user-supplied business records (CSV/JSON paste), user-authorized data
 import crypto from 'node:crypto';
 import { googlePlacesProvider, isGooglePlacesConfigured } from './googlePlaces.js';
+import { statcanOdbusProvider } from './odbBus.js';
+import { demoMarketDataAllowed } from './verification.js';
 
 // ---------------------------------------------------------------------------
 // Geography — all provinces and territories across Canada (§17.13.1)
@@ -183,6 +185,7 @@ export const fixtureDirectoryProvider = {
     const key = GEO_UNITS[region] ? region : PROVINCE_CODE_TO_NAME[region];
     return key ? GEO_UNITS[key] : [];
   },
+  policy: () => ({ automatedAccessAllowed: true, commercialReuseAllowed: true, attributionRequired: false, licence: 'internal-dev-fixture', demoData: true }),
   async search({ industry, city, province_state, maxResults = 50 }) {
     const norm = (s) => String(s || '').toLowerCase().trim();
     const rows = FIXTURE_BUSINESSES.filter((b) => {
@@ -191,7 +194,7 @@ export const fixtureDirectoryProvider = {
       if (!city && province_state && norm(b.province_state) !== norm(province_state)) return false;
       return true;
     }).slice(0, maxResults);
-    return rows.map((b) => normalizeCandidate(b, 'fixture-directory'));
+    return rows.map((b) => ({ ...normalizeCandidate(b, 'fixture-directory'), is_demo: true }));
   },
 };
 
@@ -234,11 +237,17 @@ function normalizeCandidate(b, source) {
 }
 
 export function getProviders(ids) {
-  // Live Google Places leads when configured (owner directive: real, accurate data
-  // from Google); the fixture directory remains the labeled dev fallback.
-  const all = [googlePlacesProvider, fixtureDirectoryProvider, userListProvider].filter(
-    (p) => p.id !== 'google-places' || isGooglePlacesConfigured()
+  // REV2 evidence-first: live sources lead; the fixture directory is demo data
+  // and is available ONLY when the caller names it explicitly (dev/test) or
+  // ALLOW_DEMO_MARKET_DATA=true. It is never in the default source list and
+  // never silently backstops a failed live provider — its records are always
+  // labeled is_demo and blocked from live map rendering. The auto data engine
+  // is intentionally NOT here — it serves content packs, not directory
+  // records, and its generated businesses must never mix into scan results.
+  const all = [googlePlacesProvider, userListProvider, statcanOdbusProvider].filter(
+    (p) => (p.id !== 'google-places' || isGooglePlacesConfigured()) && (p.id !== 'statcan-odbus' || statcanOdbusProvider.configured)
   );
+  if (demoMarketDataAllowed() || ids?.includes('fixture-directory')) all.push(fixtureDirectoryProvider);
   if (!ids?.length) return all;
   return all.filter((p) => ids.includes(p.id));
 }
@@ -246,7 +255,8 @@ export function getProviders(ids) {
 export function listProviderMeta() {
   return [
     { id: 'google-places', label: googlePlacesProvider.label, is_live: true, configured: isGooglePlacesConfigured() },
-    { id: 'fixture-directory', label: fixtureDirectoryProvider.label, is_live: false, configured: true },
+    { id: 'fixture-directory', label: fixtureDirectoryProvider.label, is_live: false, configured: demoMarketDataAllowed(), demo: true },
     { id: 'user-list', label: userListProvider.label, is_live: false, configured: true },
+    { id: 'statcan-odbus', label: statcanOdbusProvider.label, is_live: true, configured: statcanOdbusProvider.configured },
   ];
 }

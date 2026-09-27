@@ -454,3 +454,14 @@ start of every new session to evolve instead of rediscovering.
 - Data-model note: upsertProspect dedupes across scans and re-homes scan_id to the LATEST scan that found a business — a prospect belongs to its most recent scan, so deleting that scan removes it.
 - UI: per-row trash (confirm) + "Clear all" in the Scan history card header on the Scanner page.
 - Tests: scripts/test-scan-delete.js (19 assertions, incl. org isolation + delete-as-cancel); all 39 suites green; tsc clean.
+
+## 2026-09-27 — Scanner REV2: evidence-first verification architecture
+- Root cause of phantom businesses ("Furry Pet Resort"): autoDirectoryProvider was injected into EVERY scan and fixture fallback backstopped pin-drop scans. Generated records mixed with real OSM candidates and rendered as live markers.
+- Fix pattern: generated/demo data stays for content packs (its permitted role) but scan entry is gated behind ALLOW_DEMO_MARKET_DATA (default false), records carry is_demo=1, and canRenderAsLiveMarker() rejects them. Fail closed: live source failure => ZERO results + "No verified businesses found", never synthetic fallback.
+- Verification state machine: DISCOVERED→SOURCE_VALIDATED→ENRICHING→NEEDS_VERIFICATION/REJECTED→VERIFIED→WEBSITE_GAP_CHECKED→PROSPECT_READY. Deterministic scoring: +40 stable provider object id, +20 address+locality, +15 phone, +15 multi-provider corroboration, +10 official domain; ≥60 VERIFIED, 40–59 NEEDS_VERIFICATION, <40 REJECTED; hard conflicts (missing name, invalid coords) auto-REJECT.
+- Trap found by tests: scan-local candidate UUIDs must NEVER count as stable source object ids — dedupeCandidates now carries only provider source_record_id, otherwise generated records fake the +40 point.
+- Website gap engine keeps UNKNOWN when checks are insufficient (never infer "no website" from a missing tag); every check is logged in website_checks with metadata.unknown_when_insufficient.
+- OSM candidates now carry source_url (openstreetmap.org/{type}/{id}) so "Check for yourself" anchors to the exact provider object; Google search remains the fallback for verified records without deep links.
+- New StatsCan ODBus open-government adapter (odbBus.js): policy() metadata (Open Government Licence — Canada), header-name-matched CSV parse, cached acquisition via ODBUS_CSV_URL, provenance on every record. Corroboration counts distinct PROVIDERS per name+city — never merge on name alone.
+- AI enrichment guard (applyAIEnrichment): permit-list — AI may write descriptions/review flavor only; name/coords/address/phone/website reject; unknown fields fail closed.
+- UI: 5-state legend (red/orange/green verified, gray pending; REJECTED + demo hidden), score always shown as "verification score", evidence dialog surfaces verification state, primary source URL, coordinates, website-check log, and a Refresh-verification action.

@@ -213,6 +213,19 @@ CREATE TABLE IF NOT EXISTS evidence_records (
   hash TEXT DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS website_checks (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  prospect_id TEXT NOT NULL,
+  scan_id TEXT,
+  candidate_url TEXT DEFAULT '',
+  status_code INTEGER,
+  is_official INTEGER NOT NULL DEFAULT 0,
+  match_reason TEXT DEFAULT '',
+  checked_at TEXT,
+  metadata_json TEXT NOT NULL DEFAULT '{}'
+);
+
 CREATE TABLE IF NOT EXISTS website_opportunities (
   id TEXT PRIMARY KEY,
   org_id TEXT NOT NULL,
@@ -896,6 +909,11 @@ CREATE TABLE IF NOT EXISTS osm_cache (
   if (!cols.includes('lng')) db.exec('ALTER TABLE prospects ADD COLUMN lng REAL');
   if (!cols.includes('auto_profile_json')) db.exec(`ALTER TABLE prospects ADD COLUMN auto_profile_json TEXT NOT NULL DEFAULT ''`);
   if (!cols.includes('source')) db.exec(`ALTER TABLE prospects ADD COLUMN source TEXT NOT NULL DEFAULT ''`);
+  if (!cols.includes('verification_status')) db.exec(`ALTER TABLE prospects ADD COLUMN verification_status TEXT NOT NULL DEFAULT 'DISCOVERED'`);
+  if (!cols.includes('verification_score')) db.exec('ALTER TABLE prospects ADD COLUMN verification_score INTEGER NOT NULL DEFAULT 0');
+  if (!cols.includes('verified_at')) db.exec('ALTER TABLE prospects ADD COLUMN verified_at TEXT');
+  if (!cols.includes('is_demo')) db.exec('ALTER TABLE prospects ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0');
+  if (!cols.includes('source_url')) db.exec(`ALTER TABLE prospects ADD COLUMN source_url TEXT NOT NULL DEFAULT ''`);
 }
 {
   const cols = db.prepare('PRAGMA table_info(component_assets)').all().map((c) => c.name);

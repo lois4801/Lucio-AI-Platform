@@ -25,7 +25,7 @@ const ORG = 'org-test', USER = { id: 'u1', orgId: ORG, role: 'owner' };
 
 console.log('== Discovery: geography expansion, providers, budgets ==');
 {
-  const req = normalizeRequest({ industry: 'Plumbing', province: 'Nova Scotia' });
+  const req = normalizeRequest({ industry: 'Plumbing', province: 'Nova Scotia', sources: ['fixture-directory'] });
   const providers = getProviders(req.sources);
   const { units } = expandGeography(req, providers);
   ok(units.length === 10, 'geography expands NS into 10 municipalities', `got ${units.length}`);

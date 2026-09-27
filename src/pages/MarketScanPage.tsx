@@ -43,14 +43,19 @@ const GAP_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'out
   GAP_NO_VERIFIED_WEBSITE: 'default', GAP_BROKEN: 'destructive', GAP_SOCIAL_ONLY: 'secondary',
   GAP_WEAK: 'secondary', GAP_NONE: 'outline', GAP_UNKNOWN: 'outline',
 };
-// Honesty rules: fixture/demo records must be visibly labeled and must NOT get a
+// Honesty rules: demo records must be visibly labeled and must NOT get a
 // "Check for yourself" link — an unverifiable link that disproves its own data is
 // worse than no link. Live records keep the verification link + a live-source tag.
-const SAMPLE_RE = /fixture|dev data/i;
+const SAMPLE_RE = /fixture|dev data|generated demo/i;
 const SOURCE_LABEL: Record<string, string> = {
   'osm-overpass': 'OpenStreetMap (live)', 'google-places': 'Google Places (live)',
-  'auto-directory': 'Directory (live)', 'fixture-directory': 'Sample data',
+  'auto-directory': 'Generated demo data', 'auto-directory (generated demo)': 'Generated demo data',
+  'fixture-directory': 'Sample data', 'statcan-odbus': 'Statistics Canada ODBus (open data)',
 };
+// REV2 five-state legend: red = verified no website, orange = verified
+// social-only/weak, green = verified has website, gray = pending verification.
+// REJECTED records never render on the map at all.
+const VERIFICATION_LIVE_STATES = ['VERIFIED', 'WEBSITE_GAP_CHECKED', 'PROSPECT_READY'];
 
 type ProspectRow = {
   id: string; business_name: string; city: string; province_state: string; industry: string;
@@ -58,6 +63,8 @@ type ProspectRow = {
   priority: string; score_explanation: string; recommended_offer: string; public_phone: string;
   crm_stage: string; suppression_status: string; lat?: number | null; lng?: number | null;
   address?: string; social_profiles?: string | string[]; source?: string; created_at?: string;
+  verification_status?: string; verification_score?: number; verified_at?: string;
+  is_demo?: number | boolean; can_render_live?: boolean; source_url?: string;
 };
 type Scan = { id: string; status: string; created_at: string; coverage: any; query: any };
 type ScanUnit = { name: string; status: 'queued' | 'running' | 'done'; found: number };
@@ -71,7 +78,16 @@ const PHASE_LABEL: Record<string, string> = {
   starting: 'Preparing scan…', discovery: 'Scanning areas', verification: 'Verifying business websites',
   scoring: 'Scoring leads', done: 'Complete', failed: 'Failed',
 };
-type Evidence = { id: string; field_name: string; value: string; source_provider: string; source_type: string; confidence: number; retrieved_at: string };
+type Evidence = { id: string; field_name: string; value: string; source_provider: string; source_type: string; source_url_or_identifier?: string; confidence: number; retrieved_at: string };
+type WebsiteCheck = { id: string; candidate_url: string; status_code: number | null; is_official: number; match_reason: string; checked_at: string; metadata?: any };
+type EvidenceBundle = {
+  evidence: Evidence[];
+  website_checks?: WebsiteCheck[];
+  verification?: { status: string; score: number; verified_at: string | null; is_demo: boolean; label: string };
+  primary_source?: { provider: string; object_id: string; source_url: string; retrieved_at: string | null };
+  coordinates?: { lat: number | null; lng: number | null };
+  can_render_live?: boolean;
+};
 type ProviderMeta = { id: string; label: string; is_live: boolean; configured: boolean };
 type Universe = { id: string; name: string; inspiration: string; motion: string; headingFont: string; palette: { bg: string; accent: string; ink: string } };
 
@@ -99,7 +115,7 @@ export default function MarketScanPage() {
   const [results, setResults] = useState<ProspectRow[]>([]);
   const [scans, setScans] = useState<Scan[]>([]);
   const [evidenceFor, setEvidenceFor] = useState<{ id: string; name: string } | null>(null);
-  const [evidence, setEvidence] = useState<Evidence[]>([]);
+  const [evidenceBundle, setEvidenceBundle] = useState<EvidenceBundle | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [sampleWarning, setSampleWarning] = useState('');
@@ -155,9 +171,15 @@ export default function MarketScanPage() {
   runNearbyRef.current = runNearby;
 
   const esc = (s: string) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] || c));
-  const markerColor = (p: ProspectRow) =>
-    p.website_gap_signal === 'GAP_NO_VERIFIED_WEBSITE' ? '#dc2626'
-    : p.website_gap_signal === 'GAP_NONE' ? '#16a34a' : '#d97706';
+  // REV2 five-state marker color. Verification gates the color: pending = gray,
+  // verified records take red/orange/green by website-gap. REJECTED records are
+  // filtered out before this runs — they never render.
+  const markerColor = (p: ProspectRow) => {
+    const verified = VERIFICATION_LIVE_STATES.includes(p.verification_status || '');
+    if (!verified) return '#9ca3af';
+    return p.website_gap_signal === 'GAP_NO_VERIFIED_WEBSITE' ? '#dc2626'
+      : p.website_gap_signal === 'GAP_NONE' ? '#16a34a' : '#d97706';
+  };
 
   // Initialize Leaflet map once — dark "command center" style. Base maps are
   // KEYLESS live OpenStreetMap-family tiles (CARTO basemaps now require an API
@@ -210,7 +232,9 @@ export default function MarketScanPage() {
     markersRef.current.forEach((m) => m.remove());
     markersRef.current = [];
     popupsRef.current.clear();
-    const pts = results.filter((r) => typeof r.lat === 'number' && typeof r.lng === 'number' && r.lat !== 0 && r.lng !== 0);
+    // REV2: REJECTED records and demo records never render as live markers.
+    const pts = results.filter((r) => typeof r.lat === 'number' && typeof r.lng === 'number' && r.lat !== 0 && r.lng !== 0
+      && r.verification_status !== 'REJECTED' && !r.is_demo);
     pts.forEach((p) => {
       const color = markerColor(p);
       const m = L.marker([p.lat, p.lng], {
@@ -224,7 +248,10 @@ export default function MarketScanPage() {
 
       // Rich business card popup (pindrop-style, cream theme)
       const gapKey = p.website_gap_signal;
-      const badge = gapKey === 'GAP_NONE'
+      const verified = VERIFICATION_LIVE_STATES.includes(p.verification_status || '');
+      const badge = !verified
+        ? { bg: '#f3f4f6', fg: '#374151', label: '● Pending verification' }
+        : gapKey === 'GAP_NONE'
         ? { bg: '#dcfce7', fg: '#166534', label: '● Has a website' }
         : gapKey === 'GAP_NO_VERIFIED_WEBSITE'
           ? { bg: '#fef3c7', fg: '#92400e', label: '● No website found' }
@@ -236,14 +263,27 @@ export default function MarketScanPage() {
         : gapKey === 'GAP_NO_VERIFIED_WEBSITE' ? 'Likely has no website'
         : GAP_LABEL[gapKey] || 'Website gap detected';
       const googleCheck = `https://www.google.com/search?q=${encodeURIComponent(`${p.business_name} ${p.city}`)}`;
-      const isSample = SAMPLE_RE.test(p.source || '');
+      const isSample = SAMPLE_RE.test(p.source || '') || Boolean(p.is_demo);
+      const canVerify = !isSample && (verified || p.source_url);
+      // "Check it myself" anchors to the exact provider object when we have its
+      // source URL (OSM node/way page, dataset row); Google search is the
+      // fallback for verified records without a deep link.
+      const checkHref = p.source_url && !isSample ? p.source_url : googleCheck;
+      const checkLabel = p.source_url && !isSample ? 'Open source record ↗' : 'Check for yourself ↗';
       const sampleBanner = isSample
         ? `<div style="margin-top:10px;background:#fef3c7;border:1px solid #f59e0b;color:#92400e;border-radius:8px;padding:8px 10px;font-size:11px;line-height:1.45">
-            ⚠ <b>SAMPLE LISTING</b> — demo data. Live business lookup was unavailable or failed for this scan, so this business is <b>not verified to exist</b>. Don't pitch it as real.
+            ⚠ <b>GENERATED DEMO RECORD</b> — composed by the auto data engine, <b>not verified to exist</b>. It is excluded from live map rendering and must never be pitched as a real business.
           </div>`
-        : `<div style="margin-top:10px;font-size:10.5px;color:#16a34a;font-weight:700">✓ Live record · ${esc(SOURCE_LABEL[p.source || ''] || p.source || 'live source')}</div>`;
-      const verifyLink = isSample ? '' :
-        `<a href="${googleCheck}" target="_blank" rel="noreferrer" style="display:inline-block;margin-top:8px;background:#fff;border:1px solid #e7e5e4;border-radius:9999px;padding:4px 10px;font-size:11px;color:#1c1917;text-decoration:none;font-weight:600">Check for yourself ↗</a>`;
+        : verified
+          ? `<div style="margin-top:10px;font-size:10.5px;color:#16a34a;font-weight:700">✓ Verified live record · ${esc(SOURCE_LABEL[p.source || ''] || p.source || 'live source')}</div>`
+          : `<div style="margin-top:10px;font-size:10.5px;color:#78716c;font-weight:700">◌ Pending verification — evidence score ${p.verification_score ?? 0}/100</div>`;
+      const verifyLink = canVerify
+        ? `<a href="${checkHref}" target="_blank" rel="noreferrer" style="display:inline-block;margin-top:8px;background:#fff;border:1px solid #e7e5e4;border-radius:9999px;padding:4px 10px;font-size:11px;color:#1c1917;text-decoration:none;font-weight:600">${checkLabel}</a>`
+        : '';
+      // The score is always presented as "verification score" with evidence behind it.
+      const verificationLine = verified
+        ? `<div style="margin-top:6px;font-size:10.5px;color:#57534e">Verification score <b style="color:#1c1917">${p.verification_score ?? 0}/100</b> · ${esc(p.verification_status || '').toLowerCase().replace('_', ' ')} — <span id="ve-${p.id}" style="cursor:pointer;text-decoration:underline;color:#78716c">see evidence</span></div>`
+        : '';
       const detail = `<div style="width:250px;font-family:system-ui,-apple-system,sans-serif;color:#1c1917">
         <div style="background:${badge.bg};color:${badge.fg};font-weight:700;font-size:11px;border-radius:9999px;padding:5px 10px;display:inline-block">${esc(badge.label)}</div>
         <div style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:11px;color:#57534e">
@@ -254,6 +294,7 @@ export default function MarketScanPage() {
           </span>
           <b style="color:#1c1917">${confLabel}</b> · ${confPct}% — ${esc(confNote)}
         </div>
+        ${verificationLine}
         ${verifyLink}
         ${sampleBanner}
         <div style="margin-top:12px;font-size:15px;font-weight:800;line-height:1.25">${esc(p.business_name)}</div>
@@ -270,6 +311,8 @@ export default function MarketScanPage() {
       m.on('popupopen', () => {
         const bw = document.getElementById(`bw-${p.id}`);
         if (bw) bw.onclick = () => { map.closePopup(); openBuild(p); };
+        const ve = document.getElementById(`ve-${p.id}`);
+        if (ve) ve.onclick = () => { map.closePopup(); viewEvidence(p); };
         const gen = document.getElementById(`gen-${p.id}`);
         if (gen) gen.onclick = () => generateOpportunity(p);
         const cp = document.getElementById(`cp-${p.id}`);
@@ -397,8 +440,15 @@ export default function MarketScanPage() {
 
   const viewEvidence = async (p: ProspectRow) => {
     setEvidenceFor({ id: p.id, name: p.business_name });
-    const d = await api<{ evidence: Evidence[] }>(`/scans/prospects/${p.id}/evidence`).catch(() => ({ evidence: [] }));
-    setEvidence(d.evidence);
+    setEvidenceBundle(null);
+    const d = await api<EvidenceBundle>(`/scans/prospects/${p.id}/evidence`).catch(() => null);
+    setEvidenceBundle(d);
+  };
+  const refreshVerification = async () => {
+    if (!evidenceFor) return;
+    await api(`/scans/prospects/${evidenceFor.id}/reverify`, { method: 'POST' }).catch(() => null);
+    const d = await api<EvidenceBundle>(`/scans/prospects/${evidenceFor.id}/evidence`).catch(() => null);
+    setEvidenceBundle(d);
   };
 
   const generateOpportunity = async (p: ProspectRow) => {
@@ -496,15 +546,16 @@ export default function MarketScanPage() {
             </div>
           )}
 
-          {/* Legend, bottom left */}
+          {/* Legend, bottom left — REV2 five-state verification legend */}
           <div className="absolute bottom-20 left-3 z-[1000] rounded-lg bg-background/95 shadow-lg px-3 py-2 text-xs space-y-1">
-            <div className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-full ring-2 ring-white/70" style={{ background: '#dc2626' }} /> No website</div>
-            <div className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-full ring-2 ring-white/70" style={{ background: '#d97706' }} /> Weak / social only</div>
-            <div className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-full ring-2 ring-white/70" style={{ background: '#16a34a' }} /> Has a website</div>
+            <div className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-full ring-2 ring-white/70" style={{ background: '#dc2626' }} /> Verified · no website</div>
+            <div className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-full ring-2 ring-white/70" style={{ background: '#d97706' }} /> Verified · social-only / weak</div>
+            <div className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-full ring-2 ring-white/70" style={{ background: '#16a34a' }} /> Verified · has a website</div>
+            <div className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-full ring-2 ring-white/70" style={{ background: '#9ca3af' }} /> Pending verification</div>
             <div className="text-muted-foreground pt-1 mt-1 border-t border-border/60">
               {nearbyLoading
                 ? <span className="flex items-center gap-1 text-primary"><Navigation className="h-3 w-3 animate-pulse" /> Scanning dropped pin…</span>
-                : 'Click anywhere = scan a 3 km radius · marker labels = business names'}
+                : 'Rejected & demo records never appear on the map'}
             </div>
           </div>
 
@@ -635,10 +686,13 @@ export default function MarketScanPage() {
           <CardHeader><CardTitle className="flex items-center gap-2">Results — {scan.query?.industry} in {scan.query?.city || scan.query?.region || scan.query?.province}
             {scan.coverage?.sources_completed?.includes('google-places')
               ? <Badge className="ml-1">● LIVE · Google Places</Badge>
-              : <Badge variant="secondary" className="ml-1">fixture dataset (dev data)</Badge>}
+              : (scan.coverage?.sources_completed || []).some((s: string) => /live|osm|odbus/i.test(s))
+                ? <Badge className="ml-1">● LIVE · open data</Badge>
+                : <Badge variant="secondary" className="ml-1">no live source returned data</Badge>}
+            {(scan.coverage?.demo_records || 0) > 0 && <Badge variant="destructive" className="ml-1">{scan.coverage.demo_records} demo</Badge>}
           </CardTitle>
             <CardDescription>
-              {scan.coverage?.unique_businesses} unique businesses · {scan.coverage?.duplicates_removed} duplicates removed · {scan.coverage?.website_gap_candidates} gap candidates · {scan.coverage?.geography_units_completed}/{scan.coverage?.geography_units_planned} areas covered
+              {scan.coverage?.unique_businesses} unique businesses · {scan.coverage?.verified_businesses ?? 0} verified · {scan.coverage?.duplicates_removed} duplicates removed · {scan.coverage?.website_gap_candidates} gap candidates · {scan.coverage?.geography_units_completed}/{scan.coverage?.geography_units_planned} areas covered
               {scan.coverage?.source_errors && Object.keys(scan.coverage.source_errors).length > 0 && (
                 <span className="block text-amber-600 dark:text-amber-400 mt-1">
                   Source errors: {Object.entries(scan.coverage.source_errors).map(([id, msg]) => `${id}: ${String(msg).slice(0, 120)}`).join(' · ')}
@@ -650,7 +704,7 @@ export default function MarketScanPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Business</TableHead><TableHead>City/Prov</TableHead><TableHead>Gap signal</TableHead>
-                  <TableHead>Score</TableHead><TableHead>Why attractive</TableHead><TableHead>Recommended offer</TableHead><TableHead>Actions</TableHead>
+                  <TableHead>Verification</TableHead><TableHead>Score</TableHead><TableHead>Why attractive</TableHead><TableHead>Recommended offer</TableHead><TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -660,6 +714,15 @@ export default function MarketScanPage() {
                     <TableCell>{p.city}, {p.province_state}</TableCell>
                     <TableCell><Badge variant={GAP_VARIANT[p.website_gap_signal] || 'outline'}>{GAP_LABEL[p.website_gap_signal] || p.website_gap_signal}</Badge>
                       <div className="text-xs text-muted-foreground mt-1">{Math.round(p.website_confidence * 100)}% confident · {p.crm_stage.replaceAll('_', ' ')}</div></TableCell>
+                    <TableCell>
+                      {p.is_demo
+                        ? <><Badge variant="destructive">DEMO</Badge><div className="text-xs text-muted-foreground mt-1">generated — not verified to exist</div></>
+                        : VERIFICATION_LIVE_STATES.includes(p.verification_status || '')
+                          ? <><Badge variant="secondary">verified</Badge><div className="text-xs text-muted-foreground mt-1">score {p.verification_score ?? 0}/100</div></>
+                          : p.verification_status === 'REJECTED'
+                            ? <><Badge variant="destructive">rejected</Badge><div className="text-xs text-muted-foreground mt-1">insufficient evidence</div></>
+                            : <><Badge variant="outline">pending</Badge><div className="text-xs text-muted-foreground mt-1">score {p.verification_score ?? 0}/100</div></>}
+                    </TableCell>
                     <TableCell><span className="font-bold">{Math.round(p.lead_score)}</span><Badge variant={p.priority === 'HIGH' ? 'default' : 'secondary'} className="ml-1">{p.priority}</Badge></TableCell>
                     <TableCell className="max-w-56"><span className="text-xs line-clamp-3">{p.score_explanation}</span></TableCell>
                     <TableCell className="max-w-40 text-xs">{p.recommended_offer}</TableCell>
@@ -675,7 +738,7 @@ export default function MarketScanPage() {
                     </TableCell>
                   </TableRow>
                 ))}
-                {!results.length && <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">No results match this scan.</TableCell></TableRow>}
+                {!results.length && <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">No verified businesses found for this scan — no fallback or generated data was used. Try a broader query or re-scan when live sources recover.</TableCell></TableRow>}
               </TableBody>
             </Table>
           </CardContent>
@@ -718,15 +781,60 @@ export default function MarketScanPage() {
             <DialogTitle>Evidence — {evidenceFor?.name}</DialogTitle>
             <DialogDescription>Where did this information come from? Every material field retains provenance and retrieval time.</DialogDescription>
           </DialogHeader>
+          {evidenceBundle?.verification && (
+            <div className="rounded-lg border bg-muted/30 p-3 text-xs space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={VERIFICATION_LIVE_STATES.includes(evidenceBundle.verification.status) ? 'secondary' : 'outline'}>{evidenceBundle.verification.label}</Badge>
+                {evidenceBundle.verification.is_demo && <Badge variant="destructive">demo record — never a live marker</Badge>}
+                {!evidenceBundle.can_render_live && !evidenceBundle.verification.is_demo && <Badge variant="outline">hidden from live map</Badge>}
+              </div>
+              <div className="text-muted-foreground">
+                Verification score <b className="text-foreground">{evidenceBundle.verification.score}/100</b>
+                {evidenceBundle.verification.verified_at ? ` · verified ${new Date(evidenceBundle.verification.verified_at).toLocaleString()}` : ''}
+              </div>
+              {evidenceBundle.primary_source && (
+                <div className="text-muted-foreground space-y-0.5">
+                  <div>Primary source: <b className="text-foreground">{evidenceBundle.primary_source.provider || 'unknown'}</b>
+                    {evidenceBundle.primary_source.object_id ? ` · object ${evidenceBundle.primary_source.object_id}` : ''}</div>
+                  {evidenceBundle.primary_source.source_url && (
+                    <a href={evidenceBundle.primary_source.source_url} target="_blank" rel="noreferrer" className="inline-block text-primary underline underline-offset-2 break-all">
+                      Open the exact provider record ↗
+                    </a>
+                  )}
+                  {evidenceBundle.primary_source.retrieved_at && <div>retrieved {new Date(evidenceBundle.primary_source.retrieved_at).toLocaleString()}</div>}
+                  {evidenceBundle.coordinates && evidenceBundle.coordinates.lat != null && (
+                    <div>coordinates {Number(evidenceBundle.coordinates.lat).toFixed(5)}, {Number(evidenceBundle.coordinates.lng).toFixed(5)}</div>
+                  )}
+                </div>
+              )}
+              <Button size="sm" variant="outline" onClick={refreshVerification} className="mt-1"><RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Refresh verification</Button>
+            </div>
+          )}
+          {!!evidenceBundle?.website_checks?.length && (
+            <div className="space-y-1.5">
+              <div className="text-xs font-semibold text-muted-foreground">Website checks</div>
+              <ul className="space-y-1.5 max-h-40 overflow-y-auto">
+                {evidenceBundle.website_checks.map((w) => (
+                  <li key={w.id} className="border rounded-lg p-2.5 text-xs space-y-0.5">
+                    <div className="flex justify-between gap-2"><span className="break-all">{w.candidate_url || '(no candidate URL)'}</span>
+                      <span className="text-muted-foreground shrink-0">{w.checked_at ? new Date(w.checked_at).toLocaleString() : ''}</span></div>
+                    <div className="text-muted-foreground">{w.match_reason || 'check recorded'}{w.is_official ? ' · official site confirmed' : ''}</div>
+                    {w.metadata?.website_status && <div className="text-muted-foreground">status: {w.metadata.website_status}{w.metadata.unknown_when_insufficient ? ' — checks were insufficient, kept as UNKNOWN (never inferred)' : ''}</div>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <ul className="space-y-2 max-h-96 overflow-y-auto">
-            {evidence.map((e) => (
+            {(evidenceBundle?.evidence || []).map((e) => (
               <li key={e.id} className="border rounded-lg p-3 text-xs space-y-1">
                 <div className="flex justify-between"><span className="font-semibold">{e.field_name}</span><span className="text-muted-foreground">{e.source_type} · {e.source_provider}</span></div>
                 <div className="break-all">{e.value || '(empty)'}</div>
+                {e.source_url_or_identifier && <a href={e.source_url_or_identifier} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2 break-all">{e.source_url_or_identifier}</a>}
                 <div className="text-muted-foreground">confidence {e.confidence} · retrieved {new Date(e.retrieved_at).toLocaleString()}</div>
               </li>
             ))}
-            {!evidence.length && <p className="text-sm text-muted-foreground">No evidence records.</p>}
+            {!evidenceBundle?.evidence?.length && <p className="text-sm text-muted-foreground">No evidence records.</p>}
           </ul>
         </DialogContent>
       </Dialog>

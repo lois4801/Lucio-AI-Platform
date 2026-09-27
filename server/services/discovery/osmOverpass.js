@@ -241,6 +241,7 @@ export function parseOverpassElements(elements, industry, maxResults = 50) {
       lng,
       source: 'osm-overpass',
       source_record_id: `${el.type}/${el.id}`,
+      source_url: `https://www.openstreetmap.org/${el.type}/${el.id}`,
       retrieved_at: new Date(nowFn()).toISOString(),
     });
     if (out.length >= maxResults) break;
@@ -256,6 +257,7 @@ export const osmOverpassProvider = {
   kind: 'place-directory',
   label: 'OpenStreetMap Overpass (live, keyless)',
   is_live: true,
+  policy: () => ({ automatedAccessAllowed: true, commercialReuseAllowed: true, attributionRequired: true, licence: 'ODbL — © OpenStreetMap contributors', rateLimit: 'per-scan HTTP budget (default 8 queries)' }),
   geographyUnits(region) { return geoUnits()[region] || []; },
   async search({ industry, city, maxResults = 50, _osmBudget }) {
     if (!industry || !city) return [];

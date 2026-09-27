@@ -15,6 +15,15 @@ import {
   setOsmCityResolver, setOsmGeoUnits,
 } from './osmOverpass.js';
 import { extractWebsiteIntel, applyIntelToBiz, intelEvidence } from './websiteIntel.js';
+import {
+  computeVerification, canRenderAsLiveMarker, demoMarketDataAllowed,
+  LIVE_MARKER_STATES,
+} from './verification.js';
+import { statcanOdbusProvider } from './odbBus.js';
+
+// Re-exported for routes/UI: the live-marker gate is the single authority on
+// whether a record may render as a live map marker.
+export { canRenderAsLiveMarker, demoMarketDataAllowed };
 
 // Keyless live coverage: city coordinates + region→cities for the OSM provider.
 setOsmCityResolver(() => CITY_COORDS);
@@ -45,10 +54,13 @@ export function normalizeRequest(q) {
     minScore: Math.max(0, Math.min(100, Number(q.minScore) || 0)),
     maxResults: Math.max(1, Math.min(200, Number(q.maxResults) || 50)),
     // Default: OSM Overpass first (live, keyless, always on when enabled),
-    // LIVE Google Places next when its key is set, fixture directory last.
-    // getProviders filters out unconfigured providers, so the fallback list
-    // degrades cleanly.
-    sources: Array.isArray(q.sources) && q.sources.length ? q.sources : ['osm-overpass', 'google-places', 'fixture-directory'],
+    // LIVE Google Places next when its key is set, StatsCan ODBus open-data
+    // adapter next when its CSV cache/URL is configured. getProviders filters
+    // out unconfigured providers, so the list degrades cleanly. Demo/fixture
+    // sources NEVER enter by default (REV2: fail closed, no synthetic data
+    // presented as live) — they require ALLOW_DEMO_MARKET_DATA=true AND an
+    // explicit sources entry.
+    sources: Array.isArray(q.sources) && q.sources.length ? q.sources : ['osm-overpass', 'google-places', 'statcan-odbus'],
     // Per-scan HTTP budget for the keyless OSM provider (cached cities don't
     // consume it). Keeps whole-province scans polite on public instances.
     osmBudget: Math.max(0, Math.min(20, Number(q.osmBudget ?? osmDefaultBudget()))),
@@ -57,9 +69,16 @@ export function normalizeRequest(q) {
 }
 
 export function providerMeta() {
+  const withPolicy = (p, configured) => ({
+    id: p.id, label: p.label, is_live: Boolean(p.is_live), configured,
+    policy: typeof p.policy === 'function' ? p.policy() : undefined,
+  });
   return [
-    { id: 'osm-overpass', label: osmOverpassProvider.label, is_live: true, configured: isOsmLiveEnabled() },
-    ...listProviderMeta(),
+    withPolicy(osmOverpassProvider, isOsmLiveEnabled()),
+    ...listProviderMeta().map((m) => {
+      const adapter = m.id === 'statcan-odbus' ? statcanOdbusProvider : null;
+      return adapter ? withPolicy(adapter, m.configured) : m;
+    }),
   ];
 }
 
@@ -119,7 +138,7 @@ export function dedupeCandidates(candidates) {
       duplicatesRemoved++;
       // Preserve all sources as corroborating evidence; fill missing fields only
       match.sources.push(c.source);
-      match.source_record_ids.push(c.candidate_id);
+      if (c.source_record_id) match.source_record_ids.push(c.source_record_id);
       for (const k of ['public_phone', 'public_email', 'website_url', 'address', 'postal_code', 'opening_hours', 'public_description', 'review_signals']) {
         if (!match[k] && c[k]) match[k] = c[k];
       }
@@ -128,7 +147,10 @@ export function dedupeCandidates(candidates) {
       }
       match.corroboration = (match.corroboration || 1) + 1;
     } else {
-      merged.push({ ...c, sources: [c.source], source_record_ids: [c.candidate_id], corroboration: 1 });
+      // source_record_ids carries the PROVIDER's stable object id (OSM node/way,
+      // Places place_id) — never our scan-local candidate UUID, which would
+      // fake the +40 stable-source evidence point for unverifiable records.
+      merged.push({ ...c, sources: [c.source], source_record_ids: c.source_record_id ? [c.source_record_id] : [], corroboration: 1 });
     }
   }
   return { merged, duplicatesRemoved };
@@ -311,7 +333,7 @@ export function scoreOpportunity(biz, resolution, serviceNeeded) {
 // ---------------------------------------------------------------------------
 // CRM upsert (§17.13.8) — idempotent, dedupe by normalized name+city or phone.
 
-export function upsertProspect(orgId, scanId, biz, resolution, scoring) {
+export function upsertProspect(orgId, scanId, biz, resolution, scoring, verification) {
   const normName = normalizeName(biz.business_name);
   const phone = normalizePhone(biz.public_phone);
   const existing = db.prepare(`SELECT * FROM prospects WHERE org_id = ? AND suppression_status = 'NONE'`).all(orgId)
@@ -340,6 +362,12 @@ export function upsertProspect(orgId, scanId, biz, resolution, scoring) {
     crm_stage: 'DISCOVERED', last_verified_at: resolution.last_verified_at,
     lat: biz.lat ?? null, lng: biz.lng ?? null,
     source: biz.source || '',
+    source_url: biz.source_url || '',
+    // REV2 evidence-first verification state
+    verification_status: verification?.finalStatus || verification?.status || 'DISCOVERED',
+    verification_score: verification?.score ?? 0,
+    verified_at: verification ? new Date().toISOString() : null,
+    is_demo: biz.is_demo ? 1 : 0,
   };
 
   let prospectId;
@@ -361,6 +389,13 @@ export function upsertProspect(orgId, scanId, biz, resolution, scoring) {
     mkEvidence('business_name', biz.business_name, 'directory', biz.sources.join(','), 'normalized provider record', 0.85, biz.corroboration),
     mkEvidence('public_phone', biz.public_phone, 'directory', biz.sources.join(','), 'normalized provider record', 0.85, biz.corroboration),
     mkEvidence('address', biz.address, 'directory', biz.sources.join(','), 'normalized provider record', 0.8, biz.corroboration),
+    {
+      field_name: 'source_record', value: [...(biz.source_record_ids || []), biz.source_record_id].filter(Boolean).join(','),
+      source_type: 'directory', source_provider: biz.sources.join(','),
+      source_url_or_identifier: biz.source_url || '',
+      note: 'stable provider object ID — open the source record to verify this business yourself',
+      confidence: 0.9, corroboration_count: biz.corroboration,
+    },
   ]) {
     insertEvidence(orgId, prospectId, scanId, ev);
   }
@@ -390,6 +425,27 @@ export function insertEvidence(orgId, prospectId, scanId, ev) {
       ev.source_url_or_identifier || '', ev.extraction_method || 'provider-record', ev.confidence ?? 0.8, ev.corroboration_count ?? 1, hash);
 }
 
+// Website-check log (REV2): which checks ran, what they observed, and when.
+// A missing/blocked/inconclusive check stays UNKNOWN — the gap engine never
+// infers "no website" from an absent tag.
+export function recordWebsiteCheck(orgId, prospectId, scanId, biz, resolution, verificationStatus) {
+  if (!LIVE_MARKER_STATES.includes(verificationStatus) && verificationStatus !== 'NEEDS_VERIFICATION' && verificationStatus !== 'VERIFIED') return;
+  const liveChecks = (resolution.evidence || []).filter((e) => e.source_type === 'live-check');
+  db.prepare(`INSERT INTO website_checks (id, org_id, prospect_id, scan_id, candidate_url, status_code, is_official, match_reason, checked_at, metadata_json)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .run(crypto.randomUUID(), orgId, prospectId, scanId,
+      biz.website_url || '', null,
+      resolution.website_status === 'CONFIRMED_WEBSITE' ? 1 : 0,
+      String(resolution.resolution_note || '').slice(0, 500),
+      resolution.last_verified_at || new Date().toISOString(),
+      JSON.stringify({
+        website_status: resolution.website_status,
+        checks_ran: liveChecks.map((e) => e.field_name),
+        live_check_count: liveChecks.length,
+        unknown_when_insufficient: resolution.website_status === 'UNKNOWN',
+      }));
+}
+
 // ---------------------------------------------------------------------------
 // Scan orchestration (§17.13.3–§17.13.4, §17.13.17)
 
@@ -403,9 +459,11 @@ export async function runMarketScan(orgId, user, rawQuery, ip = '', hooks = {}) 
   if (req.sources.includes('osm-overpass') && isOsmLiveEnabled() && !providers.some((p) => p.id === 'osm-overpass')) {
     providers.unshift(osmOverpassProvider);
   }
-  // The auto data engine backs every scan with generated coverage for all 172
-  // verticals, unless the caller explicitly narrowed the source list.
-  if (!providers.some((p) => p.id === 'auto-directory')) providers.push(autoDirectoryProvider);
+  // The auto data engine still backs every scan — but as DEMO DATA ONLY.
+  // REV2: generated businesses must never mix into live scan results. They
+  // enter only when demo market data is explicitly allowed, and every record
+  // they produce is flagged is_demo + blocked by canRenderAsLiveMarker.
+  if (demoMarketDataAllowed() && !providers.some((p) => p.id === 'auto-directory')) providers.push(autoDirectoryProvider);
   const startedAt = new Date().toISOString();
   db.prepare(`INSERT INTO market_scans (id, org_id, name, query_json, status, created_by, started_at) VALUES (?,?,?,?,'running',?,?)`)
     .run(scanId, orgId, rawQuery.name || `${req.industry || 'Businesses'} — ${req.city || req.region || req.province || 'Canada'}`, JSON.stringify(req), user.id, startedAt);
@@ -488,6 +546,16 @@ export async function runMarketScan(orgId, user, rawQuery, ip = '', hooks = {}) 
     coverage.duplicates_removed = duplicatesRemoved;
     coverage.unique_businesses = merged.length;
 
+    // Corroboration across PROVIDERS (never name alone): count distinct
+    // permitted sources backing each normalized name+city pair. This feeds the
+    // +15 independent-corroboration evidence point in verification scoring.
+    const providerCorroboration = new Map();
+    for (const c of candidates) {
+      const k = `${normalizeName(c.business_name)}|${normalizeName(c.city)}`;
+      if (!providerCorroboration.has(k)) providerCorroboration.set(k, new Set());
+      providerCorroboration.get(k).add(c.source);
+    }
+
     let gapCandidates = 0;
     const results = [];
     const toVerify = merged.slice(0, req.maxResults);
@@ -505,18 +573,34 @@ export async function runMarketScan(orgId, user, rawQuery, ip = '', hooks = {}) 
       applyIntelToBiz(biz, resolution.intel); // first-party facts fill directory gaps
       const scoring = scoreOpportunity(biz, resolution, req.serviceNeeded);
       if (resolution.website_gap_signal !== 'GAP_NONE') gapCandidates++;
-      const { prospectId, created, updated } = upsertProspect(orgId, scanId, biz, resolution, scoring);
+      // Evidence-first verification (REV2): deterministic score + state.
+      // VERIFIED advances to WEBSITE_GAP_CHECKED once the gap engine ran.
+      const corKey = `${normalizeName(biz.business_name)}|${normalizeName(biz.city)}`;
+      const distinctProviders = providerCorroboration.get(corKey)?.size || biz.corroboration || 1;
+      const verification = computeVerification(biz, { corroborationCount: Math.max(biz.corroboration || 1, distinctProviders) });
+      const finalStatus = verification.status === 'VERIFIED' ? 'WEBSITE_GAP_CHECKED' : verification.status;
+      verification.finalStatus = finalStatus;
+      const { prospectId, created, updated } = upsertProspect(orgId, scanId, biz, resolution, scoring, verification);
       try { enrichProspect(orgId, prospectId); } catch { /* enrichment is best-effort */ }
+      recordWebsiteCheck(orgId, prospectId, scanId, biz, resolution, finalStatus);
       results.push({
         prospect_id: prospectId, business_name: biz.business_name, city: biz.city, province_state: biz.province_state,
         industry: biz.industry, website_status: resolution.website_status, website_gap_signal: resolution.website_gap_signal,
         website_confidence: resolution.website_confidence, lead_score: scoring.lead_score, priority: scoring.priority,
         score_explanation: scoring.score_explanation, recommended_offer: scoring.recommended_offer,
         public_phone: biz.public_phone, crm_stage: 'DISCOVERED', created, updated,
+        verification_status: finalStatus, verification_score: verification.score,
+        verification_label: verification.label, is_demo: biz.is_demo ? 1 : 0,
+        can_render_live: canRenderAsLiveMarker({ ...biz, verification_status: finalStatus }),
       });
       setLive(scanId, { processed: i + 1, gapCandidates, lastEvent: `Scoring ${i + 1}/${toVerify.length} — ${biz.business_name}` });
     }
     coverage.website_gap_candidates = gapCandidates;
+    // Fail closed, honestly: zero renderable results is the correct answer —
+    // never synthesize fallback businesses.
+    if (!results.length) coverage.coverage_notes += ' No verified businesses found for this query. No fallback or generated data was used.';
+    coverage.verified_businesses = results.filter((r) => LIVE_MARKER_STATES.includes(r.verification_status)).length;
+    coverage.demo_records = results.filter((r) => r.is_demo).length;
 
     // Auto data engine: lazy-build the market snapshot + content pack for this
     // vertical/region, attach them to the scan result, and auto-draft outreach
@@ -563,16 +647,16 @@ export async function runNearbyScan(orgId, user, { lat, lng, industry = '', maxR
       source = 'osm-overpass (live)';
       note = 'Live OpenStreetMap businesses within 3 km of the dropped pin (keyless, open data © OSM contributors).';
     } catch (e) {
-      const city = nearestCity(lat, lng);
-      candidates = await fixtureDirectoryProvider.search({ industry, city, maxResults });
-      source = 'fixture-directory (dev data)';
-      note = `OpenStreetMap live query failed (${String(e.message || e).slice(0, 140)}) — showing fixture businesses for the nearest city center (${city}). Coordinates are approximate.`;
+      // Fail closed (REV2): no synthetic fallback — an honest zero-result beat
+      // a generated "Furry Pet Resort" any day.
+      candidates = [];
+      source = '';
+      note = `Live OpenStreetMap query failed (${String(e.message || e).slice(0, 140)}) — no verified businesses found for this pin. Please try again shortly.`;
     }
   } else {
-    const city = nearestCity(lat, lng);
-    candidates = await fixtureDirectoryProvider.search({ industry, city, maxResults });
-    source = 'fixture-directory (dev data)';
-    note = `Live providers not configured — showing fixture businesses for the nearest city center (${city}). Coordinates are approximate.`;
+    candidates = [];
+    source = '';
+    note = 'No live providers available (Google Places key not set, OSM live disabled) — no verified businesses found. Configure a source and retry; no generated fallback data is shown.';
   }
   for (const c of candidates) { if (!c.industry) c.industry = industry; }
 
@@ -590,7 +674,11 @@ export async function runNearbyScan(orgId, user, { lat, lng, industry = '', maxR
     const resolution = nearbyResolutions[i];
     applyIntelToBiz(biz, resolution.intel);
     const scoring = scoreOpportunity(biz, resolution, 'website');
-    const { prospectId } = upsertProspect(orgId, scanId, biz, resolution, scoring);
+    const verification = computeVerification(biz);
+    const finalStatus = verification.status === 'VERIFIED' ? 'WEBSITE_GAP_CHECKED' : verification.status;
+    verification.finalStatus = finalStatus;
+    const { prospectId } = upsertProspect(orgId, scanId, biz, resolution, scoring, verification);
+    recordWebsiteCheck(orgId, prospectId, scanId, biz, resolution, finalStatus);
     results.push({
       id: prospectId, prospect_id: prospectId, business_name: biz.business_name, city: biz.city,
       province_state: biz.province_state, industry: biz.industry, website_status: resolution.website_status,
@@ -599,6 +687,9 @@ export async function runNearbyScan(orgId, user, { lat, lng, industry = '', maxR
       recommended_offer: scoring.recommended_offer, public_phone: biz.public_phone,
       crm_stage: 'DISCOVERED', suppression_status: 'NONE', lat: biz.lat ?? null, lng: biz.lng ?? null,
       address: biz.address || '', social_profiles: biz.social_profiles || [],
+      verification_status: finalStatus, verification_score: verification.score,
+      verification_label: verification.label, is_demo: biz.is_demo ? 1 : 0,
+      can_render_live: canRenderAsLiveMarker({ ...biz, verification_status: finalStatus }),
     });
   }
   const coverage = {
@@ -621,7 +712,7 @@ export function listScans(orgId) {
 export function getScan(orgId, scanId) {
   const s = db.prepare(`SELECT * FROM market_scans WHERE id = ? AND org_id = ?`).get(scanId, orgId);
   if (!s) return null;
-  const prospects = db.prepare(`SELECT id, business_name, city, province_state, industry, website_status, website_gap_signal, website_confidence, lead_score, priority, score_explanation, recommended_offer, public_phone, crm_stage, suppression_status, lat, lng, address, social_profiles, source, created_at FROM prospects WHERE scan_id = ? ORDER BY lead_score DESC`).all(scanId);
+  const prospects = db.prepare(`SELECT id, business_name, city, province_state, industry, website_status, website_gap_signal, website_confidence, lead_score, priority, score_explanation, recommended_offer, public_phone, crm_stage, suppression_status, lat, lng, address, social_profiles, source, source_url, verification_status, verification_score, verified_at, is_demo, created_at FROM prospects WHERE scan_id = ? ORDER BY lead_score DESC`).all(scanId);
   return { ...s, query: safeParse(s.query_json), coverage: safeParse(s.coverage_json), prospects };
 }
 
@@ -653,6 +744,7 @@ function deleteScanArtifacts(orgId, scanId) {
   const prospectIds = db.prepare(`SELECT id FROM prospects WHERE scan_id = ? AND org_id = ?`).all(scanId, orgId).map((r) => r.id);
   const inList = prospectIds.length ? `(${prospectIds.map(() => '?').join(',')})` : null;
   const evidence = db.prepare(`DELETE FROM evidence_records WHERE scan_id = ? AND org_id = ?`).run(scanId, orgId).changes;
+  const websiteChecks = db.prepare(`DELETE FROM website_checks WHERE scan_id = ? AND org_id = ?`).run(scanId, orgId).changes;
   let opportunities = 0, deals = 0, drafts = 0, commLog = 0, projectLinks = 0;
   if (inList) {
     opportunities = db.prepare(`DELETE FROM website_opportunities WHERE org_id = ? AND prospect_id IN ${inList}`).run(orgId, ...prospectIds).changes;
@@ -662,7 +754,7 @@ function deleteScanArtifacts(orgId, scanId) {
     projectLinks = db.prepare(`UPDATE builder_projects SET source_prospect_id = NULL WHERE org_id = ? AND source_prospect_id IN ${inList}`).run(orgId, ...prospectIds).changes;
   }
   const prospects = db.prepare(`DELETE FROM prospects WHERE scan_id = ? AND org_id = ?`).run(scanId, orgId).changes;
-  return { prospects, evidence, opportunities, deals, drafts, commLog, projectLinks };
+  return { prospects, evidence, websiteChecks, opportunities, deals, drafts, commLog, projectLinks };
 }
 
 function safeParse(s) { try { return JSON.parse(s); } catch { return {}; } }

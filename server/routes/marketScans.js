@@ -1,11 +1,16 @@
 import { Router } from 'express';
 import { db, audit } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { runMarketScan, runNearbyScan, listScans, getScan, getScanProgress, resolveWebsitePresence, providerMeta, deleteScan, deleteAllScans } from '../services/discovery/pipeline.js';
+import { runMarketScan, runNearbyScan, listScans, getScan, getScanProgress, resolveWebsitePresence, providerMeta, deleteScan, deleteAllScans, canRenderAsLiveMarker, demoMarketDataAllowed, recordWebsiteCheck } from '../services/discovery/pipeline.js';
+import { verificationLabel, minVerifiedScore, LIVE_MARKER_STATES } from '../services/discovery/verification.js';
 import { generateWebsiteOpportunity, createProjectFromOpportunity, listOpportunities } from '../services/opportunity.js';
 import { INDUSTRIES, REGIONS } from '../services/discovery/providers.js';
 import { AUTO_INDUSTRIES } from '../services/autoData.js';
 import { wideEvent } from '../services/telemetry.js';
+
+function safeParse(s, fallback = null) {
+  try { return s ? JSON.parse(s) : fallback; } catch { return fallback; }
+}
 
 export const marketScansRouter = Router();
 marketScansRouter.use(requireAuth);
@@ -104,6 +109,13 @@ marketScansRouter.get('/meta', (req, res) => {
     regions: REGIONS, providers: providerMeta(),
     // Street-view embed key for map popups (empty string = feature gated off).
     mapsEmbedKey: String(process.env.GOOGLE_MAPS_EMBED_KEY || ''),
+    // REV2 gates: demo data is fail-closed by default; live markers require
+    // verification. The UI legend/marker rendering must respect these.
+    gates: {
+      demo_market_data_allowed: demoMarketDataAllowed(),
+      min_verified_score: minVerifiedScore(),
+      live_marker_states: LIVE_MARKER_STATES,
+    },
   });
 });
 
@@ -149,10 +161,13 @@ marketScansRouter.post('/prospects/:id/reverify', requireRole('member'), async (
     const merged = [...new Set([...JSON.parse(p.social_profiles || '[]'), ...resolution.intel.socials])];
     db.prepare(`UPDATE prospects SET social_profiles = ? WHERE id = ?`).run(JSON.stringify(merged), p.id);
   }
-  db.prepare(`UPDATE prospects SET website_status=?, website_gap_signal=?, website_confidence=?, website_last_verified_at=?, last_verified_at=?, lead_score=?, score_factors=?, score_explanation=?, priority=?, lead_reason=?, recommended_offer=? WHERE id=?`)
+  db.prepare(`UPDATE prospects SET website_status=?, website_gap_signal=?, website_confidence=?, website_last_verified_at=?, last_verified_at=?, lead_score=?, score_factors=?, score_explanation=?, priority=?, lead_reason=?, recommended_offer=?, verified_at=? WHERE id=?`)
     .run(resolution.website_status, resolution.website_gap_signal, resolution.website_confidence, resolution.last_verified_at,
       resolution.last_verified_at, scoring.lead_score, JSON.stringify(scoring.score_factors), scoring.score_explanation,
-      scoring.priority, resolution.resolution_note, scoring.recommended_offer, p.id);
+      scoring.priority, resolution.resolution_note, scoring.recommended_offer, new Date().toISOString(), p.id);
+  // Log this reverify into the website-check trail (REV2) — an UNKNOWN stays
+  // UNKNOWN; the check row records exactly what ran.
+  recordWebsiteCheck(req.user.orgId, p.id, p.scan_id, { website_url: p.website_url }, resolution, p.verification_status || 'VERIFIED');
   for (const ev of resolution.evidence) {
     (await import('../services/discovery/pipeline.js')).insertEvidence(req.user.orgId, p.id, p.scan_id, ev);
   }
@@ -219,11 +234,35 @@ marketScansRouter.post('/prospects/:id/suppress', requireRole('member'), (req, r
   res.json({ ok: true });
 });
 
-// Evidence inspector (§17.13.15)
+// Evidence inspector (§17.13.15) — REV2: anchors to the exact provider object.
+// "Check it myself" reproduces the source URL, the verification state, the
+// evidence score with its factors, and the website-check log.
 marketScansRouter.get('/prospects/:id/evidence', (req, res) => {
-  const p = db.prepare(`SELECT id FROM prospects WHERE id = ? AND org_id = ?`).get(req.params.id, req.user.orgId);
+  const p = db.prepare(`SELECT * FROM prospects WHERE id = ? AND org_id = ?`).get(req.params.id, req.user.orgId);
   if (!p) return res.status(404).json({ error: 'prospect not found' });
-  res.json({ evidence: db.prepare(`SELECT * FROM evidence_records WHERE prospect_id = ? ORDER BY retrieved_at DESC`).all(p.id) });
+  const evidence = db.prepare(`SELECT * FROM evidence_records WHERE prospect_id = ? ORDER BY retrieved_at DESC`).all(p.id);
+  const websiteChecks = db.prepare(`SELECT * FROM website_checks WHERE prospect_id = ? ORDER BY checked_at DESC`).all(p.id)
+    .map((w) => ({ ...w, metadata: safeParse(w.metadata_json) }));
+  const sourceRecord = evidence.find((e) => e.field_name === 'source_record');
+  res.json({
+    evidence,
+    website_checks: websiteChecks,
+    verification: {
+      status: p.verification_status || 'DISCOVERED',
+      score: p.verification_score ?? 0,
+      verified_at: p.verified_at || null,
+      is_demo: Boolean(p.is_demo),
+      label: verificationLabel(p.verification_status || 'DISCOVERED', p.verification_score ?? 0),
+    },
+    primary_source: {
+      provider: p.source || '',
+      object_id: sourceRecord?.value || '',
+      source_url: p.source_url || sourceRecord?.source_url_or_identifier || '',
+      retrieved_at: evidence.find((e) => e.field_name === 'business_name')?.retrieved_at || null,
+    },
+    coordinates: { lat: p.lat, lng: p.lng },
+    can_render_live: canRenderAsLiveMarker({ ...p, source_record_id: p.source_record_id || sourceRecord?.value || '' }),
+  });
 });
 
 // Website opportunity (§17.13.9–13)

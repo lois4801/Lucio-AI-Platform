@@ -735,9 +735,11 @@ export function composeAutoBusiness(region, city, entry, k) {
 // industries out of the box (live Google Places still leads when keyed).
 export const autoDirectoryProvider = {
   id: 'auto-directory',
-  kind: 'place-directory',
-  label: 'Auto Data Engine (generated)',
+  kind: 'generated-demo',
+  label: 'Auto Data Engine (generated demo data)',
   is_live: false,
+  // REV2: generated businesses are demo data, never live directory records.
+  policy: () => ({ automatedAccessAllowed: true, commercialReuseAllowed: true, attributionRequired: false, licence: 'internal-generated', demoData: true }),
   geographyUnits(region) { return GEO_UNITS[region] ? GEO_UNITS[region] : []; },
   async search({ industry, city, province_state, maxResults = 50 }) {
     const norm = (s) => String(s || '').toLowerCase().trim();
@@ -784,7 +786,8 @@ function normalizeAuto(b) {
     lat: b.lat,
     lng: b.lng,
     auto_profile: { services: b.services, price_band: b.price_band, price_range: b.price_range, peak_months: b.peak_months },
-    source: 'auto-directory',
+    is_demo: true,
+    source: 'auto-directory (generated demo)',
     source_record_id: '',
     retrieved_at: new Date().toISOString(),
   };

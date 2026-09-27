@@ -43,7 +43,7 @@ console.log('== Configuration gating ==');
   delete process.env.GOOGLE_PLACES_API_KEY;
   ok(!isGooglePlacesConfigured(), 'unconfigured when GOOGLE_PLACES_API_KEY is absent');
   const ids = getProviders().map((p) => p.id);
-  ok(!ids.includes('google-places') && ids.includes('fixture-directory'), 'unconfigured: provider registry excludes google-places, keeps fixture fallback');
+  ok(!ids.includes('google-places') && !ids.includes('fixture-directory'), 'unconfigured: default registry is fail-closed — no live claim, no silent demo fallback');
   process.env.GOOGLE_PLACES_API_KEY = 'test-key-stub';
   ok(isGooglePlacesConfigured(), 'configured when key present (secret reference via env only)');
   const ids2 = getProviders().map((p) => p.id);
@@ -123,24 +123,30 @@ console.log('== Full pipeline: live scan with stubbed HTTP ==');
   ok(noWeb && noWeb.lead_score >= 45, `gap prospect scores as a real opportunity (${noWeb?.lead_score})`);
 }
 
-console.log('== Resilience: failing live provider degrades to labeled fixture ==');
+console.log('== Resilience: no silent demo fallback (REV2 fail-closed) ==');
 {
   delete process.env.GOOGLE_PLACES_API_KEY; // provider now unconfigured -> excluded
   const user = { id: 'user-gp-2', orgId: 'org-gp-2' };
   db.prepare(`INSERT INTO organizations (id, name) VALUES ('org-gp-2','GP Test 2') ON CONFLICT(id) DO NOTHING`).run();
-  const req = normalizeRequest({ industry: 'Plumbing', city: 'Halifax' }); // default sources incl. google-places
+  const req = normalizeRequest({ industry: 'Plumbing', city: 'Halifax' }); // default live sources only
   const providers = getProviders(req.sources);
-  ok(providers.length === 1 && providers[0].id === 'fixture-directory', 'unconfigured live provider filtered out of default scan');
+  ok(providers.length === 0, 'unconfigured live providers filtered out of default scan — no demo backstop');
   const result = await runMarketScan(user.orgId, user, { industry: 'Plumbing', city: 'Halifax' });
-  ok(result.coverage.sources_completed.includes('fixture-directory'), 'fixture fallback serves the scan');
+  ok(!result.coverage.sources_completed.includes('fixture-directory'), 'zero-result scan NEVER silently substitutes demo data');
   ok(!result.coverage.sources_completed.includes('google-places'), 'no silent claim of live data when unconfigured');
-  ok(result.coverage.unique_businesses > 0, `fixture scan still returns results (${result.coverage.unique_businesses})`);
+  ok(result.coverage.unique_businesses === 0 && /No verified businesses found/.test(result.coverage.coverage_notes || ''), `fail-closed: honest zero-result note (${result.coverage.unique_businesses} businesses)`);
+  ok((result.coverage.demo_records || 0) === 0, 'no demo records generated');
+  // explicit demo source request still honored — but labeled demo
+  const rDemo = await runMarketScan(user.orgId, user, { industry: 'Plumbing', city: 'Halifax', sources: ['fixture-directory'] });
+  ok(rDemo.coverage.sources_completed.includes('fixture-directory') && rDemo.coverage.unique_businesses > 0, 'explicit demo source request still honored (labeled dev data)');
+  ok(rDemo.results.every((r) => r.is_demo), 'explicit demo-source results all carry the demo flag');
+  ok(rDemo.results.every((r) => !r.can_render_live), 'demo results are blocked from live map rendering');
   // direct provider failure is recorded, not fatal
   process.env.GOOGLE_PLACES_API_KEY = 'bad-key';
   globalThis.fetch = async () => ({ ok: false, status: 403, text: async () => JSON.stringify({ error: { message: 'API key not valid' } }) });
   const r2 = await runMarketScan(user.orgId, user, { industry: 'Plumbing', city: 'Halifax', sources: ['google-places', 'fixture-directory'] });
   ok(r2.coverage.source_errors && r2.coverage.source_errors['google-places']?.includes('403'), 'provider failure recorded in coverage.source_errors');
-  ok(r2.coverage.sources_completed.includes('fixture-directory') && r2.coverage.unique_businesses > 0, 'scan completes via fallback despite live-source failure');
+  ok(r2.coverage.sources_completed.includes('fixture-directory') && r2.coverage.unique_businesses > 0, 'explicit demo source completes the scan despite live-source failure');
   delete process.env.GOOGLE_PLACES_API_KEY;
 }
 
