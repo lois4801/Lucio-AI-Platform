@@ -79,6 +79,36 @@ builderRouter.get('/project/:projectId/preview', (req, res) => {
   res.send(site.content);
 });
 
+// Phase 9 — device preview chrome. One source: the frame embeds the SAME raw preview
+// route; the wrapper only sizes it (mobile 390 / tablet 768 / desktop 1280).
+const DEVICE_WIDTHS = { mobile: 390, tablet: 768, desktop: 1280 };
+builderRouter.get('/project/:projectId/device', (req, res) => {
+  if (!ownProject(req, res)) return;
+  const device = String(req.query.device || 'desktop');
+  const width = DEVICE_WIDTHS[device] || DEVICE_WIDTHS.desktop;
+  const previewUrl = `/api/builder/project/${req.params.projectId}/preview`;
+  const site = getLatestSite(req.params.projectId);
+  if (!site) return res.status(404).send('<h3>No build yet — build the site first.</h3>');
+  const tabs = Object.keys(DEVICE_WIDTHS).map((d) =>
+    `<a href="?device=${d}" style="padding:6px 14px;border-radius:8px;text-decoration:none;font-size:13px;${d === device ? 'background:#38bdf8;color:#0b0f19;font-weight:700' : 'color:#94a3b8'}">${d[0].toUpperCase() + d.slice(1)} · ${DEVICE_WIDTHS[d]}px</a>`).join('');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Device preview — ${device} ${width}px</title>
+<style>body{margin:0;background:#0b0f19;color:#e2e8f0;font-family:system-ui,sans-serif;display:flex;flex-direction:column;height:100vh}
+.bar{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid #1e293b}
+.bar .links{margin-left:auto;display:flex;gap:14px;font-size:13px}
+.bar a{color:#38bdf8;text-decoration:none}
+.stage{flex:1;display:grid;place-items:start center;padding:18px;overflow:auto}
+.frame{width:${width}px;max-width:100%;height:calc(100vh - 110px);border:1px solid #334155;border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.frame iframe{width:100%;height:100%;border:0}</style></head>
+<body>
+<div class="bar"><strong>Device preview</strong> <span style="color:#64748b;font-size:13px">same source — v${site.version}</span>
+<span>${tabs}</span>
+<span class="links"><a href="${previewUrl}" target="_blank">Raw HTML</a><a href="/api/builder/project/${req.params.projectId}/pdf">PDF-ready export</a></span></div>
+<div class="stage"><div class="frame"><iframe title="device-preview" src="${previewUrl}"></iframe></div></div>
+</body></html>`);
+});
+
 // §57 PDF-ready export: the same single-file view generated at build time, with any
 // remaining media references made absolute against this server so printing is lossless.
 // This is a print-perfect HTML artifact — the actual PDF binary is produced by the

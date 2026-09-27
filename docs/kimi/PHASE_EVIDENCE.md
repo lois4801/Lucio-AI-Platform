@@ -481,3 +481,56 @@ editable with locks, approvals, compare/restore and selective regeneration.
 - buildFromGoal previously dropped editor style/motion picks on full rebuild —
   preservation extended (styleId/activeStyleId/motionIntensity/motionProfile) with the
   shared reconcile helper.
+
+## Phase 9 — Preview / HTML / PDF / QA (manual v28 §13) — PASS
+
+Exit criterion met: desktop/tablet/mobile, HTML and PDF-ready previews share the same
+source; responsive, accessibility, factual, visual and performance QA pass.
+
+### What landed
+- `server/services/siteAudits.js` (new): four deterministic, explainable audit suites
+  over (plan, html), same contract style as designQA (named checks, points/max, detail
+  strings). Accessibility (lang, device-width viewport, exactly one h1, heading order
+  without skips, img alt coverage ≥95%, form-control labels with honeypot/hidden
+  excluded, landmark regions, empty-link scan, WCAG AA contrast from the plan's own
+  palette, reduced-motion kill switch — passes at ≥7/10). Factual (VERIFIED_FACT items
+  must trace to contentProvenance.verifiedFacts normalized, fabricated-superlative
+  scan, count-up stats must cite real pack counts, no placeholder prose — input
+  placeholder= attributes explicitly not counted, valid provenance classes). Visual
+  (no off-palette hex outside :root — the tailwind.config JS palette mirror is the
+  same palette so it passes, every img src resolves to a real on-disk media file or
+  data URI, palette vars defined AND consumed, no undefined/NaN/[object leakage, ≥4
+  sections, hero media in header, display font applied). Performance (document ≤350 KB,
+  inline CSS ≤60 KB, inline JS ≤40 KB, keyframes within the intensity tier's budget
+  MINIMAL 4 / BALANCED 8 / CINEMATIC 14 / IMMERSIVE 20, media weight from real file
+  sizes, DOM size, externals budget — JSON-LD @context identifiers like schema.org are
+  not network requests and are excluded). Pure functions; the only I/O is stat-ing
+  referenced media files.
+- QA artifact (produced on every build/change via auditWithExtras) gains `siteAudits`:
+  { accessibility, factual, visual, performance, overall, pass, summary } — editor
+  compare/restore QA deltas and the /qa route keep working unchanged.
+- Device preview route: `GET /project/:id/device?device=mobile|tablet|desktop` serves
+  a chrome page embedding the SAME raw `/preview` in a fixed frame (390/768/1280 px)
+  with device tabs and links to raw HTML + PDF-ready export. The raw preview and §57
+  PDF routes are byte-unchanged single sources; the route 404s before the first build.
+- BuilderPage: device switcher (Desktop 1280 / Tablet 768 / Mobile 390) resizes the
+  existing preview iframe + "Open full device lab" link; new "Site audits (Phase 9)"
+  card renders the four suites with failing checks expanded.
+
+### Verification
+- scripts/test-phase9.js — 36 assertions, all green: unit-level tamper honesty for all
+  four suites (each crafted defect fails exactly the right check), crafted-good html
+  passes, determinism (same input → identical output), HTTP: QA artifact carries all
+  four suites passing at 10/10 on a real build, device frames at all three widths
+  embedding the raw preview route, default/404 behavior, raw + PDF routes untouched,
+  audits re-run after an approved edit.
+- Full regression: sell(33) + google-places(38) + phase3(58) + phase4(39) + phase6(55)
+  + assistant(34) + phase7(134) + phase8(65) + phase9(36) = 492 assertions, 0 failures;
+  tsc clean; vite build clean.
+
+### Integration fixes applied while landing Phase 9
+- Factual "placeholder" scan originally matched input placeholder="..." attributes —
+  restricted to prose placeholders (lorem ipsum / coming soon / under construction).
+- Visual hex scan compared '#rrggbb' (with #) against captured 'rrggbb' — every palette
+  color looked stray; normalized. Performance externals scan now strips JSON-LD blocks
+  (schema.org is an identifier, not a request).

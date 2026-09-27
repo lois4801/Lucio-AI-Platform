@@ -183,3 +183,23 @@
   motion picks, locks) across full regeneration so restore + rebuild compose safely.
 - Consequence: owner edits survive AI regeneration, every change is auditable and
   reversible, and the single-section guarantee from Phase 7 extends to all edit kinds.
+
+## D16 — Phase 9 audits ride inside the QA artifact; device preview is a chrome, not a fork
+- Date: 2026-09-26
+- Decision: the four Phase 9 suites (accessibility/factual/visual/performance) do not
+  get a new table or endpoint — they ride inside the existing QA artifact as
+  `qa.siteAudits`, produced by the same `auditWithExtras` call on every build/change.
+  This keeps Phase 8 compare/restore QA deltas, the /qa route, and version history
+  working without schema changes, and guarantees audits can never drift from the
+  artifact they describe (same html input, same call site).
+- Accessibility passes at ≥7/10 while factual/visual/performance pass at ≥6/10: a11y
+  is the suite most able to hide real user harm behind a "mostly fine" aggregate, so
+  its bar is stricter. Performance budgets are planning budgets for THIS generator's
+  single-file output (≤350 KB html, ≤60 KB CSS, ≤40 KB JS, per-intensity keyframe
+  caps) — they fail a real regression without failing hello-world.
+- Device preview is a chrome page around the raw preview iframe, never a
+  re-render: one source artifact, three viewport frames (390/768/1280). The raw
+  preview and §57 PDF routes stay byte-unchanged so print, embed and download paths
+  all consume identical bytes.
+- Consequence: "previews share the same source" is structural (one route embeds
+  another), not conventional — it cannot silently fork.

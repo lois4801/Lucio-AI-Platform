@@ -16,6 +16,7 @@ import { pickUniverse, getUniverse } from './designUniverses.js';
 import { buildContentPack, applyContentOverrides } from './contentEngine.js';
 import { wideEvent } from './telemetry.js';
 import { runDesignQA } from './designQA.js';
+import { runAllSiteAudits } from './siteAudits.js';
 import { resolveIntensity, selectScenes } from './motionEngine.js';
 export { scaffoldSite };
 
@@ -141,11 +142,14 @@ function buildRecipeV6(plan) {
 
 // Phase 7 QA artifact: design QA + style audit + cinematic audit. The audit functions are
 // null until their peer modules export them (tolerant parallel-build loading above).
+// Phase 9 adds the four site audit suites (accessibility/factual/visual/performance)
+// from the local module — always present.
 function auditWithExtras(plan, html) {
   const qa = runDesignQA(plan, html);
   const styleAudit = typeof runStyleAudit === 'function' ? runStyleAudit(plan, html) : null;
   const cinematicAudit = typeof runCinematicAudit === 'function' ? runCinematicAudit(plan, html) : null;
-  return { ...qa, styleAudit, cinematicAudit };
+  const siteAudits = runAllSiteAudits(plan, html);
+  return { ...qa, styleAudit, cinematicAudit, siteAudits };
 }
 
 export function makePlan(goal, opts = {}) {

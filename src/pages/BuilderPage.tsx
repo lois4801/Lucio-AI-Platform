@@ -23,9 +23,19 @@ type Validation = { passed: boolean; checks: { name: string; passed: boolean }[]
 type Cp = { id: string; label: string; created_at: string };
 type QAReport = {
   score: number; grade: string; summary: string;
-  factors: { check: string; points: number; max: number; detail: string; pass: boolean }[];
+  factors: { name?: string; check: string; points: number; max: number; detail: string; pass: boolean }[];
   styleAudit?: StyleAudit;
   cinematicAudit?: CinematicAudit;
+  siteAudits?: SiteAudits;
+};
+// Phase 9 — four site audit suites riding inside the QA artifact.
+type AuditSuite = {
+  suite: string; score: number; pass: boolean; passAt: number;
+  checks: { check: string; points: number; max: number; detail: string; pass: boolean }[];
+};
+type SiteAudits = {
+  accessibility: AuditSuite; factual: AuditSuite; visual: AuditSuite; performance: AuditSuite;
+  overall: number; pass: boolean; summary: string;
 };
 type Plan2 = Plan & {
   style?: { id: string; name: string; source: string };
@@ -86,6 +96,7 @@ export default function BuilderPage() {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [validation, setValidation] = useState<Validation | null>(null);
   const [qa, setQa] = useState<QAReport | null>(null);
+  const [device, setDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [checkpoints, setCheckpoints] = useState<Cp[]>([]);
   const [cpLabel, setCpLabel] = useState('');
   const [busy, setBusy] = useState('');
@@ -406,8 +417,29 @@ export default function BuilderPage() {
             </CardHeader>
             <CardContent>
               {built || artifacts.length ? (
-                <iframe title="site-preview" src={`/api/builder/project/${projectId}/preview`}
-                  className="w-full h-[480px] rounded-lg border bg-white" />
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {(['desktop', 'tablet', 'mobile'] as const).map((d) => (
+                      <Button key={d} size="sm" variant={device === d ? 'default' : 'outline'} className="h-7"
+                        onClick={() => setDevice(d)}>
+                        {d === 'desktop' ? 'Desktop 1280' : d === 'tablet' ? 'Tablet 768' : 'Mobile 390'}
+                      </Button>
+                    ))}
+                    <a className="text-xs text-primary hover:underline ml-auto"
+                      href={`/api/builder/project/${projectId}/device?device=${device}`} target="_blank" rel="noreferrer">
+                      Open full device lab ↗
+                    </a>
+                  </div>
+                  <div className="flex justify-center overflow-auto rounded-lg border bg-muted/30 p-2">
+                    <iframe title="site-preview" src={`/api/builder/project/${projectId}/preview`}
+                      className="rounded bg-white border transition-all"
+                      style={{
+                        width: device === 'mobile' ? 390 : device === 'tablet' ? 768 : '100%',
+                        maxWidth: '100%',
+                        height: 480,
+                      }} />
+                  </div>
+                </div>
               ) : (
                 <div className="h-[480px] rounded-lg border border-dashed flex items-center justify-center text-muted-foreground text-sm">
                   No build yet — describe your idea above and press “Build &amp; preview”.
@@ -435,6 +467,38 @@ export default function BuilderPage() {
                     </li>
                   ))}
                 </ul>
+              </CardContent>
+            </Card>
+          )}
+
+          {qa?.siteAudits && (
+            <Card>
+              <CardHeader><CardTitle className="flex items-center gap-2">
+                {qa.siteAudits.pass ? <CheckCircle2 className="h-5 w-5 text-green-500" /> : <XCircle className="h-5 w-5 text-amber-500" />}
+                Site audits — {qa.siteAudits.overall}/10 {qa.siteAudits.pass ? '· all suites pass' : '· suite below bar'}
+              </CardTitle>
+              <CardDescription>Phase 9 — accessibility, factual, visual and performance, run on every build against the same artifact. Accessibility passes at ≥7, the rest at ≥6.</CardDescription></CardHeader>
+              <CardContent className="space-y-4">
+                {(['accessibility', 'factual', 'visual', 'performance'] as const).map((key) => {
+                  const s = qa.siteAudits![key];
+                  return (
+                    <div key={key} className="space-y-1.5">
+                      <div className="flex items-center gap-2 text-sm">
+                        {s.pass ? <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" /> : <XCircle className="h-4 w-4 text-amber-500 shrink-0" />}
+                        <span className="font-medium capitalize">{s.suite}</span>
+                        <span className="text-muted-foreground">{s.score}/10 (bar {s.passAt})</span>
+                      </div>
+                      <ul className="space-y-1 text-sm pl-6">
+                        {s.checks.filter((c) => !c.pass).map((c) => (
+                          <li key={c.check} className="text-muted-foreground">
+                            <span className="font-medium text-foreground">{c.check}</span> — {c.points}/{c.max} · {c.detail}
+                          </li>
+                        ))}
+                        {s.checks.every((c) => c.pass) && <li className="text-muted-foreground">All checks pass.</li>}
+                      </ul>
+                    </div>
+                  );
+                })}
               </CardContent>
             </Card>
           )}
