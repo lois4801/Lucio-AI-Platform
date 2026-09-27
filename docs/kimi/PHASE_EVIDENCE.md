@@ -743,3 +743,36 @@ source; responsive, accessibility, factual, visual and performance QA pass.
   viewer provisioning, repeat-login reuse.
 - scripts/backup.js — BACKUP OK + RESTORE TEST OK against the dev database.
 - Full regression: 681 assertions across 15 suites, 0 failures; tsc clean; build clean.
+
+## Phase 16 — Benchmark Max + Evaluation (manual v28 Phase 16)
+
+### What shipped
+- Four seeded, deterministic benchmark suites (`benchmark_suites`): website-build,
+  content-pack, design-qa, market-scan — each with fixtures and 3+ named pure-function
+  validators (structural checks only: section presence/word counts, post counts/CTAs,
+  WCAG contrast ratio computed from hex, source-link formats). No subjective scoring.
+- Reproducible runs (`benchmark_runs`): route registry (baseline 0.55 coverage /
+  champion 1.0 / challenger 0.85 / chaotic demo), seeded artifact generators
+  (order-independent hash, no wall-clock), double-generation nondeterminism guard —
+  a route whose artifact differs between two generations is rejected with
+  failure_class `nondeterministic`. Failure taxonomy enum: validator_fail |
+  nondeterministic | route_error.
+- Claim gate (`benchmark_claims`): assertNoUnverifiedSuperiority — a claim is
+  recordable ONLY against an existing PASSING run of the same org; missing,
+  failing, ghost, or foreign-org evidence all rejected 422 with the reason.
+- Champion/challenger board (`route_championship`): admin-crowned titles per task
+  family with best passing score; the chaotic demo route can never hold a title.
+- Routes /api/benchmarks (suites, run, validate dry-run, runs, claims, championships,
+  meta) + Benchmarks page (/benchmarks, nav entry): suite cards with validators,
+  run form (suite/route/seed), per-validator run results, claims panel with
+  evidence picker, championship board.
+
+### Verification
+- scripts/test-phase16.js — 30 assertions, all green: suite seeding, taxonomy enum,
+  reproducibility (identical artifact/checks/scores on same seed+route), per-seed
+  determinism, champion>baseline on 8 discriminating seeds, tamper detection via
+  dry-run validators (genuine artifact accepted, tampered fails 3+ named checks),
+  chaotic route rejected nondeterministic, unknown route/family 400/404, claim gate
+  all four rejection paths + acceptance, org isolation of runs/evidence, championship
+  record + chaotic-title ban, audit rows.
+- Full regression: 711 assertions across 16 suites, 0 failures; tsc clean; build clean.

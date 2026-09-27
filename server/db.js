@@ -493,6 +493,47 @@ CREATE TABLE IF NOT EXISTS org_settings (
   updated_at TEXT,
   PRIMARY KEY (org_id, key)
 );
+CREATE TABLE IF NOT EXISTS benchmark_suites (
+  id TEXT PRIMARY KEY,
+  task_family TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  pass_threshold REAL NOT NULL DEFAULT 80,
+  fixtures_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS benchmark_runs (
+  id TEXT PRIMARY KEY,
+  suite_id TEXT NOT NULL REFERENCES benchmark_suites(id),
+  org_id TEXT NOT NULL,
+  route TEXT NOT NULL,
+  seed INTEGER NOT NULL,
+  artifact_json TEXT NOT NULL DEFAULT '{}',
+  scores_json TEXT NOT NULL DEFAULT '[]',
+  total_score REAL NOT NULL DEFAULT 0,
+  passed INTEGER NOT NULL DEFAULT 0,
+  failure_class TEXT,
+  claim TEXT NOT NULL DEFAULT '',
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_bench_runs ON benchmark_runs(org_id, suite_id);
+CREATE TABLE IF NOT EXISTS benchmark_claims (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS route_championship (
+  task_family TEXT PRIMARY KEY,
+  champion_route TEXT NOT NULL,
+  challenger_route TEXT,
+  best_score REAL NOT NULL DEFAULT 0,
+  decided_by TEXT,
+  updated_at TEXT
+);
 `);
 
 // Lightweight migrations: add columns to pre-existing tables when missing.

@@ -37,6 +37,7 @@ import { appStudioRouter } from './routes/appStudio.js';
 import { seedVerticalApps } from './services/appStudio.js';
 import { libraryRouter } from './routes/componentLibrary.js';
 import { adminRouter } from './routes/admin.js';
+import { benchmarksRouter } from './routes/benchmarks.js';
 import { requestCounter } from './services/enterprise.js';
 
 seedVerticalApps();
@@ -86,6 +87,7 @@ app.use('/api/agent-runs', agentRunsRouter);
 app.use('/api/apps', appStudioRouter);
   app.use('/api/library', libraryRouter);
   app.use('/api/admin', adminRouter);
+  app.use('/api/benchmarks', benchmarksRouter);
   // Public surface (no auth): live client sites, enquiries, owner portal.
   // Mounted BEFORE the SPA fallback so /live and /portal are never swallowed.
   app.use(publicRouter);
