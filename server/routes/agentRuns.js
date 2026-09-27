@@ -6,8 +6,8 @@ import { startRun, listRuns, getRun, cancelRun } from '../services/agentRouter.j
 export const agentRunsRouter = Router();
 agentRunsRouter.use(requireAuth);
 
-agentRunsRouter.post('/', requireRole('member'), (req, res) => {
-  try { res.status(201).json({ run: startRun(req.user.orgId, req.body?.goal, req.user, req.ip) }); }
+agentRunsRouter.post('/', requireRole('member'), async (req, res) => {
+  try { res.status(201).json({ run: await startRun(req.user.orgId, req.body?.goal, req.user, req.ip) }); }
   catch (e) { res.status(e.status || 400).json({ error: String(e.message || e), reason: e.reason || null }); }
 });
 agentRunsRouter.get('/', (req, res) => res.json({ runs: listRuns(req.user.orgId) }));

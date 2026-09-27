@@ -106,6 +106,13 @@ export default function AgentRunsPage() {
                         <span className="flex items-center gap-2 text-sm font-medium">{stepIcon(s)} {s.label}</span>
                         <span className="text-xs text-muted-foreground">{s.cost}cr · {s.durationMs}ms{s.agents?.length ? ` · ${s.agents.join(', ')}` : ''}</span>
                       </div>
+                      {s.id === 'build' && s.output && typeof s.output === 'object' && (
+                        <div className="mt-1">
+                          {s.output.source === 'ai'
+                            ? <Badge className="bg-emerald-600 hover:bg-emerald-600">AI-authored by {s.output.provider || 'your AI provider'}</Badge>
+                            : <Badge variant="secondary">Template build{s.output.reason ? ` — ${s.output.reason}` : ''} · add AI keys in AI Providers for AI-authored luxury sites</Badge>}
+                        </div>
+                      )}
                       {why && <p className="text-xs text-muted-foreground mt-1">{why}</p>}
                       {s.output && <pre className="text-xs bg-muted rounded p-2 mt-1 overflow-x-auto max-h-28">{JSON.stringify(s.output, null, 1)}</pre>}
                     </li>

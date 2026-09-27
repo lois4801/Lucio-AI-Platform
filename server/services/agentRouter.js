@@ -6,7 +6,7 @@
 import crypto from 'node:crypto';
 import { db, audit } from '../db.js';
 import { runResearch } from './research.js';
-import { makePlan, buildFromGoal, getLatestQA } from './appBuilder.js';
+import { makePlan, buildFromGoalAi, getLatestQA } from './appBuilder.js';
 import { publishSite } from './publish.js';
 import { squadAgents } from './assistant/engine.js';
 
@@ -55,7 +55,7 @@ function record(runId, orgId, patch) {
       patch.status === 'running' ? null : new Date().toISOString(), runId);
 }
 
-export function startRun(orgId, rawGoal, user, ip = '') {
+export async function startRun(orgId, rawGoal, user, ip = '') {
   const goal = sanitizeGoal(rawGoal);
   if (!goal || goal.length > 400) {
     throw Object.assign(new Error('goal must be 1–400 characters'), { status: 400, reason: 'invalid_goal' });
@@ -93,7 +93,7 @@ export function startRun(orgId, rawGoal, user, ip = '') {
     }
     const t0 = Date.now();
     try {
-      runStep(def.id, ctx);
+      await runStep(def.id, ctx);
       step.status = 'ok';
       step.durationMs = Date.now() - t0;
       step.output = stepOutput(def.id, ctx);
@@ -126,7 +126,7 @@ export function startRun(orgId, rawGoal, user, ip = '') {
   return finish('completed', null, handoff);
 }
 
-function runStep(id, ctx) {
+async function runStep(id, ctx) {
   switch (id) {
     case 'research': {
       const r = runResearch({ query: ctx.goal, mode: 'ask', sources: [] }, ctx.user, ctx.ip);
@@ -138,7 +138,7 @@ function runStep(id, ctx) {
       break;
     }
     case 'build': {
-      const out = buildFromGoal(ctx.projectId, ctx.goal, { siteName: ctx.plan?.siteName }, ctx.user, ctx.ip);
+      const out = await buildFromGoalAi(ctx.orgId, ctx.projectId, ctx.goal, { siteName: ctx.plan?.siteName }, ctx.user, ctx.ip);
       ctx.build = out;
       break;
     }
@@ -167,7 +167,13 @@ function stepOutput(id, ctx) {
   switch (id) {
     case 'research': return { evidenceRefs: ctx.evidenceRefs };
     case 'plan': return { industry: ctx.plan?.industry, siteName: ctx.plan?.siteName, universe: ctx.plan?.universe?.id, sections: ctx.plan?.contentPack?.sitemap?.length };
-    case 'build': return { artifactVersion: ctx.build?.artifact?.version, qaScore: ctx.build?.qa?.score, qaGrade: ctx.build?.qa?.grade };
+    case 'build': {
+      const src = ctx.build?.plan?.buildSource || { via: 'template' };
+      return {
+        artifactVersion: ctx.build?.artifact?.version, qaScore: ctx.build?.qa?.score, qaGrade: ctx.build?.qa?.grade,
+        source: src.via, provider: src.provider || null, reason: src.reason || null,
+      };
+    }
     case 'test': return ctx.qa;
     case 'publish': return { slug: ctx.site?.slug, status: ctx.site?.status };
     default: return null;

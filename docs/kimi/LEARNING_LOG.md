@@ -383,3 +383,49 @@ start of every new session to evolve instead of rediscovering.
 - **Lesson:** when a sandboxed webview hosts the app, ANY `window.prompt` /
   `alert` / `confirm` is a page-killer — use inline UI patterns everywhere;
   grep for them when a page renders a raw exception string.
+
+## Agent Runs / builder: luxury sites, AI-authored with honest fallback (2026-09-27)
+- **Root cause of the "garbage page":** the /agents pipeline (`agentRouter` →
+  `appBuilder.buildFromGoal` → `scaffoldSite`) was 100% deterministic and NEVER
+  called the AI gateway; AND `parseGoal` emitted coarse industry names
+  ('Healthcare') while the Content Architect bank is keyed fine-grained
+  ('Dental') — so nearly every build missed the bank and rendered the generic
+  FALLBACK copy under the placeholder name 'Your New Venture'.
+- **Fix (three layers):**
+  1. `modelGateway` INDUSTRIES now map keywords to fine-grained bank keys
+     (dental→Dental, plumber→Plumbing, …); contentEngine gained 4 missing bank
+     entries (Healthcare, Professional Services, Agency & Consulting,
+     Education) + `buildBrandName(industry, seed)` — a deterministic invented
+     brand per project seed (e.g. 'Ivory Dental Studio') so no two runs share
+     an identity. Names are creative placeholders, clearly editable.
+  2. Template richness: content packs now carry testimonials/team/packages/
+     booking fields ([EDIT:] placeholder shells — §17.13.9 still forbids
+     fabricating reviews, staff names or prices), and `scaffoldSite` renders
+     booking form (posts to the live enquire endpoint), weekly availability
+     board, testimonials, team, packages + a hash-seeded proof-section order
+     (`layoutPick`) — same seed rebuilds identically, different projects differ.
+  3. AI-first: new `aiSiteBuilder.tryAiSite(orgId, plan)` — the org's vault AI
+     authors a SINGLE-FILE luxury site against a strict contract (12 mandated
+     sections, design tokens from the chosen universe, local media paths,
+     keyless OSM iframe, NO-network forms, [EDIT:] placeholders for
+     reviews/prices/names). `validateAiSite` mirrors the mandatory evidence
+     checks + luxury gates (≥5 sections, ≥15 KB, brand present, allowlisted
+     externals only). `buildFromGoalAi` (async) used by BOTH the builder route
+     and the agent-runs build step; any rejection falls back to the template.
+     `plan.buildSource` (`via: 'ai'| 'template' + reason`) is stamped into the
+     QA artifact and the run-trace build step; AgentRunsPage shows an
+     'AI-authored by X' / 'Template build — reason' badge.
+- **multiAi MAX_REPLY_CHARS 20_000 → 220_000:** the gateway silently truncated
+  provider replies at 20K chars, which killed every multi-KB AI site JSON
+  ('Unterminated string at position 19959'). Any future AI-build feature that
+  returns large artifacts will hit this — the cap must cover the artifact, not
+  just chat prose.
+- **NEXUS prompt upgraded too:** `aiFilePrompt` now carries a deterministic
+  per-brand design variant (5 mood/radius/motion combos, hashed off the brand
+  name), an explicit 12-section LUXURY BAR, uniqueness mandate, 100 KB budget;
+  per-file cap 60→80 KB, total cap 128→200 KB, implement tokens 6k→16k.
+- **Verified:** new scripts/test-agent-runs-ai.js (29 assertions): template run
+  = generated brand + booking/calendar/testimonials/team/packages + Dental bank
+  copy; two runs → different brands, different html; AI-key run = AI-authored
+  preview with provider credited; garbage-AI run = honest template fallback
+  with `ai_rejected` reason. Full sweep: 36 suites green, tsc clean.

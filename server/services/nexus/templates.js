@@ -324,13 +324,26 @@ export function runId() { return crypto.randomUUID(); }
 // Every acceptance rule below mirrors a MANDATORY evidence check, so a response
 // that would fail the suite is rejected HERE and the build falls back to the
 // deterministic templates — an AI typo must never block a run.
-export const AI_MAX_TOTAL_BYTES = 128 * 1024;
+export const AI_MAX_TOTAL_BYTES = 200 * 1024;
+
+// Deterministic per-brand design variation: the same brief always gets the same
+// direction, different businesses get different moods so no two generated sites
+// share a look.
+const AI_DESIGN_VARIANTS = [
+  { mood: 'noir editorial — deep ink, warm metal accents', radius: 2, motion: 'slow rise reveals with film-grain hover textures' },
+  { mood: 'aurora tech — dark canvas, luminous gradient drift', radius: 16, motion: 'gradient drift orbs with magnetic buttons' },
+  { mood: 'warm modern — soft neutrals, terracotta accents', radius: 12, motion: 'soft cascades with image unmasking' },
+  { mood: 'minimal arch — gallery white space, hairline rules', radius: 0, motion: 'wipe reveals with parallax layers' },
+  { mood: 'obsidian gold — black lacquer, gilded details', radius: 10, motion: 'gold sheen buttons with count-up stats' },
+];
+const variantHash = (str) => { let h = 2166136261; for (const c of String(str)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
 
 export function aiFilePrompt(brief) {
   const plan = buildPlan(brief);
   const pack = brief.contentPack || null;
   const geo = brief.geo || null;
   const facts = factsFromBrief(brief);
+  const v = AI_DESIGN_VARIANTS[variantHash(brief.name || brief.intent || 'lucio') % AI_DESIGN_VARIANTS.length];
   return `You are the senior frontend engineer inside the Lucio NEXUS builder. Build a complete, production-quality ${plan.appType} for this business. Reply with ONE raw JSON object and nothing else — no markdown fences, no commentary. Shape: {"files": {"index.html": "…", "styles.css": "…", "app.js": "…", "README.md": "…", "data.json": "…"}}.
 
 BUSINESS BRIEF (every fact here is verified — use them, do not invent replacements):
@@ -345,12 +358,19 @@ HARD REQUIREMENTS (an automated evidence suite rejects anything that violates th
 2. styles.css defines CSS custom properties --bg: #rrggbb and --text: #rrggbb whose contrast is >= 4.5:1 (WCAG AA), and styles the whole page (cinematic hero, animated buttons/transitions encouraged).
 3. app.js is plain valid JavaScript that runs standalone in a sandboxed browser (no network calls, no modules, no imports). It must add real interactivity (nav, forms with client validation, filters or galleries).
 4. NEVER use eval(, new Function(, or document.write( anywhere.
-5. Total size of all files together must stay under 120 KB. No external URLs for CSS/JS/fonts — everything self-contained except the OSM map iframe above.
+5. Total size of all files together must stay under 100 KB. No external URLs for CSS/JS/fonts — everything self-contained except the OSM map iframe above.
 6. README.md: 5–10 lines — what the app is, how to open it, the API contract (static demo), and the data model.
 7. data.json: valid JSON seed data for the app.
 8. Placeholders the owner must edit MUST be marked [EDIT: label].
 
-Make it genuinely impressive: luxury-grade visual design, smooth motion, responsive.`;
+DESIGN DIRECTION for this build (unmistakably distinct from every other generated site):
+- Mood: ${v.mood} · corner radius ${v.radius}px · signature motion: ${v.motion}
+- NEVER ship a recycled single-column layout — vary section order, spacing rhythm and decorative details.
+
+LUXURY BAR — ship ALL of these sections with real content drawn from the brief above:
+fixed nav · cinematic full-screen hero · services grid · booking form (service + date + time + name + phone; on submit show an inline success message — NO network calls) · weekly availability strip · gallery with hover motion · 3 testimonial cards (quote + author as [EDIT: ...] placeholders — never invent reviews) · 3 pricing tiers (price "[EDIT: price]") · 3 team role cards ("[EDIT: name & short bio]") · FAQ accordion · contact form (standalone success message, NO network calls) · rich footer (hours, contact + social placeholders).
+Motion: IntersectionObserver scroll reveals, animated buttons, hover transitions, and a @media (prefers-reduced-motion: reduce) kill switch. Responsive, mobile-first.`;
+
 }
 
 // Parse + validate an AI reply. Throws with human-readable reasons when the
@@ -373,7 +393,7 @@ export function generateFilesWithAi(brief, aiContent) {
   else {
     for (const [path, content] of Object.entries(files)) {
       if (typeof content !== 'string') reasons.push(`${path}: content is not a string`);
-      else if (content.length > 60_000) reasons.push(`${path}: exceeds 60 KB`);
+      else if (content.length > 80_000) reasons.push(`${path}: exceeds 80 KB`);
     }
   }
   const get = (p) => (files && typeof files[p] === 'string' ? files[p] : '');

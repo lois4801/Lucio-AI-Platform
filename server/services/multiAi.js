@@ -7,7 +7,10 @@
 import { AI_PROVIDERS, enabledKeys, recordVerification } from './aiVault.js';
 
 const CHAT_TIMEOUT_MS = 60_000;
-const MAX_REPLY_CHARS = 20_000;
+// Sanity bound for one provider reply. AI-authored site builds legitimately return
+// tens of KB of HTML/JSON (the aiSiteBuilder contract allows up to 200 KB), so the
+// cap must cover a full generated site, not just chat prose.
+const MAX_REPLY_CHARS = 220_000;
 
 let fetchImpl = async (url, opts) => fetch(url, opts);
 export function setAiFetchForTests(fn) { fetchImpl = fn; }

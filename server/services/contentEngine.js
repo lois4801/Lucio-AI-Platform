@@ -610,6 +610,78 @@ const BANK = {
     journey: ['Gets engaged', 'Dreams the day', 'Meets planners', 'Books & plans'],
     keywords: ['wedding planner', 'event planning', 'day-of coordination', 'wedding design', 'coordination'],
   },
+  'Healthcare': {
+    services: [
+      ['Consultations', 'Unhurried appointments that start with listening.'],
+      ['Preventive Care', 'Checkups and screening that catch concerns early.'],
+      ['Same-Week Appointments', 'Timely access when it matters most.'],
+      ['Care Coordination', 'Clear referrals and follow-through between visits.'],
+    ],
+    differentiators: ['Continuity of care', 'Plain-language explanations', 'Respect for your time'],
+    faqs: [
+      ['Are new patients accepted?', 'Yes — new patients are welcome; register online or by phone.'],
+      ['Do you offer virtual visits?', 'Selected appointments are available by video.'],
+      ['What should I bring to a first visit?', 'A medication list and any recent test results.'],
+    ],
+    heroAngles: ['Care that starts with listening', 'Your health, taken seriously'],
+    audiences: ['Families', 'Professionals', 'Seniors'],
+    journey: ['Notices a concern', 'Looks for a provider', 'Books a consultation', 'Stays on track'],
+    keywords: ['clinic', 'medical clinic', 'family doctor', 'healthcare', 'appointments'],
+  },
+  'Professional Services': {
+    services: [
+      ['Initial Consultation', 'A focused first conversation about your situation.'],
+      ['Ongoing Advisory', 'Steady guidance as decisions unfold.'],
+      ['Document Review', 'Careful, plain-language review of what you are signing.'],
+      ['Specialist Referrals', 'The right expert brought in when the work needs one.'],
+    ],
+    differentiators: ['Advice in plain language', 'Transparent engagement terms', 'Responsive follow-up'],
+    faqs: [
+      ['How do engagements start?', 'With a short consultation to understand the need.'],
+      ['How are fees structured?', 'Terms are agreed in writing before work begins.'],
+      ['Can I get a second opinion?', 'Yes — reviews of existing advice are common.'],
+    ],
+    heroAngles: ['Expert advice, without the jargon', 'Decisions made with confidence'],
+    audiences: ['Small businesses', 'Families', 'Executives'],
+    journey: ['Faces a decision', 'Seeks advice', 'Meets for a consultation', 'Engages with confidence'],
+    keywords: ['consulting', 'advisory', 'professional services', 'consultation'],
+  },
+  'Agency & Consulting': {
+    services: [
+      ['Strategy', 'Positioning and planning that point the work in one direction.'],
+      ['Design & Brand', 'Identities and interfaces with a clear point of view.'],
+      ['Build & Launch', 'Websites and products shipped end to end.'],
+      ['Growth Support', 'Iteration and optimization after launch.'],
+    ],
+    differentiators: ['Senior people on every engagement', 'Strategy and execution under one roof', 'Honest timelines'],
+    faqs: [
+      ['How do projects start?', 'With a discovery call and a written scope.'],
+      ['Do you work in sprints?', 'Work is planned in visible, reviewable increments.'],
+      ['Can you work with our in-house team?', 'Yes — collaboration models are flexible.'],
+    ],
+    heroAngles: ['Ideas, executed beautifully', 'Strategy you can ship'],
+    audiences: ['Founders', 'Marketing teams', 'Operators'],
+    journey: ['Has an idea', 'Looks for a partner', 'Scopes the work', 'Ships together'],
+    keywords: ['agency', 'consulting', 'design studio', 'branding', 'web development'],
+  },
+  'Education': {
+    services: [
+      ['Programs & Courses', 'Structured learning paths with clear outcomes.'],
+      ['1-on-1 Sessions', 'Personal attention where it counts.'],
+      ['Progress Tracking', 'Visible milestones and honest feedback.'],
+      ['Workshops', 'Focused group sessions on specific skills.'],
+    ],
+    differentiators: ['Qualified, patient instructors', 'Real outcomes over certificates', 'Flexible scheduling'],
+    faqs: [
+      ['How do I enroll?', 'Enrollment starts with a short intake conversation.'],
+      ['Are sessions online or in person?', 'Both formats are offered, depending on the program.'],
+      ['Can I try one session first?', 'A trial session is available for most programs.'],
+    ],
+    heroAngles: ['Learn more, faster', 'Teaching that meets you where you are'],
+    audiences: ['Students', 'Parents', 'Career changers'],
+    journey: ['Wants to learn', 'Compares options', 'Books a trial', 'Commits to progress'],
+    keywords: ['tutoring', 'courses', 'education', 'lessons', 'academy'],
+  },
 };
 
 const FALLBACK = {
@@ -639,6 +711,62 @@ export function industryContent(industry) {
 
 export function supportedIndustries() {
   return Object.keys(BANK);
+}
+
+// ---- Brand identity lexicon -------------------------------------------------
+// Generated template identity: an invented, clearly editable brand name per project
+// seed so every built site reads like a real premium business instead of a placeholder.
+// This is creative marketing suggestion — NOT a claim about any real business.
+const BRAND_ADJ = ['Alder', 'Meridian', 'Solstice', 'Copperfield', 'Halcyon', 'Juniper', 'Sterling', 'Aurora', 'Marlowe', 'Wilder', 'Ivory', 'Noble', 'Beacon', 'Celeste', 'Rowan', 'Sable', 'Vantage', 'Oakhurst', 'Lumière', 'Cedar & Sage'];
+const BRAND_NOUN = {
+  'Dental': ['Dental Studio', 'Smile Co.', 'Dentistry'],
+  'Healthcare': ['Health Centre', 'Care Clinic', 'Family Practice'],
+  'Physiotherapy': ['Physio & Rehab', 'Movement Clinic', 'Recovery Studio'],
+  'Beauty & Wellness': ['Salon & Spa', 'Skin Studio', 'Wellness Lounge', 'Beauty Bar'],
+  'Barbershop': ['Barber Co.', 'Barbershop', 'Grooming Lounge'],
+  'Pet Grooming': ['Pet Spa', 'Grooming Co.'],
+  'Fitness': ['Athletics', 'Strength Club', 'Fitness Studio', 'Performance Lab'],
+  'Restaurant': ['Kitchen & Bar', 'Table', 'Eatery', 'Supper Club'],
+  'Cafe': ['Coffee House', 'Café', 'Roastery'],
+  'Bakery': ['Bakery', 'Patisserie', 'Bakehouse'],
+  'Food & Beverage': ['Kitchen', 'Table', 'Provisions'],
+  'Plumbing': ['Plumbing Co.', 'Pipe & Drain', 'Home Services'],
+  'HVAC': ['Heating & Air', 'Climate Co.', 'Home Comfort'],
+  'Electrical': ['Electric', 'Electrical Co.', 'Power & Light'],
+  'Roofing': ['Roofing', 'Roof Works'],
+  'Contracting': ['Build Co.', 'Construction', 'Contracting'],
+  'Carpentry': ['Carpentry', 'Woodworks', 'Joinery'],
+  'Painting': ['Painting Co.', 'Paint Studio'],
+  'Landscaping': ['Landscapes', 'Garden Co.', 'Outdoor Living'],
+  'Cleaning Services': ['Cleaning Co.', 'Home Care'],
+  'Snow Removal': ['Snow Works', 'Winter Services'],
+  'Moving Company': ['Movers', 'Moving Co.'],
+  'Legal Services': ['Law', 'Legal', '& Associates'],
+  'Accounting': ['Accounting', 'Advisory'],
+  'Professional Services': ['Advisory Group', 'Consulting', 'Partners'],
+  'IT Services': ['Technologies', 'IT Solutions', 'Systems'],
+  'Marketing': ['Digital', 'Creative', 'Agency'],
+  'Agency & Consulting': ['Creative Studio', 'Collective', 'Digital'],
+  'Real Estate': ['Realty', 'Properties', 'Estates'],
+  'Retail': ['Goods Co.', 'Supply Co.', 'Mercantile'],
+  'Grocery': ['Market', 'Grocer'],
+  'Photography': ['Photography', 'Photo Studio', 'Visuals'],
+  'Hospitality': ['House', 'Inn & Suites', 'Retreat'],
+  'Wedding Services': ['Events', 'Occasions', 'Weddings'],
+  'Childcare': ['Childcare', 'Early Learning', 'Kids Club'],
+  'Education': ['Learning Centre', 'Academy', 'Education Studio'],
+  'Auto Repair': ['Auto Works', 'Motors', 'Auto Care'],
+  'Automotive': ['Motors', 'Auto Care', 'Auto Works'],
+};
+const mix32 = (str) => { let h = 2166136261; for (const c of String(str)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
+
+// Deterministic invented brand per (industry, seed): same project always rebuilds
+// with the same identity, two different projects get different names.
+export function buildBrandName(industry, seed = '') {
+  const a = BRAND_ADJ[mix32(`${seed}|${industry}|adj`) % BRAND_ADJ.length];
+  const nouns = BRAND_NOUN[industry] || ['Studio', 'House', '& Co.', 'Collective'];
+  const n = nouns[mix32(`${seed}|${industry}|noun`) % nouns.length];
+  return `${a} ${n}`.replace(/\s+/g, ' ').trim();
 }
 
 function item(text, classification) {
@@ -687,6 +815,26 @@ export function buildContentPack({ businessName, industry, location = '', verifi
       item('Primary: contact/booking form submission', 'INFERRED_INDUSTRY_SUGGESTION'),
       item('Secondary: phone call from the site', 'INFERRED_INDUSTRY_SUGGESTION'),
     ],
+    testimonials: [0, 1, 2].map((i) => ({
+      quote: '[EDIT: paste a real client review here]',
+      author: '[EDIT: client name]',
+      context: bank.services[i % bank.services.length][0],
+      classification: 'INFERRED_INDUSTRY_SUGGESTION',
+    })),
+    team: [
+      { role: 'Owner / Lead', bio: '[EDIT: name & short bio]', classification: 'INFERRED_INDUSTRY_SUGGESTION' },
+      { role: 'Senior Specialist', bio: '[EDIT: name & short bio]', classification: 'INFERRED_INDUSTRY_SUGGESTION' },
+      { role: 'Client Care', bio: '[EDIT: name & short bio]', classification: 'INFERRED_INDUSTRY_SUGGESTION' },
+    ],
+    packages: bank.services.slice(0, 3).map(([title, desc]) => ({
+      name: title, descriptor: desc, price: '[EDIT: price]', unit: '',
+      classification: 'INFERRED_INDUSTRY_SUGGESTION',
+    })),
+    booking: {
+      services: bank.services.map(([title]) => title),
+      hours: ['Mon–Fri · 9:00 – 17:00', 'Sat · 10:00 – 14:00', 'Sun · Closed'],
+      classification: 'INFERRED_INDUSTRY_SUGGESTION',
+    },
     sitemap: [
       { page: 'Home', purpose: 'First impression, primary conversion path', sections: ['hero', 'services', 'journey', 'faq', 'contact'] },
       { page: 'Services', purpose: 'Detail each offering with proof points', sections: ['services-expanded', 'faq'] },

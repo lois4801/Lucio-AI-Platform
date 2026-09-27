@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { makePlan, buildFromGoal, getLatestSite, getLatestQA, listArtifacts, getLatestRecipe, recomposePlan, changeComponent, getLatestPdf } from '../services/appBuilder.js';
+import { makePlan, buildFromGoalAi, getLatestSite, getLatestQA, listArtifacts, getLatestRecipe, recomposePlan, changeComponent, getLatestPdf } from '../services/appBuilder.js';
 import { DESIGN_UNIVERSES, MOTION_PERSONALITIES } from '../services/designUniverses.js';
 import { CREATION_MODES } from '../services/ldStyles.js';
 import { chat, parseGoal } from '../services/modelGateway.js';
@@ -63,7 +63,7 @@ builderRouter.post('/project/:projectId/build', requireRole('member'), async (re
     const loc = parseGoal(goal).location;
     if (loc) geo = await geocodeLocation(loc, { countrycodes: 'ca' });
   } catch { /* maps are additive — build without a map rather than fail */ }
-  res.status(201).json(buildFromGoal(req.params.projectId, goal, withProjectSiteName(p, { styleId, creationMode, siteName, industry, tagline, verifiedFacts, motionIntensity, geo }), req.user, req.ip));
+  res.status(201).json(await buildFromGoalAi(req.user.orgId, req.params.projectId, goal, withProjectSiteName(p, { styleId, creationMode, siteName, industry, tagline, verifiedFacts, motionIntensity, geo }), req.user, req.ip));
 });
 
 builderRouter.get('/project/:projectId/artifacts', (req, res) => {

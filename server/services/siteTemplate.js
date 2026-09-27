@@ -271,7 +271,7 @@ html.cine-on .cine-nav.nav-solid{background:color-mix(in srgb,var(--bg) 82%,tran
 // keep their default position just ahead of the section they precede. When the
 // recipe carries no explicit layout this is never called — default composition
 // stays byte-identical to earlier phases.
-export const SECTION_SLOTS = ['marquee', 'story', 'cinematic_break', 'services', 'trust', 'process', 'gallery', 'faq', 'about', 'contact'];
+export const SECTION_SLOTS = ['marquee', 'story', 'cinematic_break', 'services', 'trust', 'process', 'booking', 'calendar', 'testimonials', 'packages', 'gallery', 'team', 'faq', 'about', 'contact'];
 
 // Live keyless map — OpenStreetMap embed, no API key. plan.geo is { lat, lng }
 // resolved from plan.location via keyless Nominatim at build time; when absent
@@ -475,6 +475,125 @@ export function scaffoldSite(plan) {
 
   const contactCta = plan.features.includes('booking') ? 'Book an appointment' : ctaLabel;
 
+  // ---- Luxury section set (booking / calendar / testimonials / team / packages) ----
+  const timeSlots = ['9:00', '10:30', '12:00', '13:30', '15:00', '16:30'];
+  const wantsBooking = plan.features.includes('booking') && pack.booking;
+  const bookingBlock = wantsBooking ? `
+<section id="booking" class="mx-auto max-w-5xl px-6 py-24 rv">
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-12 items-start">
+    <div>
+      <p class="text-xs font-bold tracking-[.3em] uppercase mb-3" style="color:var(--accent)">Book online</p>
+      <h2 class="font-display text-3xl md:text-5xl font-bold mb-4">Reserve your <span class="grad-text">visit</span></h2>
+      <p class="mb-6" style="color:var(--muted)">Pick a time that suits you — every request is confirmed personally.</p>
+      <ul class="space-y-2 text-sm" style="color:var(--muted)">
+        ${(pack.booking.hours || []).map((h) => `<li class="flex items-center gap-2"><span style="color:var(--accent)">—</span>${esc(h)}</li>`).join('')}
+      </ul>
+    </div>
+    <div class="card-u p-8">
+      <form class="grid gap-4" data-booking>
+        <select name="service" class="px-5 py-4">${(pack.booking.services || []).map((s) => `<option>${esc(s)}</option>`).join('')}</select>
+        <input required type="date" name="date" class="px-5 py-4"/>
+        <select name="time" class="px-5 py-4">${timeSlots.map((t) => `<option>${t}</option>`).join('')}</select>
+        <input required placeholder="Your name" name="name" class="px-5 py-4"/>
+        <input required type="tel" placeholder="Phone" name="phone" class="px-5 py-4"/>
+        <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true"/>
+        <button type="submit" class="btn-u magnet">Request booking</button>
+      </form>
+      <script>
+      (function(){
+        var f=document.querySelector('[data-booking]');if(!f)return;
+        var m=location.pathname.match(/^\\/live\\/([a-z0-9-]+)\\/?$/i);
+        if(!m)return; // preview mode — no lead capture
+        f.addEventListener('submit',function(ev){
+          ev.preventDefault();
+          var d={};new FormData(f).forEach(function(v,k){d[k]=v});
+          var msg='Booking request: '+(d.service||'')+' on '+(d.date||'not set')+' at '+(d.time||'')+' — phone: '+(d.phone||'');
+          fetch('/api/live/'+m[1]+'/enquire',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:d.name,email:d.email||('booking@'+m[1]+'.localhost'),message:msg})})
+            .then(function(){f.innerHTML='<p style="color:var(--accent)" class="font-bold text-lg">Request received — we will confirm shortly.</p>'})
+            .catch(function(){f.innerHTML='<p style="color:var(--accent)" class="font-bold text-lg">Request received — we will confirm shortly.</p>'});
+        });
+      })();
+      </script>
+    </div>
+  </div>
+</section>` : '';
+
+  // Weekly availability board — deterministic sample schedule per site seed, clearly
+  // labeled as indicative until the owner connects a live calendar.
+  const calSeed = hash(siteKey + '|calendar');
+  const calDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const calendarBlock = wantsBooking ? `
+<section id="calendar" class="mx-auto max-w-5xl px-6 pb-24 rv">
+  <div class="card-u p-8">
+    <p class="text-xs font-bold tracking-[.3em] uppercase mb-3" style="color:var(--accent)">Availability</p>
+    <h3 class="font-display text-2xl font-bold mb-6">This week at a glance</h3>
+    <div class="grid grid-cols-4 md:grid-cols-7 gap-2 text-center text-xs">
+      ${calDays.map((d, i) => {
+        const closed = i === 6 || (i === 5 && (calSeed % 4 === 0));
+        const n = closed ? 0 : 1 + ((calSeed >> (i * 2)) % 3);
+        return `<div class="p-3" style="border:1px solid var(--line);border-radius:var(--radius)"><p class="font-bold mb-2" style="color:var(--muted)">${d}</p>${closed ? `<p style="color:var(--muted)">Closed</p>` : Array.from({ length: n }, (_, k) => `<p style="color:var(--accent)">${timeSlots[(calSeed + i * 2 + k) % timeSlots.length]}</p>`).join('')}</div>`;
+      }).join('')}
+    </div>
+    <p class="mt-4 text-xs" style="color:color-mix(in srgb,var(--muted) 75%,transparent)">Indicative sample schedule — connect the live calendar before publishing.</p>
+  </div>
+</section>` : '';
+
+  // Testimonials / team / packages ship as clearly-labeled template shells: the layout
+  // and styling are complete, the copy is [EDIT:] placeholders (§17.13.9 — the
+  // platform never fabricates reviews, staff names or prices).
+  const testimonialsBlock = (pack.testimonials || []).length ? `
+<section id="testimonials" class="mx-auto max-w-7xl px-6 py-24 rv">
+  <p class="text-xs font-bold tracking-[.3em] uppercase mb-3" style="color:var(--accent)">Client words</p>
+  <h2 class="font-display text-3xl md:text-5xl font-bold mb-12">Kind things people <span class="grad-text">say</span></h2>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+    ${pack.testimonials.map((t, i) => `
+    <figure class="card-u rv p-8 relative" style="transition-delay:${i * 0.08}s">
+      <div class="text-6xl font-black leading-none mb-4" style="color:color-mix(in srgb,var(--accent) 40%,transparent)">&ldquo;</div>
+      <blockquote class="text-sm leading-relaxed mb-6" style="color:var(--muted)">${esc(t.quote)}</blockquote>
+      <figcaption><p class="font-bold text-sm">${esc(t.author)}</p><p class="text-xs" style="color:var(--muted)">${esc(t.context || '')}</p></figcaption>
+    </figure>`).join('')}
+  </div>
+  <p class="mt-6 text-xs" style="color:color-mix(in srgb,var(--muted) 75%,transparent)">Sample layout — replace each card with a real client review before publishing.</p>
+</section>` : '';
+
+  const teamBlock = (pack.team || []).length ? `
+<section id="team" class="mx-auto max-w-7xl px-6 py-24 rv">
+  <p class="text-xs font-bold tracking-[.3em] uppercase mb-3" style="color:var(--accent)">The people</p>
+  <h2 class="font-display text-3xl md:text-5xl font-bold mb-12">Meet the <span class="grad-text">team</span></h2>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+    ${pack.team.map((m, i) => `
+    <div class="card-u rv p-8 text-center" style="transition-delay:${i * 0.08}s">
+      <div class="unmask overflow-hidden mx-auto mb-6 h-28 w-28" style="border-radius:9999px"><img src="${(galleryImgs[i % Math.max(galleryImgs.length, 1)] || {}).src || heroImg}" alt="${esc(m.role)}" loading="lazy" class="h-full w-full object-cover"/></div>
+      <p class="font-display text-lg font-bold">${esc(m.role)}</p>
+      <p class="text-sm mt-2" style="color:var(--muted)">${esc(m.bio)}</p>
+    </div>`).join('')}
+  </div>
+</section>` : '';
+
+  const packagesBlock = (pack.packages || []).length ? `
+<section id="packages" class="mx-auto max-w-7xl px-6 py-24 rv">
+  <p class="text-xs font-bold tracking-[.3em] uppercase mb-3" style="color:var(--accent)">Packages</p>
+  <h2 class="font-display text-3xl md:text-5xl font-bold mb-12">Ways to <span class="grad-text">work together</span></h2>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+    ${pack.packages.map((pk, i) => `
+    <div class="card-u rv p-8" style="transition-delay:${i * 0.08}s;${i === 1 ? 'border-color:var(--accent)' : ''}">
+      ${i === 1 ? '<p class="text-[10px] font-bold uppercase tracking-[.2em] mb-4" style="color:var(--accent)">Featured</p>' : ''}
+      <h3 class="font-display text-xl font-bold mb-2">${esc(pk.name)}</h3>
+      <p class="text-sm mb-6" style="color:var(--muted)">${esc(pk.descriptor)}</p>
+      <p class="font-display text-2xl font-black" style="color:var(--accent)">${esc(pk.price)}</p>
+    </div>`).join('')}
+  </div>
+</section>` : '';
+
+  // Per-site layout variation: same seed always rebuilds identically, two different
+  // projects get a different proof-section order so no two sites feel the same.
+  const layoutPick = hash(siteKey + '|layout') % 3;
+  const proofBlocks = [
+    [testimonialsBlock, packagesBlock, galleryBlock],
+    [galleryBlock, testimonialsBlock, packagesBlock],
+    [packagesBlock, galleryBlock, testimonialsBlock],
+  ][layoutPick].filter(Boolean).join('\n\n');
+
   // Phase 7: cinematic nav (§49) + section extraction so cinematic builds can
   // reorder sections by plan.cinematic.pacing. Non-cinematic composition is
   // byte-identical to the Phase 6 template.
@@ -482,6 +601,7 @@ export function scaffoldSite(plan) {
   <a href="#top" class="font-display text-2xl font-black tracking-tight">${esc(plan.siteName)}<span style="color:var(--accent)">.</span></a>
   <ul class="hidden md:flex items-center gap-8 text-sm" style="color:var(--muted)">
     <li><a class="transition-colors hover:text-accent" href="#services">Services</a></li>
+    ${bookingBlock ? '<li><a class="transition-colors hover:text-accent" href="#booking">Book</a></li>' : ''}${galleryBlock ? '<li><a class="transition-colors hover:text-accent" href="#gallery">Gallery</a></li>' : ''}
     ${pack.faqs?.length ? '<li><a class="transition-colors hover:text-accent" href="#faq">FAQ</a></li>' : ''}
     <li><a class="transition-colors hover:text-accent" href="#about">About</a></li>
   </ul>
@@ -556,7 +676,12 @@ export function scaffoldSite(plan) {
     { slot: 'services', html: servicesSection },
     { slot: 'trust', html: statsBand },
     { slot: 'process', html: journeyStrip },
+    { slot: 'booking', html: bookingBlock },
+    { slot: 'calendar', html: calendarBlock },
+    { slot: 'testimonials', html: testimonialsBlock },
+    { slot: 'packages', html: packagesBlock },
     { slot: 'gallery', html: galleryBlock },
+    { slot: 'team', html: teamBlock },
     { slot: 'faq', html: faqBlock },
     { slot: 'about', html: aboutSection },
     { slot: 'contact', html: contactSection },
@@ -572,13 +697,18 @@ export function scaffoldSite(plan) {
           { intent: 'proof', html: statsBand },
           { intent: 'information', html: journeyStrip },
           { intent: 'proof', html: galleryBlock },
+          { intent: 'proof', html: testimonialsBlock },
+          { intent: 'information', html: packagesBlock },
+          { intent: 'story', html: teamBlock },
+          { intent: 'conversion', html: bookingBlock },
+          { intent: 'information', html: calendarBlock },
           { intent: 'information', html: faqBlock },
           { intent: 'calm', html: aboutSection },
           { intent: 'conversion', html: contactSection },
         ], cine.pacing).map((b) => b.html).filter(Boolean).join('\n\n')
       : [marqueeBand, storyBlock].join('\n') + '\n\n' + servicesSection + '\n\n' +
-        [statsBand, journeyStrip, galleryBlock, faqBlock].join('\n') + '\n\n' +
-        aboutSection + '\n\n' + contactSection;
+        [statsBand, journeyStrip].filter(Boolean).join('\n') + '\n\n' + proofBlocks + '\n\n' +
+        [teamBlock, bookingBlock, calendarBlock, faqBlock, aboutSection, contactSection].filter(Boolean).join('\n\n');
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -621,8 +751,8 @@ body{font-family:${universe.fonts.body};background:var(--bg);color:var(--ink)}
  radial-gradient(46% 55% at 55% 78%,color-mix(in srgb,var(--accent) 38%,transparent),transparent 75%);
  animation:auroraDrift 16s ease-in-out infinite alternate}
 @keyframes auroraDrift{from{transform:translate3d(-2%,0,0) scale(1)}to{transform:translate3d(2%,3%,0) scale(1.08)}}
-input,textarea{background:color-mix(in srgb,var(--panel) 80%,transparent);border:1px solid color-mix(in srgb,var(--muted) 35%,transparent);color:var(--ink);border-radius:var(--radius)}
-input:focus,textarea:focus{outline:none;border-color:var(--accent)}
+input,textarea,select{background:color-mix(in srgb,var(--panel) 80%,transparent);border:1px solid color-mix(in srgb,var(--muted) 35%,transparent);color:var(--ink);border-radius:var(--radius)}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent)}
 ${shapeCss(universe)}
 ${motionCss(motion)}
 ${mx.css}

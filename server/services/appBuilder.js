@@ -13,7 +13,9 @@ import { getStyle, recommendStyles, CREATION_MODES } from './ldStyles.js';
 import { scaffoldSite } from './siteTemplate.js';
 import { buildPdfView } from './pdfView.js';
 import { pickUniverse, getUniverse } from './designUniverses.js';
-import { buildContentPack, applyContentOverrides } from './contentEngine.js';
+import { buildContentPack, applyContentOverrides, buildBrandName } from './contentEngine.js';
+import { mediaSet } from './mediaEngine.js';
+import { tryAiSite } from './aiSiteBuilder.js';
 import { wideEvent } from './telemetry.js';
 import { runDesignQA } from './designQA.js';
 import { runAllSiteAudits } from './siteAudits.js';
@@ -53,6 +55,21 @@ const INDUSTRY_COPY = {
   'Education': { hero: 'Learn more, faster.', services: ['Programs & Courses', '1-on-1 Sessions', 'Progress Reports'], about: 'Patient, qualified instructors focused on real outcomes.' },
   'Automotive': { hero: 'Your car, cared for.', services: ['Diagnostics & Repair', 'Detailing', 'Seasonal Service'], about: 'Honest mechanics, fair prices and work we stand behind.' },
   'Local Business': { hero: 'Quality service from people who care.', services: ['Core Services', 'Consultations', 'Support'], about: 'A local business built on trust, quality and community.' },
+};
+
+// Fine-grained industry keys (Content Architect bank) → coarse INDUSTRY_COPY keys.
+const COPY_ALIAS = {
+  Plumbing: 'Home Services', HVAC: 'Home Services', Electrical: 'Home Services', Roofing: 'Home Services',
+  Contracting: 'Home Services', Carpentry: 'Home Services', Painting: 'Home Services', Landscaping: 'Home Services',
+  'Cleaning Services': 'Home Services', 'Snow Removal': 'Home Services', 'Moving Company': 'Home Services',
+  Restaurant: 'Food & Beverage', Cafe: 'Food & Beverage', Bakery: 'Food & Beverage', Catering: 'Food & Beverage',
+  Dental: 'Healthcare', Physiotherapy: 'Healthcare', Healthcare: 'Healthcare',
+  Barbershop: 'Beauty & Wellness', 'Pet Grooming': 'Beauty & Wellness',
+  'Legal Services': 'Professional Services', Accounting: 'Professional Services', 'Professional Services': 'Professional Services',
+  'IT Services': 'Agency & Consulting', Marketing: 'Agency & Consulting', 'Agency & Consulting': 'Agency & Consulting',
+  Photography: 'Agency & Consulting', 'Real Estate': 'Professional Services',
+  'Wedding Services': 'Hospitality', Childcare: 'Education', Education: 'Education',
+  'Auto Repair': 'Automotive', Grocery: 'Retail & Commerce', Retail: 'Retail & Commerce',
 };
 
 // ---- Phase 7: v6 recipe (Component Universe) -----------------------------------------
@@ -154,8 +171,8 @@ function auditWithExtras(plan, html) {
 
 export function makePlan(goal, opts = {}) {
   const parsed = parseGoal(goal);
-  const copy = INDUSTRY_COPY[parsed.industry] || INDUSTRY_COPY['Local Business'];
-  const name = opts.siteName || parsed.businessName || 'Your New Venture';
+  const copy = INDUSTRY_COPY[parsed.industry] || INDUSTRY_COPY[COPY_ALIAS[parsed.industry]] || INDUSTRY_COPY['Local Business'];
+  const name = opts.siteName || parsed.businessName || buildBrandName(parsed.industry, opts.projectId || `${goal}::${parsed.location || ''}`);
   const pages = ['Home'];
   if (parsed.features.includes('gallery')) pages.push('Gallery');
   if (parsed.features.includes('menu')) pages.push('Menu');
@@ -244,55 +261,85 @@ export function saveArtifact(projectId, kind, filename, content) {
   return { id, kind, path: rel, version };
 }
 
-export function buildFromGoal(projectId, goal, opts = {}, user, ip = '') {
-  const t0 = Date.now();
-  const plan = makePlan(goal, { ...opts, projectId });
-  // Phase 8: a full rebuild from goal keeps the editor's override layers and locks —
-  // content/image overrides, section order/visibility, style/motion picks and §59
-  // locks survive regeneration.
+function inheritRecipeLayers(plan, projectId) {
   const prevRecipeRow = getLatestRecipe(projectId);
-  if (prevRecipeRow) {
-    try {
-      const prev = JSON.parse(prevRecipeRow.recipe_json);
-      plan.recipe.contentOverrides = Array.isArray(prev.contentOverrides) ? prev.contentOverrides : [];
-      plan.recipe.imageOverrides = prev.imageOverrides && typeof prev.imageOverrides === 'object' ? prev.imageOverrides : {};
-      plan.recipe.sectionOrder = Array.isArray(prev.sectionOrder) ? prev.sectionOrder : null;
-      plan.recipe.hiddenSlots = Array.isArray(prev.hiddenSlots) ? prev.hiddenSlots : [];
-      plan.recipe.locks = { ...DEFAULT_LOCKS, ...(prev.locks || {}) };
-      if (prev.styleId) { plan.recipe.styleId = prev.styleId; plan.recipe.activeStyleId = prev.activeStyleId || prev.styleId; }
-      if (prev.motionIntensity) plan.recipe.motionIntensity = prev.motionIntensity;
-      if (prev.motionProfile) plan.recipe.motionProfile = prev.motionProfile;
-    } catch { /* fresh recipe on parse failure — editor state starts clean */ }
-  }
-  reconcilePlanWithRecipe(plan, plan.recipe);
-  applyPlanOverrides(plan, plan.recipe);
-  const html = scaffoldSite(plan);
+  if (!prevRecipeRow) return plan;
+  try {
+    const prev = JSON.parse(prevRecipeRow.recipe_json);
+    plan.recipe.contentOverrides = Array.isArray(prev.contentOverrides) ? prev.contentOverrides : [];
+    plan.recipe.imageOverrides = prev.imageOverrides && typeof prev.imageOverrides === 'object' ? prev.imageOverrides : {};
+    plan.recipe.sectionOrder = Array.isArray(prev.sectionOrder) ? prev.sectionOrder : null;
+    plan.recipe.hiddenSlots = Array.isArray(prev.hiddenSlots) ? prev.hiddenSlots : [];
+    plan.recipe.locks = { ...DEFAULT_LOCKS, ...(prev.locks || {}) };
+    if (prev.styleId) { plan.recipe.styleId = prev.styleId; plan.recipe.activeStyleId = prev.activeStyleId || prev.styleId; }
+    if (prev.motionIntensity) plan.recipe.motionIntensity = prev.motionIntensity;
+    if (prev.motionProfile) plan.recipe.motionProfile = prev.motionProfile;
+  } catch { /* fresh recipe on parse failure — editor state starts clean */ }
+  return plan;
+}
+
+// Shared build tail: artifact chain + QA + audit + telemetry, identical for
+// template-authored and AI-authored html.
+function finalizeBuild(projectId, plan, html, goal, user, ip = '', t0 = Date.now()) {
   const artifact = saveArtifact(projectId, 'site', 'index.html', html);
-  // §57: the PDF-ready view is generated from the SAME plan + html at build/change time.
-  saveArtifact(projectId, 'pdf', 'index.html', buildPdfView(plan, html).html);
-  // Phase 7: persist the v6 recipe (version tracks the site artifact) plus the full plan,
-  // so convert / change-component can recompose from the same seed, content and STYLE_LOCK.
+  // §57: the PDF-ready view derives from the SAME html; pages the PDF pipeline
+  // cannot rewrite still ship a printable copy of themselves.
+  let pdfHtml;
+  try { pdfHtml = buildPdfView(plan, html).html; } catch { pdfHtml = html; }
+  saveArtifact(projectId, 'pdf', 'index.html', pdfHtml);
   saveRecipe(projectId, plan.recipe, artifact.version);
   saveArtifact(projectId, 'plan', 'plan.json', JSON.stringify(plan));
-  // Phase 5: automatic Design QA + responsive audit against the site's own tokens,
-  // enriched with the Phase 7 style + cinematic audits.
   const qa = auditWithExtras(plan, html);
+  qa.buildSource = plan.buildSource || { via: 'template' };
   saveArtifact(projectId, 'qa', 'report.json', JSON.stringify(qa, null, 2));
   db.prepare(`UPDATE projects SET status = 'preview', updated_at = datetime('now') WHERE id = ?`).run(projectId);
   audit(user.orgId, user.id, 'builder.scaffold', 'project', projectId,
-    { goal: String(goal).slice(0, 120), version: artifact.version, style: plan.style.id, creationMode: plan.creationMode, qaScore: qa.score }, ip);
-  // honeycomb-style wide event: one self-contained JSON line per build lifecycle
+    { goal: String(goal).slice(0, 120), version: artifact.version, style: plan.style.id, creationMode: plan.creationMode, qaScore: qa.score, buildSource: qa.buildSource.via }, ip);
   wideEvent('build.completed', {
     projectId, version: artifact.version, style: plan.style.id, creationMode: plan.creationMode,
     universe: plan.universe.id, motion: plan.universe.motion, industry: plan.industry,
     motionIntensity: resolveIntensity(plan), scenes: selectScenes(plan.universeSeed, resolveIntensity(plan)),
     recipeVersion: plan.recipe.version, motionProfile: plan.recipe.motionProfile, shaderId: plan.recipe.shaderId,
     cinematic: !!plan.cinematic,
-    pages: plan.contentPack.sitemap.length, sections: plan.contentPack.sitemap.reduce((n, s) => n + s.sections.length, 0),
+    pages: plan.contentPack.sitemap.length, sections: plan.contentPack.sitemap.reduce((n, x) => n + x.sections.length, 0),
     provenance: plan.contentPack.provenanceSummary, qaScore: qa.score, qaGrade: qa.grade,
-    bytes: html.length, durationMs: Date.now() - t0,
+    bytes: html.length, durationMs: Date.now() - t0, buildSource: qa.buildSource.via,
   });
   return { plan, artifact, qa };
+}
+
+export function buildFromGoal(projectId, goal, opts = {}, user, ip = '') {
+  const t0 = Date.now();
+  const plan = makePlan(goal, { ...opts, projectId });
+  // Phase 8: a full rebuild from goal keeps the editor's override layers and locks.
+  inheritRecipeLayers(plan, projectId);
+  reconcilePlanWithRecipe(plan, plan.recipe);
+  applyPlanOverrides(plan, plan.recipe);
+  plan.buildSource = { via: 'template' };
+  const html = scaffoldSite(plan);
+  return finalizeBuild(projectId, plan, html, goal, user, ip, t0);
+}
+
+// AI-first variant: when the org has AI providers configured in the vault, the org's
+// own model authors the single-file site against a strict luxury contract; any
+// rejection falls back to the deterministic cinematic template. plan.buildSource
+// records exactly which path produced the site.
+export async function buildFromGoalAi(orgId, projectId, goal, opts = {}, user, ip = '') {
+  const t0 = Date.now();
+  const plan = makePlan(goal, { ...opts, projectId });
+  inheritRecipeLayers(plan, projectId);
+  reconcilePlanWithRecipe(plan, plan.recipe);
+  applyPlanOverrides(plan, plan.recipe);
+  const ms = mediaSet(plan.industry, plan.universeSeed || plan.siteName);
+  plan.media = { hero: ms.hero?.src || '', gallery: (ms.gallery || []).map((g) => g.src).filter(Boolean) };
+  const ai = await tryAiSite(orgId, plan);
+  if (ai.ok) {
+    plan.buildSource = { via: 'ai', provider: ai.provider };
+    return finalizeBuild(projectId, plan, ai.html, goal, user, ip, t0);
+  }
+  plan.buildSource = { via: 'template', reason: ai.reason || 'ai_unavailable' };
+  const html = scaffoldSite(plan);
+  return finalizeBuild(projectId, plan, html, goal, user, ip, t0);
 }
 
 // ---- Phase 7: recipe persistence + plan recomposition --------------------------------

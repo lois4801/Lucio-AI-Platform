@@ -205,7 +205,7 @@ export async function executeRun(orgId, runId, userId) {
           emit('ai.fallback', 'frontend-engineer', { reason: 'no AI providers configured — add ChatGPT/Claude/Kimi keys in AI Providers, or keep using templates' });
         } else {
           try {
-            const gen = await generate({ runId: r.id, prompt: aiFilePrompt(briefWithPack), purpose: 'implement', policy: AI_FIRST_POLICY, tokens: 6000 });
+            const gen = await generate({ runId: r.id, prompt: aiFilePrompt(briefWithPack), purpose: 'implement', policy: AI_FIRST_POLICY, tokens: 16000 });
             const ai = generateFilesWithAi(briefWithPack, gen.content);
             files = ai.files; meta = ai.meta; via = gen.provider === 'ai-gateway' ? (gen.label || gen.model || 'your AI') : gen.provider;
             emit('ai.authored', 'frontend-engineer', { provider: via, fileCount: meta.fileCount });
