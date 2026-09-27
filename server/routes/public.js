@@ -51,6 +51,22 @@ publicRouter.get('/live/:slug', (req, res) => {
   res.send(artifact.content);
 });
 
+// Template showcase — EVERY saved template is always live at /tpl/:id (the UUID
+// is the unguessable capability link; share it with customers/clients to view
+// the template exactly as imported: animations, effects and motions included).
+// The HTML snapshot is fully self-contained, so the preview survives even if
+// the original source site goes away.
+publicRouter.get('/tpl/:id', (req, res) => {
+  const ip = req.ip || 'unknown';
+  if (!rateOk(`tpl:${ip}`, 120, 60_000)) return res.status(429).send('Too many requests — please try later.');
+  const t = db.prepare(`SELECT id, name, html_path FROM site_templates WHERE id = ?`).get(String(req.params.id || ''));
+  if (!t) return res.status(404).send('Template not found.');
+  let html;
+  try { html = fs.readFileSync(t.html_path, 'utf8'); } catch { return res.status(404).send('Template snapshot missing.'); }
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
+});
+
 publicRouter.post('/api/live/:slug/enquire', (req, res) => {
   const ip = req.ip || 'unknown';
   if (!rateOk(`enq:${ip}`, 10, 60_000)) return res.status(429).json({ error: 'too many messages — please try later' });

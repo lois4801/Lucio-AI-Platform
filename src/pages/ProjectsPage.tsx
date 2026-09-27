@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Hammer, Download, LayoutTemplate, Loader2, Sparkles, Brain, Upload, FolderOpen } from 'lucide-react';
+import { Plus, Trash2, Hammer, Download, LayoutTemplate, Loader2, Sparkles, Brain, Upload, FolderOpen, Globe, Check, Link2 } from 'lucide-react';
 
 type HostLearning = {
   host: string; attempts: number; successes: number;
@@ -17,6 +17,7 @@ type HostLearning = {
 
 type Template = {
   id: string; name: string; description: string; projectId: string; createdAt: string;
+  previewUrl?: string;
   textsCount: number;
   snippets: { kind: string; name: string; hint?: string; chars?: number; src?: string }[];
 };
@@ -30,6 +31,14 @@ export default function ProjectsPage() {
   const [importUrl, setImportUrl] = useState('');
   const [importing, setImporting] = useState(false);
   const [usingTpl, setUsingTpl] = useState('');
+  const [copiedTpl, setCopiedTpl] = useState('');
+  const copyTplLink = async (id: string) => {
+    try {
+      await navigator.clipboard.writeText(\`\${window.location.origin}/tpl/\${id}\`);
+      setCopiedTpl(id);
+      setTimeout(() => setCopiedTpl((c) => (c === id ? '' : c)), 1500);
+    } catch { /* clipboard unavailable — the Live button still works */ }
+  };
   const [error, setError] = useState('');
   const [learnings, setLearnings] = useState<HostLearning[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -212,6 +221,16 @@ export default function ProjectsPage() {
                     {t.snippets.slice(0, 3).map((s) => s.name).join(' · ')}
                   </p>
                   <div className="flex items-center gap-1">
+                    {t.previewUrl && (
+                      <>
+                        <Button size="sm" variant="outline" asChild title="Open the always-live template preview">
+                          <a href={t.previewUrl} target="_blank" rel="noreferrer"><Globe className="h-3.5 w-3.5 mr-1" />Live</a>
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => copyTplLink(t.id)} title="Copy the live template link to share with a client" aria-label={\`Copy live link for \${t.name}\`}>
+                          {copiedTpl === t.id ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Link2 className="h-3.5 w-3.5" />}
+                        </Button>
+                      </>
+                    )}
                     <Button size="sm" onClick={() => useTemplate(t)} disabled={usingTpl !== ''}>
                       {usingTpl === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />}
                       Use

@@ -186,22 +186,51 @@ async function main() {
   ok(tpl.json.snippets >= 3, 'template carries reusable snippets', `got ${tpl.json.snippets}`);
   const list = await call('GET', '/api/imports/templates');
   ok(list.json.templates.length === 1 && list.json.templates[0].textsCount > 15, 'template listed with text count');
+  ok(/^\/tpl\//.test(list.json.templates[0].previewUrl || ''), 'template carries an always-live preview URL');
   const kinds = list.json.templates[0].snippets.map((s) => s.kind);
   ok(kinds.includes('style') && kinds.includes('script') && kinds.includes('section'), 'style + script + section snippets extracted');
 
   const use = await call('POST', `/api/imports/templates/${tpl.json.templateId}/use`, { name: 'Client Copy' });
   ok(use.status === 201 && use.json.projectId !== projectId, 'template used → new project');
+  // The copy is registered as an imported site: text editing works out of the box.
   const copyState = await call('GET', `/api/imports/project/${use.json.projectId}`);
-  ok(copyState.status === 404, 'template copy is a plain project (not re-linked as import)');
+  ok(copyState.status === 200 && copyState.json.import && /^template:/.test(copyState.json.import.sourceUrl), 'template copy registered as imported site (editable)');
+  ok(copyState.json.texts.length > 15, 'template copy exposes the editable text index');
 
   // edit the copy, prove isolation from the original
   const copyPrev = await callText('GET', `/api/builder/project/${use.json.projectId}/preview`);
   ok(copyPrev.text.includes('Light, remembered.'), 'template copy has original content');
-  const copyStateTexts = await call('GET', `/api/imports/project/${projectId}`);
-  const hero2 = copyStateTexts.json.texts.find((t) => t.text === 'Light, remembered.');
-  // note: copy isn't an import — editing must fail honestly
+  const hero2 = copyState.json.texts.find((t) => t.text === 'Light, remembered.');
   const copyEdit = await call('PUT', `/api/imports/project/${use.json.projectId}/texts`, { edits: [{ id: hero2.id, text: 'Copied headline.' }] });
-  ok(copyEdit.status === 400 && /not an imported site/i.test(copyEdit.json.error), 'template copy rejects import-only edit endpoint (plain build path applies)');
+  ok(copyEdit.status === 200 && copyEdit.json.applied === 1, 'template copy ACCEPTS text edits (regression: was uneditable)');
+  const copyPrev2 = await callText('GET', `/api/builder/project/${use.json.projectId}/preview`);
+  ok(copyPrev2.text.includes('Copied headline.') && !copyPrev2.text.includes('Light, remembered.'), 'edited copy renders the new text');
+  const origPrev = await callText('GET', `/api/builder/project/${projectId}/preview`);
+  ok(origPrev.text.includes('Light, remembered.') && !origPrev.text.includes('Copied headline.'), 'original imported project untouched (isolation)');
+
+  // always-live template preview — public capability URL, no auth required
+  const pubView = await fetch(base() + `/tpl/${tpl.json.templateId}`);
+  const pubHtml = await pubView.text();
+  ok(pubView.status === 200 && pubHtml.includes('Light, remembered.'), 'GET /tpl/:id serves the template live WITHOUT auth');
+  ok(pubHtml.includes(MOTION_JS), 'live template preview keeps the motion script');
+  const pubMissing = await fetch(base() + '/tpl/does-not-exist');
+  ok(pubMissing.status === 404, 'unknown template id → 404');
+
+  // --- boot repair: pre-fix template copies become editable -------------------
+  {
+    const { db } = await import('../server/db.js');
+    const ab = await import('../server/services/appBuilder.js');
+    const si = await import('../server/services/siteImporter.js');
+    const owner = db.prepare(`SELECT id, org_id FROM users ORDER BY created_at LIMIT 1`).get();
+    const legacyId = globalThis.crypto.randomUUID();
+    db.prepare(`INSERT INTO projects (id, org_id, name, description, kind, created_by) VALUES (?,?,?,?,?,?)`)
+      .run(legacyId, owner.org_id, 'Legacy Copy', 'From template: Atelier Lumière Base', 'website', owner.id);
+    si.insertSiteArtifact(legacyId, ab.getLatestSite(projectId).content);
+    const repaired = si.repairTemplateDerivedProjects();
+    ok(repaired >= 1, `boot repair registered the legacy copy (${repaired})`);
+    const legacyState = await call('GET', `/api/imports/project/${legacyId}`);
+    ok(legacyState.status === 200 && legacyState.json.import, 'repaired legacy template copy is editable via import-studio');
+  }
 
   // --- publish live ------------------------------------------------------------------
   const pub = await call('POST', '/api/sell/publish', { projectId });

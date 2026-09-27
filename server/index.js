@@ -56,6 +56,9 @@ const packIngest = ingestPacks();
 console.log(`[lucio-api] agent packs ingested: ${packIngest.total} agents (${packIngest.agency} agency-agents, ${packIngest['500']} 500-ai-agents-projects)`);
 const catalogCount = ensureCatalog();
 console.log(`[lucio-api] auto data engine: ${catalogCount} industry verticals materialized`);
+const { repairTemplateDerivedProjects } = await import('./services/siteImporter.js');
+const repairedTemplates = repairTemplateDerivedProjects();
+if (repairedTemplates) console.log(`[lucio-api] repaired ${repairedTemplates} template-derived project(s) for editing`);
 
 export function createApp() {
   const app = express();

@@ -494,7 +494,7 @@ function latestVersion(projectId) {
   const row = db.prepare(`SELECT MAX(version) v FROM build_artifacts WHERE project_id = ? AND kind = 'site'`).get(projectId);
   return (row?.v || 0) + 1;
 }
-function insertSiteArtifact(projectId, html) {
+export function insertSiteArtifact(projectId, html) {
   const id = crypto.randomUUID();
   const version = latestVersion(projectId);
   db.prepare(`INSERT INTO build_artifacts (id, project_id, kind, path, content, version) VALUES (?,?,?,?,?,?)`)
@@ -873,6 +873,7 @@ export function listTemplates(orgId) {
                      FROM site_templates WHERE org_id = ? ORDER BY updated_at DESC LIMIT 100`).all(orgId)
     .map((t) => ({
       id: t.id, name: t.name, description: t.description, projectId: t.project_id, createdAt: t.created_at, updatedAt: t.updated_at,
+      previewUrl: `/tpl/${t.id}`,
       textsCount: safeLen(t.texts_json), snippets: safeParse(t.snippets_json).map((s) => ({ kind: s.kind, name: s.name, hint: s.hint, chars: s.chars || (s.content || '').length, src: s.src })),
     }));
 }
@@ -891,8 +892,54 @@ export function useTemplate(orgId, user, templateId, { name } = {}, ip = '') {
   db.prepare(`INSERT INTO projects (id, org_id, name, description, kind, created_by) VALUES (?,?,?,?,?,?)`)
     .run(projectId, orgId, String(name || '').trim().slice(0, 120) || `${t.name} (copy)`, `From template: ${t.name}`, 'website', user.id);
   insertSiteArtifact(projectId, html);
+  // Register the derived project as an imported site — WITHOUT this row every
+  // editing surface (import-studio texts, effects, reset) 404s or rejects with
+  // "project is not an imported site", leaving template copies uneditable.
+  const importId = crypto.randomUUID();
+  const originalPath = writeOriginal(`${importId}.html`, html);
+  const srcImport = t.source_import_id
+    ? db.prepare(`SELECT assets_json, health_json FROM site_imports WHERE id = ?`).get(t.source_import_id)
+    : null;
+  const texts = indexEditableTexts(html);
+  db.prepare(`INSERT INTO site_imports (id, org_id, project_id, source_url, final_url, http_status, bytes, title, original_path, texts_count, assets_json, health_json, created_by)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(importId, orgId, projectId, `template:${t.id}`, `template:${t.name}`, 200, Buffer.byteLength(html, 'utf8'),
+      t.name, originalPath, texts.length, srcImport?.assets_json || '[]', srcImport?.health_json || 'null', user.id);
   audit(orgId, user.id, 'import.use-template', 'project', projectId, { templateId, templateName: t.name }, ip);
   return { projectId, templateName: t.name };
+}
+
+// One-time repair for template-derived projects created BEFORE the import
+// registration above existed: they have a site artifact but no site_imports
+// row, which made them preview-only. Idempotent — skips anything already
+// registered. Runs at boot; repairs are audited.
+export function repairTemplateDerivedProjects() {
+  const broken = db.prepare(
+    `SELECT p.id, p.org_id, p.name, p.description FROM projects p
+     WHERE p.description LIKE 'From template: %'
+       AND NOT EXISTS (SELECT 1 FROM site_imports si WHERE si.project_id = p.id)`
+  ).all();
+  let repaired = 0;
+  for (const p of broken) {
+    const tplName = String(p.description || '').replace(/^From template:\s*/, '').trim();
+    const t = db.prepare(`SELECT * FROM site_templates WHERE org_id = ? AND name = ?`).get(p.org_id || '', tplName)
+      || db.prepare(`SELECT * FROM site_templates WHERE name = ?`).get(tplName);
+    const html = getLatestSite(p.id)?.content || (t ? readOriginal(t.html_path) : null);
+    if (!html) continue;
+    const importId = crypto.randomUUID();
+    const originalPath = writeOriginal(`${importId}.html`, html);
+    const srcImport = t?.source_import_id
+      ? db.prepare(`SELECT assets_json, health_json FROM site_imports WHERE id = ?`).get(t.source_import_id)
+      : null;
+    const texts = indexEditableTexts(html);
+    db.prepare(`INSERT INTO site_imports (id, org_id, project_id, source_url, final_url, http_status, bytes, title, original_path, texts_count, assets_json, health_json, created_by)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(importId, p.org_id, p.id, t ? `template:${t.id}` : 'template:unknown', `template:${tplName}`, 200,
+        Buffer.byteLength(html, 'utf8'), tplName, originalPath, texts.length, srcImport?.assets_json || '[]', srcImport?.health_json || 'null', 'repair');
+    audit(p.org_id, 'repair', 'import.repair-template-project', 'project', p.id, { templateName: tplName }, '');
+    repaired++;
+  }
+  return repaired;
 }
 
 export function deleteTemplate(orgId, user, templateId, ip = '') {
