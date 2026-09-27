@@ -556,6 +556,131 @@ CREATE TABLE IF NOT EXISTS promotion_log (
   created_by TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- ---- NEXUS Builder Runtime (Atoms-style integration, manual v1) ----
+-- Modular subsystem: never entangled with CRM/prospect tables; integrate via IDs.
+CREATE TABLE IF NOT EXISTS builder_projects (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  app_type TEXT NOT NULL DEFAULT 'website',
+  status TEXT NOT NULL DEFAULT 'draft',
+  source_prospect_id TEXT,
+  brief_json TEXT NOT NULL DEFAULT '{}',
+  active_checkpoint_id TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS builder_runs (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  project_id TEXT NOT NULL REFERENCES builder_projects(id) ON DELETE CASCADE,
+  parent_run_id TEXT,
+  intent TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'created',
+  model_policy TEXT NOT NULL DEFAULT 'sovereign-local',
+  budget_json TEXT NOT NULL DEFAULT '{}',
+  candidate TEXT NOT NULL DEFAULT 'main',
+  error TEXT,
+  started_at TEXT,
+  completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_builder_runs ON builder_runs(org_id, project_id);
+CREATE TABLE IF NOT EXISTS builder_events (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES builder_runs(id) ON DELETE CASCADE,
+  seq INTEGER NOT NULL,
+  event_type TEXT NOT NULL,
+  actor TEXT NOT NULL DEFAULT '',
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (run_id, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_builder_events ON builder_events(run_id, seq);
+CREATE TABLE IF NOT EXISTS builder_files (
+  project_id TEXT NOT NULL REFERENCES builder_projects(id) ON DELETE CASCADE,
+  path TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  hash TEXT NOT NULL DEFAULT '',
+  mime_type TEXT NOT NULL DEFAULT 'text/plain',
+  size INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (project_id, path)
+);
+CREATE TABLE IF NOT EXISTS builder_checkpoints (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  project_id TEXT NOT NULL REFERENCES builder_projects(id) ON DELETE CASCADE,
+  parent_id TEXT,
+  label TEXT NOT NULL DEFAULT '',
+  namespace TEXT NOT NULL DEFAULT 'main',
+  manifest_json TEXT NOT NULL DEFAULT '[]',
+  manifest_hash TEXT NOT NULL DEFAULT '',
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS builder_evidence (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  category TEXT NOT NULL,
+  check_name TEXT NOT NULL,
+  status TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  mandatory INTEGER NOT NULL DEFAULT 0,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_builder_evidence ON builder_evidence(run_id);
+CREATE TABLE IF NOT EXISTS builder_shares (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  checkpoint_id TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  access_mode TEXT NOT NULL DEFAULT 'read-only',
+  expires_at TEXT,
+  revoked_at TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS builder_deployments (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  checkpoint_id TEXT NOT NULL,
+  provider TEXT NOT NULL DEFAULT 'lucio-static',
+  environment TEXT NOT NULL DEFAULT 'production',
+  status TEXT NOT NULL DEFAULT 'active',
+  url TEXT NOT NULL DEFAULT '',
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS builder_comments (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  checkpoint_id TEXT,
+  author_name TEXT NOT NULL DEFAULT '',
+  author_role TEXT NOT NULL DEFAULT 'client',
+  target_ref TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- Exact content snapshots for builder checkpoints (manifests store hashes; this
+-- makes restore byte-exact even after later working-tree edits).
+CREATE TABLE IF NOT EXISTS _nexus_snapshots (
+  checkpoint_id TEXT PRIMARY KEY,
+  content_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS _nexus_usage (
+  run_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  tokens INTEGER NOT NULL DEFAULT 0,
+  purpose TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `);
 
 // Lightweight migrations: add columns to pre-existing tables when missing.

@@ -28,6 +28,12 @@ prospectsRouter.post('/', requireRole('member'), (req, res) => {
   res.status(201).json({ prospect: db.prepare(`SELECT * FROM prospects WHERE id = ?`).get(id) });
 });
 
+prospectsRouter.get('/:id', (req, res) => {
+  const p = db.prepare(`SELECT * FROM prospects WHERE id = ? AND org_id = ?`).get(req.params.id, req.user.orgId);
+  if (!p) return res.status(404).json({ error: 'prospect not found' });
+  res.json({ prospect: p });
+});
+
 prospectsRouter.patch('/:id', requireRole('member'), (req, res) => {
   const p = db.prepare(`SELECT * FROM prospects WHERE id = ? AND org_id = ?`).get(req.params.id, req.user.orgId);
   if (!p) return res.status(404).json({ error: 'not found' });

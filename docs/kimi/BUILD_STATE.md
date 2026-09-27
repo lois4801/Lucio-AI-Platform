@@ -4,10 +4,10 @@ Canonical spec: Lucio_AI_Platform_Single_Master_Implementation_Manual_v28_MARKET
 Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 
 ## Current position
-- Phase: 0 PASS · 1 PASS · 2 PASS · 3 PASS + expansion · 4 PASS · 5 PASS · 6 PASS · 7 PASS · 8 PASS · 9 PASS · 10 PASS · 11 PASS · 12 PASS · 13 PASS · 14 PASS · 15 PASS · 16 PASS · 17 PASS — ALL PHASES COMPLETE
+- Phase: 0 PASS · 1 PASS · 2 PASS · 3 PASS + expansion · 4 PASS · 5 PASS · 6 PASS · 7 PASS · 8 PASS · 9 PASS · 10 PASS · 11 PASS · 12 PASS · 13 PASS · 14 PASS · 15 PASS · 16 PASS · 17 PASS — ALL PHASES COMPLETE · NEXUS Builder DONE
 - Branch: main
 - Last passing checkpoint: see git log
-- Next action: none — all phases 0–17 complete. Hardening/backlog only. Build contract: docs/kimi/PHASE17_CONTRACT.md (Phase 17, completed — all phases done)
+- Next action: none — all phases 0–17 + NEXUS Atoms-style builder complete. Hardening/backlog only. Build contract: docs/kimi/PHASE17_CONTRACT.md (Phase 17, completed — all phases done); builder contract: THIRD_PARTY_NOTICES.md + docs/builder/INTEGRATION_AUDIT.md
 - Release posture: local development build, not production
 
 ## Phase summary
@@ -34,6 +34,7 @@ Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 | 16 Benchmark Max + Evaluation | DONE | Seeded deterministic suites, claim gate, champion/challenger board, nondeterminism guard |
 | 17 Adaptive Self-Optimization | DONE | Evidence-gated promotion, human policy cap, rollback, benchmark isolation |
 | Sell architecture + map discovery (Pindrop parity) | DONE | Publish live links, owner portal with photo requests, deals/billing (manual default, Stripe-gated), leads inbox, enquiry-posting generated sites, pin-drop map discovery with street-view gating |
+| NEXUS Builder Runtime (Atoms manual v1) | DONE | Atoms-style multi-agent builder: intent→plan→build→verify pipeline, 13-role event timeline over SSE, checkpointing + restore points, 10-check evidence gate, competition mode (isolated candidates, winner select, cherry-pick merge), public shares with client comments, ZIP export, honest git adapter (BYOK never persisted), lucio-static deploy + rollback, CRM prospect launch with grounded briefs. Flag-gated (BUILDER_RUNTIME_ENABLED). Contract docs: THIRD_PARTY_NOTICES.md + docs/builder/INTEGRATION_AUDIT.md |
 
 ## Session-resume notes
 - Backend: Express + better-sqlite3 (data/lucio.db), serves /api on port 8787; Vite dev proxies /api.
@@ -43,4 +44,4 @@ Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 - Dev server: `npm run dev -- --port 7100` (log: lucio_dev.log); tests: `node scripts/test-phase3.js` (58) + `node scripts/test-phase4.js` (39).
 - ORPHANED VITE WATCH: dev.js's Vite child survives parent taskkill. Kill BOTH the :8787 PID and the :7100 PID, verify with netstat, before restart — a zombie Vite on [::1]:7100 served stale code during the Phase 4 E2E.
 - Sell architecture: dev.js Vite proxy now also forwards /live and /portal to :8787 — any preview server started before this change must be restarted or public links 404 through the dev port.
-- Test suites: test-sell.js (33) + test-google-places.js (38) + test-phase3.js (58) + test-phase4.js (39) + test-phase6.js (55) + test-assistant.js (34) + test-phase7.js (134) + test-phase8.js (65) + test-phase9.js (36) + test-phase10.js (38) + test-phase11.js (30) + test-phase12.js (30) + test-phase13.js (19) + test-phase14.js (24) + test-phase15.js (48) + test-phase16.js (30) + test-phase17.js (26) = 737 assertions.
+- Test suites: test-sell.js (33) + test-google-places.js (38) + test-phase3.js (58) + test-phase4.js (39) + test-phase6.js (55) + test-assistant.js (34) + test-phase7.js (134) + test-phase8.js (65) + test-phase9.js (36) + test-phase10.js (38) + test-phase11.js (30) + test-phase12.js (30) + test-phase13.js (19) + test-phase14.js (24) + test-phase15.js (48) + test-phase16.js (30) + test-phase17.js (26) + test-nexus-core.js (38) + test-nexus-team.js (41) + test-nexus-ship.js (45) = 861 assertions.

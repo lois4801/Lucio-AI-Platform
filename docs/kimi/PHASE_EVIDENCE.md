@@ -807,3 +807,67 @@ source; responsive, accessibility, factual, visual and performance QA pass.
   promotion (swap + flag + log + reason), rollback (restore + reverted + double-404),
   benchmark isolation, authz (member 403 on mutations, org-scoped reads), audit rows.
 - Full regression: 737 assertions across 17 suites, 0 failures; tsc clean; build clean.
+
+## NEXUS Builder Runtime — Atoms-style multi-agent builder (Atoms manual v1)
+
+### What shipped
+- Reference-only study of XploAI/atoms-demo (MIT): streaming tag-parser + workspace
+  UX concepts. NO code copied; GPL repo lois4801/Atoms.dev (Linux terminal manager,
+  not the AI builder) deliberately NOT used — see THIRD_PARTY_NOTICES.md +
+  docs/builder/INTEGRATION_AUDIT.md.
+- New tables (db.js, all CREATE TABLE IF NOT EXISTS): builder_projects, builder_runs,
+  builder_events (UNIQUE(run_id,seq) — idempotent re-delivery by event id), builder_files
+  (PK project_id+path, hash+size), builder_checkpoints + _nexus_snapshots (immutable
+  content snapshots), builder_evidence, builder_shares, builder_deployments,
+  builder_comments, _nexus_usage.
+- server/services/nexus/: protocol.js (SSE subscribe/publish, appendEvent with
+  per-type payload whitelists, TagStreamParser + normalizeTokens — chunk-safe,
+  non-nested grammar), vfs.js (normalizePath traversal-blocked, applyOps with
+  baseHash optimistic conflict, createCheckpoint/snapshotContents/restoreCheckpoint
+  with restore-point preservation), templates.js (4 Lucio token universes, 5 app
+  types, 14-step role graph, briefFromIntent with [EDIT:] placeholders for unverified
+  facts), evidence.js (10 deterministic checks: required files, app.js syntax parse,
+  secret patterns, unsafe eval/document.write, lang+viewport mandatory; alt text,
+  form labels, size cap, placeholder labeling, token contrast non-mandatory),
+  modelRouter.js (provider_registry + sovereign local handler, token budget 429,
+  fallback, structuredOutput schema validation, usage rows), orchestrator.js
+  (org-scoped run state machine, 13+ agent roles, /verify intents run evidence only,
+  maxRepairCycles bounded, honest 409 cancel on finished runs, runCompetition with
+  isolated main-a/main-b namespaces, comparison board, selectWinner with pre-selection
+  restore point + main-candidate rejection, cherry-pick mergeCandidate with 409 on
+  unknown paths), share.js (slug, read-only, expiry, revoke, snapshot-sourced,
+  comments), exportZip.js (store-only ZIP + readZip verifier), gitAdapter.js
+  (honest 501 status with enablement steps, buildSyncPlan, syncToGitHub via Contents
+  API with GITHUB_TOKEN env or x-builder-token BYOK header — never persisted),
+  deploy.js (lucio-static only, immutable snapshot in deployment row, rollback by
+  insertion order, exactly-one-active), prospectLaunch.js (grounded brief from
+  verified prospect facts + source attribution, CRM write-back to prospects.notes
+  and comm_log).
+- Routes server/routes/nexus.js mounted at /api/nexus. Public no-auth surfaces served
+  before auth middleware: share read/file/comments, deployed apps /apps/b/:slug with
+  CSP connect-src 'none' + X-Frame-Options + nosniff. All builder API behind
+  BUILDER_RUNTIME_ENABLED flag (404 when off) + requireAuth. Express 5 named splats
+  joined via splatPath helper (arrays, not strings).
+- UI: src/pages/NexusPage.tsx (/nexus — project cards, intent input + competition
+  toggle, agent timeline over SSE, evidence panel, sandboxed iframe preview, file
+  explorer, checkpoints with Restore/Share/Deploy/ZIP, competition board) wired in
+  App.tsx + AppShell nav.
+- Deviations (documented in INTEGRATION_AUDIT.md): no builder_provider_secrets table —
+  BYOK is request-scoped only; SQLite kept behind service layer; files inline with
+  hash+size.
+
+### Verification
+- scripts/test-nexus-core.js — 38/38: protocol whitelist, idempotent event
+  re-delivery, SSE/JSON event streams, VFS ops + conflict 409 + restore restore-point,
+  evidence gating (mandatory failure blocks completion, repair budget exhaustion),
+  share/revoke/expiry, preview CSP, export ZIP, flag gate 404.
+- scripts/test-nexus-team.js — 41/41: 13-role plan/timeline, token injection,
+  10 evidence rows, /verify mode blocks on injected sk-... secret with run.blocked,
+  usage accounting, structuredOutput.
+- scripts/test-nexus-ship.js — 45/45: public share + sandbox CSP + comments,
+  byte-exact ZIP vs checkpoint snapshot, git 501 honesty + sync plan, BYOK never
+  persisted (events + audit grep), lucio-static deploy publicly served with frame
+  isolation, rollback repoints correctly, competition (isolation, same evidence
+  definitions, winner select with restore point, cherry-pick merge 409s on unknown
+  paths, main-run selection rejected 404), CRM launch grounding + write-back.
+- Full regression: 861 assertions across 20 suites, 0 failures; tsc clean; vite build clean.
