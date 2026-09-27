@@ -14,6 +14,7 @@ import {
   osmOverpassProvider, isOsmLiveEnabled, osmDefaultBudget,
   setOsmCityResolver, setOsmGeoUnits,
 } from './osmOverpass.js';
+import { extractWebsiteIntel, applyIntelToBiz, intelEvidence } from './websiteIntel.js';
 
 // Keyless live coverage: city coordinates + region→cities for the OSM provider.
 setOsmCityResolver(() => CITY_COORDS);
@@ -173,9 +174,16 @@ export async function resolveWebsitePresence(biz) {
     const hasViewport = /name=["']viewport["']/i.test(res.html);
     const hasContact = /contact|quote|book/i.test(low);
     evidence.push(mkEvidence('site-signals', JSON.stringify({ httpsOk, hasViewport, hasContact, title: title.slice(0, 80) }), 'live-check', 'website-resolver', 'measurable non-insulting signals per §17.13.6', 0.85, 1));
+    // Website Intel: pull REAL facts (phone, email, address, hours, socials,
+    // description) out of the page we already fetched — zero extra requests,
+    // every fact provenance-tagged with its extraction method + source URL.
+    const intel = extractWebsiteIntel(res.html, res.finalUrl);
+    for (const ev of intelEvidence(intel, res.finalUrl)) evidence.push(ev);
     const weak = !httpsOk || !hasViewport || !hasContact;
-    return outcome('CONFIRMED_WEBSITE', weak ? 'GAP_WEAK' : 'GAP_NONE', 0.95,
+    const o = outcome('CONFIRMED_WEBSITE', weak ? 'GAP_WEAK' : 'GAP_NONE', 0.95,
       weak ? 'Functioning site with weak mobile/conversion basics.' : 'Functioning first-party website with healthy basics.', evidence, biz);
+    o.intel = intel;
+    return o;
   }
 
   // Persistent failure / resolution failure
@@ -394,6 +402,7 @@ export async function runMarketScan(orgId, user, rawQuery, ip = '') {
     const results = [];
     for (const biz of merged.slice(0, req.maxResults)) {
       const resolution = await resolveWebsitePresence(biz);
+      applyIntelToBiz(biz, resolution.intel); // first-party facts fill directory gaps
       const scoring = scoreOpportunity(biz, resolution, req.serviceNeeded);
       if (resolution.website_gap_signal !== 'GAP_NONE') gapCandidates++;
       const { prospectId, created, updated } = upsertProspect(orgId, scanId, biz, resolution, scoring);
@@ -474,6 +483,7 @@ export async function runNearbyScan(orgId, user, { lat, lng, industry = '', maxR
   const results = [];
   for (const biz of merged.slice(0, maxResults)) {
     const resolution = await resolveWebsitePresence(biz);
+    applyIntelToBiz(biz, resolution.intel);
     const scoring = scoreOpportunity(biz, resolution, 'website');
     const { prospectId } = upsertProspect(orgId, scanId, biz, resolution, scoring);
     results.push({

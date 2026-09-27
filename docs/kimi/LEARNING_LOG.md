@@ -102,3 +102,22 @@ start of every new session to evolve instead of rediscovering.
   untouched.
 - **Lesson:** the scanner's tile-fallback list is now a single shared constant
   (`KEYLESS_TILE_SOURCES`) — future provider changes touch one file.
+
+
+## Session 2026-09-27 (later) — Website Intel: real data pulled from live sites
+- **Heard:** "improve this so I can have actual data. Pull the information or
+  data across any website. Use open source code from GitHub repositories."
+- **Built:** `server/services/discovery/websiteIntel.js` — cheerio-based
+  (github.com/cheeriojs/cheerio, MIT) layered extractor following the
+  metascraper/Readability pattern: schema.org JSON-LD > OpenGraph/meta >
+  tel:/mailto:/social anchors > text heuristics (CA postal code, phone).
+  Wired into `resolveWebsitePresence` (zero extra HTTP — runs on the HTML the
+  scanner already fetched), filling missing directory fields (gaps only, never
+  overwrites) with per-fact evidence rows (source URL + extraction method).
+  New endpoints: `POST /scans/prospects/:id/pull` (per-prospect pull+persist)
+  and `POST /scans/extract` (any URL). Scanner rows got a Pull-data button.
+- **Lesson:** JSON-LD type matching must cover real-world types like
+  "Bakery"/"Dentist"/"ExerciseGym", not just LocalBusiness — first test run
+  failed 15/29 for exactly that gap. Maintain a generous type list.
+- **Lesson:** extraction runs on the already-fetched, SSRF-guarded, 20KB-capped
+  HTML — real data at zero added network cost per scan.

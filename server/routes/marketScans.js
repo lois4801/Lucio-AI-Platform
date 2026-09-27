@@ -58,7 +58,8 @@ marketScansRouter.get('/:id', (req, res) => {
   res.json({ scan });
 });
 
-// Reverify a prospect's website presence (§17.13.18 action: Verify Again)
+// Reverify a prospect's website presence (§17.13.18 action: Verify Again) —
+// also pulls real facts from the site via Website Intel and fills empty columns.
 marketScansRouter.post('/prospects/:id/reverify', requireRole('member'), async (req, res) => {
   const p = db.prepare(`SELECT * FROM prospects WHERE id = ? AND org_id = ?`).get(req.params.id, req.user.orgId);
   if (!p) return res.status(404).json({ error: 'prospect not found' });
@@ -70,6 +71,17 @@ marketScansRouter.post('/prospects/:id/reverify', requireRole('member'), async (
   const scoring = (await import('../services/discovery/pipeline.js')).scoreOpportunity(
     { address: p.address, public_phone: p.public_phone, public_email: p.public_email, review_signals: p.review_signals, industry: p.industry, corroboration: 1 },
     resolution, p.recommended_service || 'website');
+  const { intelFieldUpdates } = await import('../services/discovery/websiteIntel.js');
+  const intelUpd = intelFieldUpdates(resolution.intel);
+  const filled = Object.fromEntries(Object.entries(intelUpd).filter(([k]) => !String(p[k] || '').trim()));
+  if (Object.keys(filled).length) {
+    const sets = Object.keys(filled).map((k) => `${k} = @${k}`).join(', ');
+    db.prepare(`UPDATE prospects SET ${sets} WHERE id = @id`).run({ ...filled, id: p.id });
+  }
+  if (resolution.intel?.socials?.length) {
+    const merged = [...new Set([...JSON.parse(p.social_profiles || '[]'), ...resolution.intel.socials])];
+    db.prepare(`UPDATE prospects SET social_profiles = ? WHERE id = ?`).run(JSON.stringify(merged), p.id);
+  }
   db.prepare(`UPDATE prospects SET website_status=?, website_gap_signal=?, website_confidence=?, website_last_verified_at=?, last_verified_at=?, lead_score=?, score_factors=?, score_explanation=?, priority=?, lead_reason=?, recommended_offer=? WHERE id=?`)
     .run(resolution.website_status, resolution.website_gap_signal, resolution.website_confidence, resolution.last_verified_at,
       resolution.last_verified_at, scoring.lead_score, JSON.stringify(scoring.score_factors), scoring.score_explanation,
@@ -78,7 +90,57 @@ marketScansRouter.post('/prospects/:id/reverify', requireRole('member'), async (
     (await import('../services/discovery/pipeline.js')).insertEvidence(req.user.orgId, p.id, p.scan_id, ev);
   }
   audit(req.user.orgId, req.user.id, 'prospect.reverify', 'prospect', p.id, { status: resolution.website_status }, req.ip);
-  res.json({ website_status: resolution.website_status, website_gap_signal: resolution.website_gap_signal, lead_score: scoring.lead_score, note: resolution.resolution_note });
+  res.json({
+    website_status: resolution.website_status, website_gap_signal: resolution.website_gap_signal,
+    lead_score: scoring.lead_score, note: resolution.resolution_note,
+    pulled: Object.keys(filled).length, pulled_fields: Object.keys(filled),
+  });
+});
+
+// Website Intel pull — fetch a prospect's site and extract REAL facts
+// (phone, email, address, hours, socials, description) with per-field provenance.
+marketScansRouter.post('/prospects/:id/pull', requireRole('member'), async (req, res) => {
+  const p = db.prepare(`SELECT * FROM prospects WHERE id = ? AND org_id = ?`).get(req.params.id, req.user.orgId);
+  if (!p) return res.status(404).json({ error: 'prospect not found' });
+  if (!p.website_url) return res.status(400).json({ error: 'prospect has no website URL to pull from' });
+  const { fetchWithGuards } = await import('../services/ssrfGuard.js');
+  const { extractWebsiteIntel, intelFieldUpdates, intelEvidence } = await import('../services/discovery/websiteIntel.js');
+  const r = await fetchWithGuards(p.website_url);
+  if (!r.ok || !r.html) return res.status(502).json({ error: `could not fetch ${p.website_url}: ${r.error || `HTTP ${r.status}`}` });
+  const intel = extractWebsiteIntel(r.html, r.finalUrl);
+  const upd = intelFieldUpdates(intel);
+  const filled = Object.fromEntries(Object.entries(upd).filter(([k]) => !String(p[k] || '').trim()));
+  if (Object.keys(filled).length) {
+    const sets = Object.keys(filled).map((k) => `${k} = @${k}`).join(', ');
+    db.prepare(`UPDATE prospects SET ${sets} WHERE id = @id`).run({ ...filled, id: p.id });
+  }
+  if (intel.socials?.length) {
+    const merged = [...new Set([...JSON.parse(p.social_profiles || '[]'), ...intel.socials])];
+    db.prepare(`UPDATE prospects SET social_profiles = ? WHERE id = ?`).run(JSON.stringify(merged), p.id);
+  }
+  for (const ev of intelEvidence(intel, r.finalUrl)) {
+    (await import('../services/discovery/pipeline.js')).insertEvidence(req.user.orgId, p.id, p.scan_id, ev);
+  }
+  db.prepare(`UPDATE prospects SET last_verified_at = ? WHERE id = ?`).run(new Date().toISOString(), p.id);
+  audit(req.user.orgId, req.user.id, 'prospect.pull', 'prospect', p.id, { pulled: intel.facts.length, url: r.finalUrl }, req.ip);
+  res.json({
+    pulled: intel.facts.length, filled: Object.keys(filled), url: r.finalUrl,
+    fields: { phone: intel.phone, email: intel.email, address: intel.address, hours: intel.hours, socials: intel.socials, description: intel.description },
+    facts: intel.facts,
+  });
+});
+
+// Generic Website Intel — pull structured facts from ANY website URL (SSRF-guarded).
+marketScansRouter.post('/extract', requireRole('member'), async (req, res) => {
+  const url = String(req.body?.url || '').trim();
+  if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'url must start with http:// or https://' });
+  const { fetchWithGuards } = await import('../services/ssrfGuard.js');
+  const { extractWebsiteIntel } = await import('../services/discovery/websiteIntel.js');
+  const r = await fetchWithGuards(url);
+  if (!r.ok || !r.html) return res.status(502).json({ error: `could not fetch ${url}: ${r.error || `HTTP ${r.status}`}` });
+  const intel = extractWebsiteIntel(r.html, r.finalUrl);
+  audit(req.user.orgId, req.user.id, 'intel.extract', 'website', r.finalUrl.slice(0, 120), { facts: intel.facts.length }, req.ip);
+  res.json({ url: r.finalUrl, status: r.status, ...intel });
 });
 
 // Suppress (§17.13.16 do-not-contact / §17.13.17 stop processing)

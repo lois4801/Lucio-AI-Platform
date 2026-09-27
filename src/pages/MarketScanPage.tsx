@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Radar, RefreshCw, FileText, Ban, FolderPlus, Eye, Navigation, Search as SearchIcon, ScanSearch, Hammer, HandCoins, UserRound, MapPin, Phone, Globe, Facebook, Instagram, Music2, Youtube, Linkedin, Sparkles } from 'lucide-react';
+import { Radar, RefreshCw, FileText, Ban, FolderPlus, Eye, Navigation, Search as SearchIcon, ScanSearch, Hammer, HandCoins, UserRound, MapPin, Phone, Globe, Facebook, Instagram, Music2, Youtube, Linkedin, Sparkles, Download } from 'lucide-react';
 
 // Leaflet is loaded from CDN on demand (same pattern as scanner libs).
 function loadScript(src: string): Promise<void> {
@@ -297,9 +297,23 @@ export default function MarketScanPage() {
   const reverify = async (p: ProspectRow) => {
     setError('');
     try {
-      const d = await api<{ website_status: string; lead_score: number; note: string }>(`/scans/prospects/${p.id}/reverify`, { method: 'POST' });
-      setNotice(`${p.business_name}: ${d.website_status} (score ${d.lead_score}). ${d.note}`);
+      const d = await api<{ website_status: string; lead_score: number; note: string; pulled?: number; pulled_fields?: string[] }>(`/scans/prospects/${p.id}/reverify`, { method: 'POST' });
+      setNotice(`${p.business_name}: ${d.website_status} (score ${d.lead_score}). ${d.note}${d.pulled ? ` Pulled ${d.pulled} fact(s) from their site: ${(d.pulled_fields || []).join(', ')}.` : ''}`);
       setResults((rs) => rs.map((r) => (r.id === p.id ? { ...r, website_status: d.website_status, lead_score: d.lead_score } : r)));
+    } catch (e: any) { setError(e.message); }
+  };
+
+  // Website Intel — pull REAL facts (phone, email, address, hours, socials)
+  // from the prospect's own website, with every fact provenance-tagged.
+  const pullFromWebsite = async (p: ProspectRow) => {
+    setError(''); setNotice('');
+    try {
+      const d = await api<{ pulled: number; filled: string[]; url: string; fields: Record<string, unknown> }>(`/scans/prospects/${p.id}/pull`, { method: 'POST' });
+      const found = Object.entries(d.fields).filter(([, v]) => Array.isArray(v) ? v.length : Boolean(v)).map(([k]) => k);
+      setNotice(d.pulled
+        ? `${p.business_name}: pulled ${d.pulled} fact(s) from ${d.url} — ${found.join(', ')}. Evidence updated.`
+        : `${p.business_name}: site fetched, no extractable facts (or page is JS-heavy).`);
+      if (d.fields.phone) setResults((rs) => rs.map((r) => (r.id === p.id ? { ...r, public_phone: String(d.fields.phone) } : r)));
     } catch (e: any) { setError(e.message); }
   };
 
@@ -524,6 +538,7 @@ export default function MarketScanPage() {
                       <div className="flex gap-1">
                         <Button size="sm" variant="ghost" title="View evidence" onClick={() => viewEvidence(p)}><Eye className="h-3.5 w-3.5" /></Button>
                         <Button size="sm" variant="ghost" title="Verify again" onClick={() => reverify(p)}><RefreshCw className="h-3.5 w-3.5" /></Button>
+                        <Button size="sm" variant="ghost" title="Pull live data from their website" onClick={() => pullFromWebsite(p)}><Download className="h-3.5 w-3.5" /></Button>
                         <Button size="sm" variant="ghost" title="Generate opportunity + create project" onClick={() => generateOpportunity(p)}><FolderPlus className="h-3.5 w-3.5" /></Button>
                         <Button size="sm" variant="ghost" title="Build website now (pick a template)" onClick={() => openBuild(p)}><Hammer className="h-3.5 w-3.5" /></Button>
                         <Button size="sm" variant="ghost" title="Suppress" onClick={async () => { await act(`/scans/prospects/${p.id}/suppress`, `${p.business_name} suppressed`); setResults((rs) => rs.filter((r) => r.id !== p.id)); }}><Ban className="h-3.5 w-3.5" /></Button>
