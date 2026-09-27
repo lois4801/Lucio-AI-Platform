@@ -88,6 +88,15 @@ function resolveKey(key) {
   return { src: `/api/media/${key}.svg`, kind: 'procedural-art', key: `${key}-svg`, note: svg.note };
 }
 
+// Phase 8 editor image picks: resolves a library key to a real on-disk media entry.
+// Returns null for unknown keys — the editor never fabricates image references.
+export function resolveMediaEntry(key) {
+  const k = String(key || '').trim();
+  if (!k || /[^A-Za-z0-9._-]/.test(k)) return null;
+  if (mediaFilePath(`${k}.jpg`) || mediaFilePath(`${k}.svg`)) return resolveKey(k);
+  return null;
+}
+
 // Procedural luxury art fallback — palette-matched layered gradients with grain.
 // SVG is resolution-independent: sharp at 4K and beyond.
 export function proceduralArt(key, palette) {

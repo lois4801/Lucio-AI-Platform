@@ -409,3 +409,75 @@ scripts/test-phase7.js, all green; full legacy regression re-run green
   namespace), silently gating all real-render coverage — fixed.
 - Admin approve/deprecate route test now walks the status machine first (imported →
   approved is correctly blocked by design).
+
+## Phase 8 — Unified Website Editor + Versioning (manual v28 §13, §58–60) — PASS
+
+Exit criterion met: content, sections, images, style, layout, components and motion are
+editable with locks, approvals, compare/restore and selective regeneration.
+
+### What landed
+- `server/services/siteEditor.js` (new): proposal-driven edit pipeline over the stored
+  v6 recipe. Kinds: content | image | style | motion | component | section-order |
+  section-visibility. §59 lock domains (content/image/style/motion/component/section/
+  scene) reject with **423** unless `payload.override` is set — every override is
+  audited (`editor.lock_override`). STYLE_LOCK defaults true (§60); toggling a lock
+  never rebuilds. Scene selection stays §70 AUTO: SCENE_LOCK is exposed but no manual
+  scene edits exist. Validation is honest: unknown content paths, media keys, styles,
+  motion tiers (EXTREME is never editable), duplicate section slots all reject at
+  propose time. Component edits delegate to changeComponent (single-section guarantee
+  retained — unrelated recipe sections byte-unchanged).
+- `site_edits` table (proposed|rejected|applied|failed, payload_json, note, decided_by,
+  applied_artifact_version, failure) — no edit applies without an explicit approval;
+  approvals rebuild the artifact chain via the shared `applyRecipeChange` primitive.
+- Content overrides: `contentEngine.applyContentOverrides(pack, [{path,value}])` — deep
+  clone, scalar-only, dot+index paths (`headline.text`, `services[0].title`,
+  `faqs[0].q`); unknown paths error, never silently pass. Recipe stores overrides as an
+  array; the content pack itself is never mutated.
+- Image overrides: recipe `imageOverrides` {hero|about|accent|gallery → media key};
+  scaffold resolves keys through `mediaEngine.resolveMediaEntry` (null for unknown —
+  the editor never fabricates image references); gallery pick prepends the chosen entry.
+- Section order/visibility: `siteTemplate.orderAndFilter(items, recipe)` — stable sort
+  by explicit `sectionOrder` rank, decoratives (marquee/story/cinematic_break) settle
+  just ahead of the section they precede, `hiddenSlots` filter out. Editor layout
+  applies ONLY when the recipe carries explicit layout — default output stays
+  byte-identical to Phase 6/7 (inline non-cinematic template branch removed after
+  verifying sAttrs(false,false)==='' parity).
+- Style/motion edits reconcile through `reconcilePlanWithRecipe` (style tokens +
+  universe re-pick from the LD style, motion intensity) — the stored recipe is the
+  source of truth; recomposition alone would resurrect the original build's picks.
+- `buildFromGoal` full rebuilds preserve editor state: content/image overrides,
+  section order/visibility, style + motion picks, §59 locks — regeneration keeps the
+  owner's edits (verified end-to-end).
+- Compare/restore: `GET /project/:id/versions` (bytes, QA score/grade per version),
+  `GET /project/:id/compare?a=&b=` (bytes, section counts, h2 added/removed,
+  visible-text change ratio, QA score delta), `POST /project/:id/restore` — honest
+  restore: old bytes become a NEW artifact version + QA re-run; the response warns that
+  future full rebuilds regenerate from the recipe.
+- Routes (`server/routes/builder.js`, requireAuth + ownProject, mutations
+  requireRole('member')): POST/GET `/project/:id/edits`, POST
+  `/project/:id/edits/:editId/decide`, GET/POST `/project/:id/locks`, GET
+  `/project/:id/versions`, GET `/project/:id/compare`, POST `/project/:id/restore`, GET
+  `/project/:id/plan` (latest stored plan incl. effective content pack).
+- `src/pages/EditorPage.tsx` (new, `/editor`, deep-links `?project=`): §59 lock
+  toggles with audited-override switch, section order (up/down) + visibility (eye)
+  controls, content fields (headline/subline/about/services/faqs) with per-field
+  Propose buttons, LD style + motion intensity/profile pickers, image override keys,
+  approvals list (approve/reject, artifact version stamped), versions table with
+  compare (A/B) and restore. Nav item "Website Editor" in AppShell.
+
+### Verification
+- scripts/test-phase8.js — 65 assertions, all green (units + full HTTP flow: propose →
+  approve → html/preview assertions, 423 lock + override audit row, STYLE_LOCK default,
+  section visibility/order, image key validation + hero src swap, component swap with
+  unrelated-sections-unchanged, motion tier validation, reject flow + 409 on re-decide,
+  versions/compare/restore, rebuild-preserves-editor-state, per-project isolation).
+- Full regression: sell(33) + google-places(38) + phase3(58) + phase4(39) + phase6(55)
+  + assistant(34) + phase7(134) + phase8(65) = 456 assertions, 0 failures; tsc clean;
+  vite build clean.
+
+### Integration fixes applied while landing Phase 8
+- Test-only: headline assertions must compare visible text (word spans + &nbsp;), not
+  raw html substrings; media-library probe needed fileURLToPath on Windows.
+- buildFromGoal previously dropped editor style/motion picks on full rebuild —
+  preservation extended (styleId/activeStyleId/motionIntensity/motionProfile) with the
+  shared reconcile helper.

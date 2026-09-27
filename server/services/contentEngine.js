@@ -721,3 +721,52 @@ export function buildContentPack({ businessName, industry, location = '', verifi
   }
   return pack;
 }
+
+// ---- Phase 8: content overrides (§58 editor capabilities) -----------------------------
+// Pure path resolver over the content pack: "headline.text", "services[1].description",
+// "faqs[0].q", "about[2].text", "seo.title", ... Unknown or non-addressable paths
+// return { error } — the caller must surface it instead of silently dropping the edit.
+const PATH_SEG = /([A-Za-z_][A-Za-z0-9_]*)|\[(\d+)\]/g;
+
+export function resolvePackPath(pack, path) {
+  if (!pack || typeof path !== 'string' || !path.trim()) return { error: 'empty path' };
+  const segs = [];
+  let m;
+  const re = new RegExp(PATH_SEG.source, 'g');
+  let consumed = '';
+  while ((m = re.exec(path))) {
+    segs.push(m[1] !== undefined ? { key: m[1] } : { index: Number(m[2]) });
+    consumed = re.lastIndex;
+  }
+  if (consumed !== path.length || !segs.length) return { error: `unaddressable path: ${path}` };
+  let node = pack;
+  for (let i = 0; i < segs.length - 1; i++) {
+    node = segs[i].key !== undefined ? node?.[segs[i].key] : node?.[segs[i].index];
+    if (node === undefined || node === null) return { error: `unknown path: ${path}` };
+  }
+  const last = segs[segs.length - 1];
+  const container = last.key !== undefined ? node?.[last.key] : node?.[last.index];
+  if (container === undefined) return { error: `unknown path: ${path}` };
+  return { parent: node, last, value: container };
+}
+
+// applyContentOverrides(pack, overrides) → { pack } | { error }.
+// Returns a DEEP CLONE with overrides applied; the input pack is never mutated.
+// Only scalar values are accepted (string/number/boolean) — structural edits to the
+// pack are not an editor concern (sections are handled by recipe-level edits).
+export function applyContentOverrides(pack, overrides) {
+  if (!Array.isArray(overrides) || !overrides.length) return { pack };
+  const clone = JSON.parse(JSON.stringify(pack));
+  for (const o of overrides) {
+    const path = String(o?.path || '');
+    const value = o?.value;
+    if (value === undefined || value === null || typeof value === 'object') {
+      return { error: `override ${path}: only scalar values are editable` };
+    }
+    const hit = resolvePackPath(clone, path);
+    if (hit.error) return { error: `override ${path}: ${hit.error}` };
+    if (hit.last.key !== undefined) hit.parent[hit.last.key] = value;
+    else hit.parent[hit.last.index] = value;
+  }
+  return { pack: clone };
+}

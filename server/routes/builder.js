@@ -5,6 +5,10 @@ import { makePlan, buildFromGoal, getLatestSite, getLatestQA, listArtifacts, get
 import { DESIGN_UNIVERSES, MOTION_PERSONALITIES } from '../services/designUniverses.js';
 import { CREATION_MODES } from '../services/ldStyles.js';
 import { chat } from '../services/modelGateway.js';
+import {
+  proposeEdit, listEdits, decideEdit, setLock, getLocks,
+  compareVersions, listVersions, restoreVersion,
+} from '../services/siteEditor.js';
 
 export const builderRouter = Router();
 builderRouter.use(requireAuth);
@@ -98,6 +102,17 @@ builderRouter.post('/chat', (req, res) => {
   res.json(chat(messages));
 });
 
+// Latest stored build plan (content pack included) — powers the Phase 8 editor's
+// current-values view. Plans are saved post-override, so displayed values are effective.
+builderRouter.get('/project/:projectId/plan', (req, res) => {
+  if (!ownProject(req, res)) return;
+  const rows = listArtifacts(req.params.projectId).filter((a) => a.kind === 'plan');
+  if (!rows.length) return res.status(404).json({ error: 'no stored plan yet — build the site first' });
+  const latest = rows.reduce((a, b) => (b.version > a.version ? b : a));
+  const content = db.prepare(`SELECT content FROM build_artifacts WHERE id = ?`).get(latest.id);
+  res.json({ plan: JSON.parse(content.content), version: latest.version });
+});
+
 // Phase 7 — latest stored v6 recipe (component@version per section)
 builderRouter.get('/project/:projectId/recipe', (req, res) => {
   if (!ownProject(req, res)) return;
@@ -128,6 +143,69 @@ builderRouter.post('/project/:projectId/change-component', requireRole('member')
   const p = ownProject(req, res); if (!p) return;
   const { section, componentId, variant } = req.body || {};
   const result = changeComponent(p.id, { section, componentId, variant }, req.user, req.ip);
+  if (result.error) return res.status(result.error).json({ error: result.message });
+  res.json(result);
+});
+
+// ---- Phase 8: unified editor (§58–§60) — proposals, locks, compare, restore ----
+
+// Propose an edit (content|image|style|motion|component|section-order|section-visibility).
+// Locked layers reject with 423 unless payload.override is set (override is audited).
+builderRouter.post('/project/:projectId/edits', requireRole('member'), (req, res) => {
+  const p = ownProject(req, res); if (!p) return;
+  const result = proposeEdit(p.id, req.body || {}, req.user, req.ip);
+  if (result.error) return res.status(result.error).json({ error: result.message, lock: result.lock });
+  res.status(201).json(result);
+});
+
+builderRouter.get('/project/:projectId/edits', (req, res) => {
+  if (!ownProject(req, res)) return;
+  const { status } = req.query || {};
+  res.json({ edits: listEdits(req.params.projectId, { status }) });
+});
+
+builderRouter.post('/project/:projectId/edits/:editId/decide', requireRole('member'), (req, res) => {
+  const p = ownProject(req, res); if (!p) return;
+  const result = decideEdit(p.id, req.params.editId, req.body || {}, req.user, req.ip);
+  if (result.error) return res.status(result.error).json({ error: result.message });
+  res.json(result);
+});
+
+// §59 locks — STYLE_LOCK defaults true (§60); toggling never rebuilds, it only
+// gates future edits. Audited.
+builderRouter.get('/project/:projectId/locks', (req, res) => {
+  if (!ownProject(req, res)) return;
+  const result = getLocks(req.params.projectId);
+  if (!result) return res.status(404).json({ error: 'no stored recipe yet — build the site first' });
+  res.json(result);
+});
+
+builderRouter.post('/project/:projectId/locks', requireRole('member'), (req, res) => {
+  const p = ownProject(req, res); if (!p) return;
+  const result = setLock(p.id, req.body || {}, req.user, req.ip);
+  if (result.error) return res.status(result.error).json({ error: result.message });
+  res.json(result);
+});
+
+// Version history + structural compare + honest restore (new artifact version).
+builderRouter.get('/project/:projectId/versions', (req, res) => {
+  if (!ownProject(req, res)) return;
+  res.json({ versions: listVersions(req.params.projectId) });
+});
+
+builderRouter.get('/project/:projectId/compare', (req, res) => {
+  if (!ownProject(req, res)) return;
+  const { a, b } = req.query || {};
+  const result = compareVersions(req.params.projectId, a, b);
+  if (result.error) return res.status(result.error).json({ error: result.message });
+  res.json(result);
+});
+
+builderRouter.post('/project/:projectId/restore', requireRole('member'), (req, res) => {
+  const p = ownProject(req, res); if (!p) return;
+  const { version } = req.body || {};
+  if (version === undefined || version === null) return res.status(400).json({ error: 'version is required' });
+  const result = restoreVersion(p.id, version, req.user, req.ip);
   if (result.error) return res.status(result.error).json({ error: result.message });
   res.json(result);
 });

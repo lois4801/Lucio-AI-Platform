@@ -5,7 +5,7 @@
 // device-aware fallbacks and prefers-reduced-motion static equivalents,
 // seeded luxury media (4K library + unique procedural accents), JSON-LD, SEO.
 // Every animation ships a prefers-reduced-motion kill switch (Component Universe mandate).
-import { mediaSet } from './mediaEngine.js';
+import { mediaSet, resolveMediaEntry } from './mediaEngine.js';
 import { pickUniverse } from './designUniverses.js';
 import { motionPack } from './motionEngine.js';
 
@@ -266,6 +266,39 @@ html.cine-on .cine-nav.nav-solid{background:color-mix(in srgb,var(--bg) 82%,tran
   return parts.filter(Boolean).join('\n');
 }
 
+// Phase 8 (§58–59): editor-driven section ordering + visibility. Slots map 1:1 to
+// the named sections of the template; decoratives (marquee/story/cinematic_break)
+// keep their default position just ahead of the section they precede. When the
+// recipe carries no explicit layout this is never called — default composition
+// stays byte-identical to earlier phases.
+export const SECTION_SLOTS = ['marquee', 'story', 'cinematic_break', 'services', 'trust', 'process', 'gallery', 'faq', 'about', 'contact'];
+
+export function orderAndFilter(items, recipe) {
+  const order = Array.isArray(recipe?.sectionOrder) ? recipe.sectionOrder : null;
+  const hidden = new Set(Array.isArray(recipe?.hiddenSlots) ? recipe.hiddenSlots : []);
+  const list = items
+    .map((it, idx) => ({ ...it, _idx: idx }))
+    .filter((it) => it.html && !hidden.has(it.slot));
+  if (!order || !order.length) return list.map((it) => it.html).join('\n\n');
+  const rank = (slot) => {
+    const i = order.indexOf(slot);
+    if (i !== -1) return i; // explicit position
+    const sr = SECTION_SLOTS.indexOf(slot);
+    // decorative (or unknown-to-order) slot: settle just before the next ordered
+    // section in default order so its narrative role is preserved
+    for (let k = sr + 1; k < SECTION_SLOTS.length; k++) {
+      const oi = order.indexOf(SECTION_SLOTS[k]);
+      if (oi !== -1) return oi - 1 + (k - sr) * 0.001;
+    }
+    return order.length + sr * 0.001; // after every ordered section
+  };
+  return list
+    .map((it) => ({ ...it, _rank: rank(it.slot) }))
+    .sort((a, b) => a._rank - b._rank || a._idx - b._idx)
+    .map((it) => it.html)
+    .join('\n\n');
+}
+
 export function scaffoldSite(plan) {
   const pack = plan.contentPack || legacyPack(plan);
   const universe = plan.universe || pickUniverse(plan.siteName + plan.industry);
@@ -277,7 +310,19 @@ export function scaffoldSite(plan) {
   const motion = universe.motion;
   const year = new Date().getFullYear();
   const siteKey = plan.universeSeed || plan.siteName || 'lucio';
-  const media = mediaSet(plan.industry, siteKey);
+  let media = mediaSet(plan.industry, siteKey);
+  // Phase 8 editor image picks (§58): recipe-driven overrides for media slots. Keys are
+  // validated at edit time; stale/unknown keys are skipped here — never fabricated.
+  if (plan.imageOverrides && typeof plan.imageOverrides === 'object') {
+    const patched = { ...media, gallery: [...(media.gallery || [])] };
+    for (const [slot, key] of Object.entries(plan.imageOverrides)) {
+      const entry = resolveMediaEntry(key);
+      if (!entry) continue;
+      if (slot === 'gallery') patched.gallery = [entry, ...patched.gallery.filter((g) => g.src !== entry.src)];
+      else if (slot === 'hero' || slot === 'about' || slot === 'accent') patched[slot] = entry;
+    }
+    media = patched;
+  }
   const heroImg = media.hero?.src || '';
   const galleryImgs = media.gallery.length ? media.gallery : [media.hero];
   const aboutImg = media.about?.src || heroImg;
@@ -480,22 +525,43 @@ export function scaffoldSite(plan) {
 </section>`;
 
   const imgSeqBlock = cine ? imageSequenceBlock(cine, plan, pack, media) : '';
-  const bodySections = cine
-    ? orderByPacing([
-        { intent: 'impact', html: marqueeBand },
-        { intent: 'story', html: storyBlock },
-        { intent: 'story', html: imgSeqBlock },
-        { intent: 'information', html: servicesSection },
-        { intent: 'proof', html: statsBand },
-        { intent: 'information', html: journeyStrip },
-        { intent: 'proof', html: galleryBlock },
-        { intent: 'information', html: faqBlock },
-        { intent: 'calm', html: aboutSection },
-        { intent: 'conversion', html: contactSection },
-      ], cine.pacing).map((b) => b.html).filter(Boolean).join('\n\n')
-    : [marqueeBand, storyBlock].join('\n') + '\n\n' + servicesSection + '\n\n' +
-      [statsBand, journeyStrip, galleryBlock, faqBlock].join('\n') + '\n\n' +
-      aboutSection + '\n\n' + contactSection;
+  // Phase 8: editor layout (recipe.sectionOrder / recipe.hiddenSlots) wins over both
+  // pacing order and the fixed default assembly. Without an explicit layout the
+  // composition is byte-identical to Phase 6/7 output.
+  const recipe = plan.recipe || null;
+  const editorLayout = recipe &&
+    ((Array.isArray(recipe.sectionOrder) && recipe.sectionOrder.length) ||
+     (Array.isArray(recipe.hiddenSlots) && recipe.hiddenSlots.length));
+  const sectionItems = [
+    { slot: 'marquee', html: marqueeBand },
+    { slot: 'story', html: storyBlock },
+    { slot: 'cinematic_break', html: imgSeqBlock },
+    { slot: 'services', html: servicesSection },
+    { slot: 'trust', html: statsBand },
+    { slot: 'process', html: journeyStrip },
+    { slot: 'gallery', html: galleryBlock },
+    { slot: 'faq', html: faqBlock },
+    { slot: 'about', html: aboutSection },
+    { slot: 'contact', html: contactSection },
+  ];
+  const bodySections = editorLayout
+    ? orderAndFilter(sectionItems, recipe)
+    : cine
+      ? orderByPacing([
+          { intent: 'impact', html: marqueeBand },
+          { intent: 'story', html: storyBlock },
+          { intent: 'story', html: imgSeqBlock },
+          { intent: 'information', html: servicesSection },
+          { intent: 'proof', html: statsBand },
+          { intent: 'information', html: journeyStrip },
+          { intent: 'proof', html: galleryBlock },
+          { intent: 'information', html: faqBlock },
+          { intent: 'calm', html: aboutSection },
+          { intent: 'conversion', html: contactSection },
+        ], cine.pacing).map((b) => b.html).filter(Boolean).join('\n\n')
+      : [marqueeBand, storyBlock].join('\n') + '\n\n' + servicesSection + '\n\n' +
+        [statsBand, journeyStrip, galleryBlock, faqBlock].join('\n') + '\n\n' +
+        aboutSection + '\n\n' + contactSection;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -578,65 +644,7 @@ ${navHtml}
   <div class="scroll-hint absolute bottom-8 left-1/2 -translate-x-1/2 z-10 text-xs tracking-widest uppercase" style="color:color-mix(in srgb,var(--ink) 55%,transparent)">Scroll</div>
 </header>
 
-${cine ? bodySections : `
-${marqueeBand}
-${storyBlock}
-
-<section id="services" ${mx.hasColorway ? 'data-colorway="true" ' : ''}class="chapter mx-auto max-w-7xl px-6 py-24 rv">
-  <p class="text-xs font-bold tracking-[.3em] uppercase mb-3" style="color:var(--accent)">What we do</p>
-  <h2 class="font-display text-3xl md:text-5xl font-bold mb-4">Signature <span class="grad-text">services</span></h2>
-  <p class="max-w-xl mb-12" style="color:var(--muted)">${esc(pack.differentiators?.map((d) => d.text).join(' — ') || pack.subline.text)}</p>
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-5">${serviceCards}</div>
-</section>
-
-${statsBand}
-${journeyStrip}
-${galleryBlock}
-${faqBlock}
-
-<section id="about" ${mx.hasColorway ? 'data-colorway="true" ' : ''}class="chapter mx-auto max-w-7xl px-6 py-24 rv">
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
-    <div class="unmask rv relative overflow-hidden" style="border-radius:var(--radius)">
-      <img src="${aboutImg}" alt="About ${esc(plan.siteName)}" loading="lazy" class="aspect-[4/3] w-full object-cover"/>
-    </div>
-    <div>
-      <p class="text-xs font-bold tracking-[.3em] uppercase mb-3" style="color:var(--accent)">About</p>
-      <h2 class="font-display text-3xl md:text-5xl font-bold mb-6">${esc(plan.siteName)}</h2>
-      ${aboutText}
-      ${accent ? `<img src="${accent}" alt="" aria-hidden="true" loading="lazy" class="mt-6 h-24 w-full object-cover opacity-70" style="border-radius:var(--radius)"/>` : ''}
-    </div>
-  </div>
-</section>
-
-<section id="contact" class="mx-auto max-w-4xl px-6 py-24 rv">
-  <div class="card-u ${mx.hasSpotlight ? 'spot-host ' : ''}p-8 md:p-14 relative overflow-hidden">
-    <div class="absolute -top-24 -right-24 h-72 w-72 rounded-full opacity-20 blur-3xl" style="background:var(--accent)"></div>
-    <h2 class="font-display text-3xl md:text-4xl font-bold mb-2 relative">${esc(contactCta)}</h2>
-    <p class="mb-8 relative" style="color:var(--muted)">We reply within one business day.</p>
-    <form class="relative grid gap-4 max-w-xl" data-enquire>
-      <input required placeholder="Your name" name="name" class="px-5 py-4"/>
-      <input required type="email" name="email" placeholder="Email" class="px-5 py-4"/>
-      <textarea required rows="4" name="message" placeholder="How can we help?" class="px-5 py-4"></textarea>
-      <input name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true"/>
-      <button type="submit" class="btn-u magnet">${esc(ctaLabel)}</button>
-    </form>
-    <script>
-    (function(){
-      var f=document.querySelector('[data-enquire]');if(!f)return;
-      var m=location.pathname.match(/^\\/live\\/([a-z0-9-]+)\\/?$/i);
-      if(!m)return; // preview mode — no lead capture
-      f.addEventListener('submit',function(ev){
-        ev.preventDefault();
-        var d={};new FormData(f).forEach(function(v,k){d[k]=v});
-        fetch('/api/live/'+m[1]+'/enquire',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)})
-          .then(function(){f.innerHTML='<p style="color:var(--accent)" class="font-bold text-lg">Thank you — we will be in touch shortly.</p>'})
-          .catch(function(){f.innerHTML='<p style="color:var(--accent)" class="font-bold text-lg">Thank you — we will be in touch shortly.</p>'});
-      });
-    })();
-    </script>
-  </div>
-</section>
-`}
+${bodySections}
 
 <footer class="px-6 md:px-12 py-10 flex flex-wrap items-center justify-between gap-4 text-sm" style="color:var(--muted);border-top:1px solid var(--line)">
   <span>&copy; ${year} ${esc(plan.siteName)}</span>

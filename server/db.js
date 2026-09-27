@@ -328,6 +328,23 @@ CREATE TABLE IF NOT EXISTS site_recipes (
 );
 CREATE INDEX IF NOT EXISTS idx_comp_assets_org ON component_assets(org_id, status);
 CREATE INDEX IF NOT EXISTS idx_recipes_proj ON site_recipes(project_id, version);
+
+-- ---- Phase 8: unified editor + versioning (proposals/approvals over the v6 recipe) ----
+CREATE TABLE IF NOT EXISTS site_edits (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  note TEXT,
+  status TEXT NOT NULL DEFAULT 'proposed',  -- proposed|rejected|applied|failed
+  created_by TEXT NOT NULL,
+  decided_by TEXT,
+  applied_artifact_version INTEGER,
+  failure TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  decided_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_site_edits_proj ON site_edits(project_id, status);
 `);
 
 // Lightweight migrations: add columns to pre-existing tables when missing.

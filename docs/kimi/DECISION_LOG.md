@@ -158,3 +158,28 @@
 - Consequence: exports work offline for the inlined subset and at full fidelity on the
   live server; if a true server-side PDF binary is ever required, a headless-Chromium
   stage can consume this same artifact without pipeline changes.
+
+## D15 — Phase 8 editor: proposals+approvals over the recipe; locks 423-with-audited-override
+- Date: 2026-09-26
+- Decision: the unified website editor (manual v28 §58–60) never mutates the site
+  directly. Every content/image/style/motion/component/section change lands as a
+  `site_edits` proposal, is validated against the stored v6 recipe and §59 locks, and
+  only takes effect after an explicit approve (reject and failed are terminal states;
+  re-deciding a non-proposed edit 409s). Locked layers answer 423 unless the caller
+  passes `payload.override`, and every override writes an `editor.lock_override` audit
+  row — the manual's "explicit user action may override, override must be audited" is
+  enforced in code, not documented intention.
+- Style edits are recipe-sourced: `reconcilePlanWithRecipe` re-applies the stored
+  styleId (tokens + universe re-pick) and motionIntensity after every recomposition,
+  because recomposePlan alone resurrects the original build's picks. STYLE_LOCK stays
+  default-true (§60) — an intentional switch is simply a style edit with override.
+- Scene selection stays §70 AUTO. SCENE_LOCK is stored and exposed in the locks UI for
+  forward compatibility, but the editor offers no manual scene edits — AUTO gating and
+  EXTREME-never-auto from Phase 7 remain the only scene path.
+- Restore is honest: old site bytes become a NEW artifact version (never a rewind that
+  orphans the version chain), QA re-runs against the latest plan, and the API response
+  carries an explicit warning that future full rebuilds regenerate from the recipe.
+  `buildFromGoal` therefore preserves editor state (overrides, section layout, style/
+  motion picks, locks) across full regeneration so restore + rebuild compose safely.
+- Consequence: owner edits survive AI regeneration, every change is auditable and
+  reversible, and the single-section guarantee from Phase 7 extends to all edit kinds.

@@ -5,6 +5,7 @@ import AppShell from '@/components/AppShell';
 import AuthPage from '@/pages/AuthPage';
 import DashboardPage from '@/pages/DashboardPage';
 import BuilderPage from '@/pages/BuilderPage';
+import EditorPage from '@/pages/EditorPage';
 import ComponentLibraryPage from '@/pages/ComponentLibraryPage';
 import ProjectsPage from '@/pages/ProjectsPage';
 import ProspectsPage from '@/pages/ProspectsPage';
@@ -65,6 +66,7 @@ export default function App() {
       <Route element={user ? <AppShell user={user} onLogout={() => setUser(null)} /> : <Navigate to="/" replace />}>
         <Route path="/dashboard" element={page(<DashboardPage />)} />
         <Route path="/builder" element={page(<BuilderPage />)} />
+        <Route path="/editor" element={page(<EditorPage />)} />
         <Route path="/library" element={page(<ComponentLibraryPage />)} />
         <Route path="/scanner" element={page(<MarketScanPage />)} />
         <Route path="/projects" element={page(<ProjectsPage />)} />

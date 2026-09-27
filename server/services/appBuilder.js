@@ -13,7 +13,7 @@ import { getStyle, recommendStyles, CREATION_MODES } from './ldStyles.js';
 import { scaffoldSite } from './siteTemplate.js';
 import { buildPdfView } from './pdfView.js';
 import { pickUniverse, getUniverse } from './designUniverses.js';
-import { buildContentPack } from './contentEngine.js';
+import { buildContentPack, applyContentOverrides } from './contentEngine.js';
 import { wideEvent } from './telemetry.js';
 import { runDesignQA } from './designQA.js';
 import { resolveIntensity, selectScenes } from './motionEngine.js';
@@ -240,6 +240,25 @@ export function saveArtifact(projectId, kind, filename, content) {
 export function buildFromGoal(projectId, goal, opts = {}, user, ip = '') {
   const t0 = Date.now();
   const plan = makePlan(goal, { ...opts, projectId });
+  // Phase 8: a full rebuild from goal keeps the editor's override layers and locks —
+  // content/image overrides, section order/visibility, style/motion picks and §59
+  // locks survive regeneration.
+  const prevRecipeRow = getLatestRecipe(projectId);
+  if (prevRecipeRow) {
+    try {
+      const prev = JSON.parse(prevRecipeRow.recipe_json);
+      plan.recipe.contentOverrides = Array.isArray(prev.contentOverrides) ? prev.contentOverrides : [];
+      plan.recipe.imageOverrides = prev.imageOverrides && typeof prev.imageOverrides === 'object' ? prev.imageOverrides : {};
+      plan.recipe.sectionOrder = Array.isArray(prev.sectionOrder) ? prev.sectionOrder : null;
+      plan.recipe.hiddenSlots = Array.isArray(prev.hiddenSlots) ? prev.hiddenSlots : [];
+      plan.recipe.locks = { ...DEFAULT_LOCKS, ...(prev.locks || {}) };
+      if (prev.styleId) { plan.recipe.styleId = prev.styleId; plan.recipe.activeStyleId = prev.activeStyleId || prev.styleId; }
+      if (prev.motionIntensity) plan.recipe.motionIntensity = prev.motionIntensity;
+      if (prev.motionProfile) plan.recipe.motionProfile = prev.motionProfile;
+    } catch { /* fresh recipe on parse failure — editor state starts clean */ }
+  }
+  reconcilePlanWithRecipe(plan, plan.recipe);
+  applyPlanOverrides(plan, plan.recipe);
   const html = scaffoldSite(plan);
   const artifact = saveArtifact(projectId, 'site', 'index.html', html);
   // §57: the PDF-ready view is generated from the SAME plan + html at build/change time.
@@ -329,34 +348,88 @@ export function recomposePlan(projectId, creationMode) {
 // and universe preserved; unrelated sections are never regenerated).
 export function changeComponent(projectId, { section, componentId, variant } = {}, user, ip = '') {
   if (!section || !componentId) return { error: 400, message: 'section and componentId are required' };
-  const recipeRow = getLatestRecipe(projectId);
-  if (!recipeRow) return { error: 404, message: 'no stored recipe — build the site first' };
   if (!componentRegistry || typeof componentRegistry.getComponent !== 'function') {
     return { error: 503, message: 'component registry is unavailable' };
   }
-  const recipe = JSON.parse(recipeRow.recipe_json);
   const record = componentRegistry.getComponent(componentId);
   if (!record) return { error: 400, message: `unknown component: ${componentId}` };
-  if (!supportsMode(record, recipe.creationMode)) {
-    return { error: 400, message: `${componentId} does not support creation mode ${recipe.creationMode}` };
+  let changeInfo = null;
+  const result = applyRecipeChange(projectId, (recipe) => {
+    if (!supportsMode(record, recipe.creationMode)) {
+      return { error: 400, message: `${componentId} does not support creation mode ${recipe.creationMode}` };
+    }
+    const target = (recipe.sections || []).find((s) => s.slot === section);
+    if (!target) return { error: 400, message: `section '${section}' is not in the stored recipe` };
+    const variants = typeof componentRegistry.componentVariants === 'function'
+      ? componentRegistry.componentVariants(componentId) || [] : (record.variants || []);
+    const variantIds = (variants || []).map((v) => v.id);
+    if (variant && !variantIds.includes(variant)) {
+      return { error: 400, message: `unknown variant '${variant}' for ${componentId}` };
+    }
+    target.component = componentId;
+    target.componentVersion = record.component_version;
+    target.variant = variant || (variantIds.includes(target.variant) ? target.variant : null);
+    changeInfo = { section, componentId, variant: target.variant };
+    return null;
+  }, user, ip, 'builder.change_component', (plan, recipe, artifact) => ({
+    section, componentId, variant: changeInfo?.variant,
+    style: plan.style.id, creationMode: recipe.creationMode, universe: plan.universe.id,
+    motionProfile: recipe.motionProfile, shaderId: recipe.shaderId, cinematic: !!plan.cinematic,
+  }));
+  if (result.error) return result;
+  return { recipe: result.recipe, artifact: result.artifact, qa: result.qa };
+}
+
+// Phase 8: apply editor-owned override layers onto a plan BEFORE scaffolding.
+// contentOverrides patch a CLONE of the content pack (recipe is the source of truth);
+// imageOverrides address media library slots (hero|about|accent|gallery).
+export function applyPlanOverrides(plan, recipe) {
+  if (!plan || !recipe) return plan;
+  if (Array.isArray(recipe.contentOverrides) && recipe.contentOverrides.length) {
+    const applied = applyContentOverrides(plan.contentPack, recipe.contentOverrides);
+    if (!applied.error) plan.contentPack = applied.pack;
   }
-  const target = (recipe.sections || []).find((s) => s.slot === section);
-  if (!target) return { error: 400, message: `section '${section}' is not in the stored recipe` };
-  const variants = typeof componentRegistry.componentVariants === 'function'
-    ? componentRegistry.componentVariants(componentId) || [] : (record.variants || []);
-  const variantIds = (variants || []).map((v) => v.id);
-  if (variant && !variantIds.includes(variant)) {
-    return { error: 400, message: `unknown variant '${variant}' for ${componentId}` };
+  if (recipe.imageOverrides && typeof recipe.imageOverrides === 'object') {
+    plan.imageOverrides = { ...recipe.imageOverrides };
   }
-  target.component = componentId;
-  target.componentVersion = record.component_version;
-  target.variant = variant || (variantIds.includes(target.variant) ? target.variant : null);
+  return plan;
+}
+
+// Phase 8: reconcile a (re)composed plan with editor-owned recipe layers — style
+// (STYLE_LOCK) and motion intensity. The stored recipe is the source of truth;
+// recomposition alone would resurrect the ORIGINAL build's picks. Shared by full
+// rebuilds (buildFromGoal) and incremental recipe changes (applyRecipeChange).
+function reconcilePlanWithRecipe(plan, recipe) {
+  if (!plan || !recipe) return plan;
+  if (recipe.styleId && getStyle(recipe.styleId)) {
+    const st = getStyle(recipe.styleId);
+    plan.style = { id: st.id, name: st.name, source: 'selected' };
+    plan.palette = st.palette;
+    plan.styleTokens = { fontHeading: st.fontHeading, fontBody: st.fontBody, radius: st.radius, button: st.button, motion: st.motion };
+    plan.universe = getUniverse(recipe.universe) || pickUniverse(`${plan.universeSeed}|${st.id}`);
+  }
+  if (recipe.motionIntensity) plan.motionIntensity = recipe.motionIntensity;
+  return plan;
+}
+
+// Phase 8 core rebuild primitive: mutate the stored v6 recipe, then rebuild the whole
+// artifact chain from the SAME plan seed/content/STYLE_LOCK. mutateRecipe returns
+// {error,message} to abort (recipe left untouched) or null to accept. Used by
+// changeComponent and the site editor (content/image/style/motion/section edits).
+export function applyRecipeChange(projectId, mutateRecipe, user, ip = '', auditAction = 'builder.recipe_changed', eventExtras = null) {
+  const recipeRow = getLatestRecipe(projectId);
+  if (!recipeRow) return { error: 404, message: 'no stored recipe — build the site first' };
+  const recipe = JSON.parse(recipeRow.recipe_json);
+  const err = mutateRecipe(recipe);
+  if (err) return err;
   // Recipe iteration bumps with every accepted change (initial build = iteration 6, the
   // v6 format epoch); the site_recipes row version tracks the site artifact version.
   recipe.version = (Number(recipe.version) || 6) + 1;
   const plan = recomposePlan(projectId, recipe.creationMode);
   if (!plan || plan.error) return { error: 409, message: 'no stored build plan to rebuild from' };
-  plan.recipe = recipe; // stored recipe with the single slot changed — never regenerate others
+  plan.recipe = recipe; // stored recipe — never regenerate unrelated sections
+  reconcilePlanWithRecipe(plan, recipe);
+  applyPlanOverrides(plan, recipe);
   const html = scaffoldSite(plan);
   const artifact = saveArtifact(projectId, 'site', 'index.html', html);
   // §57: the PDF-ready view is generated from the SAME plan + html at build/change time.
@@ -366,15 +439,15 @@ export function changeComponent(projectId, { section, componentId, variant } = {
   const qa = auditWithExtras(plan, html);
   saveArtifact(projectId, 'qa', 'report.json', JSON.stringify(qa, null, 2));
   db.prepare(`UPDATE projects SET status = 'preview', updated_at = datetime('now') WHERE id = ?`).run(projectId);
-  audit(user.orgId, user.id, 'builder.change_component', 'project', projectId,
-    { section, componentId, variant: target.variant, version: artifact.version, creationMode: recipe.creationMode }, ip);
-  wideEvent('build.component_changed', {
-    projectId, version: artifact.version, section, componentId, variant: target.variant,
-    style: plan.style.id, creationMode: recipe.creationMode, universe: plan.universe.id,
-    recipeVersion: recipe.version, motionProfile: recipe.motionProfile, shaderId: recipe.shaderId,
-    cinematic: !!plan.cinematic, qaScore: qa.score, qaGrade: qa.grade, bytes: html.length,
+  audit(user.orgId, user.id, auditAction, 'project', projectId,
+    { version: artifact.version, creationMode: recipe.creationMode, recipeVersion: recipe.version }, ip);
+  wideEvent('build.recipe_changed', {
+    projectId, version: artifact.version, style: plan.style.id, creationMode: recipe.creationMode,
+    universe: plan.universe.id, recipeVersion: recipe.version, cinematic: !!plan.cinematic,
+    qaScore: qa.score, qaGrade: qa.grade, bytes: html.length,
+    ...(typeof eventExtras === 'function' ? eventExtras(plan, recipe, artifact) : (eventExtras || {})),
   });
-  return { recipe, artifact, qa };
+  return { recipe, artifact, qa, plan };
 }
 
 export function getLatestQA(projectId) {

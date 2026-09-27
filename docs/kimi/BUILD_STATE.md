@@ -4,10 +4,10 @@ Canonical spec: Lucio_AI_Platform_Single_Master_Implementation_Manual_v28_MARKET
 Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 
 ## Current position
-- Phase: 0 PASS · 1 PASS · 2 PASS · 3 PASS + expansion · 4 PASS · 5 PASS · 6 PASS · 7 PASS — Phase 8 next
+- Phase: 0 PASS · 1 PASS · 2 PASS · 3 PASS + expansion · 4 PASS · 5 PASS · 6 PASS · 7 PASS · 8 PASS — Phase 9 next
 - Branch: main
 - Last passing checkpoint: see git log
-- Next action: Phase 8 — per manual v28 phase list. Build contract: docs/kimi/PHASE7_CONTRACT.md (Phase 7, completed)
+- Next action: Phase 9 — per manual v28 phase list. Build contract: docs/kimi/PHASE8_CONTRACT.md (Phase 8, completed)
 - Release posture: local development build, not production
 
 ## Phase summary
@@ -22,7 +22,9 @@ Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 | Assistant layer | DONE (ships immediately) | 18-agent v9.6 squad embedded verbatim; journey-aware tips + chat panel on every authenticated page for all roles |
 | 6 Motion Engine / Cinematic expansion | DONE | LUCIO_SCENE_REGISTRY (10 scenes: loop/scroll/story/micro), MOTION INTENSITY tiers, deterministic seeded selection, device-aware fallbacks, CINEMA-STORY-01 chapters, QA contract check |
 | 7 Cinematic Component Universe | DONE | Component/shader/gradient/motion/template registries; component pipeline (import→…→approve, quality gate, duplicate prevention, growth gaps, library search); cinematic engine (§70 AUTO gating, EXTREME-never-auto, performance policy, scroll-timeline validation, §62 audit, §63 anti-gimmick); recipe v6 + site_recipes persistence; convert / change-component routes; /api/library browser; §57 PDF-ready export |
-| 8–17 | PENDING | Phase 8 next |
+| 7 Cinematic Component Universe | DONE | Component/shader/gradient/motion/template registries; component pipeline (import→…→approve, quality gate, duplicate prevention, growth gaps, library search); cinematic engine (§70 AUTO gating, EXTREME-never-auto, performance policy, scroll-timeline validation, §62 audit, §63 anti-gimmick); recipe v6 + site_recipes persistence; convert / change-component routes; /api/library browser; §57 PDF-ready export |
+| 8 Unified Website Editor + Versioning | DONE | Proposal→approval edit pipeline (content/image/style/motion/component/section-order/section-visibility) over the stored recipe; §59 locks with 423 + audited override; STYLE_LOCK default (§60); content overrides + image key picks + section order/visibility in scaffold; compare + honest restore (new artifact version); full rebuilds preserve editor state; /editor UI |
+| 9–17 | PENDING | Phase 9 next |
 | Sell architecture + map discovery (Pindrop parity) | DONE | Publish live links, owner portal with photo requests, deals/billing (manual default, Stripe-gated), leads inbox, enquiry-posting generated sites, pin-drop map discovery with street-view gating |
 
 ## Session-resume notes
@@ -33,4 +35,4 @@ Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 - Dev server: `npm run dev -- --port 7100` (log: lucio_dev.log); tests: `node scripts/test-phase3.js` (58) + `node scripts/test-phase4.js` (39).
 - ORPHANED VITE WATCH: dev.js's Vite child survives parent taskkill. Kill BOTH the :8787 PID and the :7100 PID, verify with netstat, before restart — a zombie Vite on [::1]:7100 served stale code during the Phase 4 E2E.
 - Sell architecture: dev.js Vite proxy now also forwards /live and /portal to :8787 — any preview server started before this change must be restarted or public links 404 through the dev port.
-- Test suites: test-sell.js (31) added; full set = sell(31) + google-places(38) + phase3(58) + phase4(39) + phase6(55) + assistant(34) = 255 assertions.
+- Test suites: test-sell.js (33) + test-google-places.js (38) + test-phase3.js (58) + test-phase4.js (39) + test-phase6.js (55) + test-assistant.js (34) + test-phase7.js (134) + test-phase8.js (65) = 456 assertions.
