@@ -126,6 +126,19 @@ if (await bootApp()) {
   const hist = await A('GET', `/api/agents/${encodeURIComponent(target.id)}/messages`);
   ok(hist.json.messages.length >= 2 && hist.json.messages.some((m) => m.role === 'user') && hist.json.messages.some((m) => m.role === 'assistant'), 'conversation history persisted (user + assistant)');
 
+  // ---- intent engine: replies fit the message instead of repeating one template ----
+  const chat2 = await A('POST', `/api/agents/${encodeURIComponent(target.id)}/chat`, { message: 'write me a tagline for my bakery', context: { page: '/agent-desk', projectId: pid } });
+  ok(chat2.json.reply.includes('first draft') && chat2.json.reply.includes('**'), '"write X" produces a real specialty draft, not a template');
+  const chat3 = await A('POST', `/api/agents/${encodeURIComponent(target.id)}/chat`, { message: 'what do you see in my workspace?', context: { page: '/agent-desk', projectId: pid } });
+  ok(chat3.json.reply.includes('live workspace') && chat3.json.reply.includes('builder projects'), 'workspace question answered from live facts');
+  const chat4 = await A('POST', `/api/agents/${encodeURIComponent(target.id)}/chat`, { message: 'ok', context: { page: '/agent-desk', projectId: pid } });
+  ok(!chat4.json.reply.includes('You asked:') && !chat4.json.reply.includes('live workspace right now:'), 'acknowledgement is short — no repeated workspace dump');
+  ok(/workspace/i.test(chat4.json.reply), 'acknowledgement picks up the actual thread topic');
+  const chat5 = await A('POST', `/api/agents/${encodeURIComponent(target.id)}/chat`, { message: 'hello', context: { page: '/agent-desk', projectId: pid } });
+  ok(chat5.json.reply.includes('take off your plate'), 'greeting lists concrete capabilities');
+  const distinct = new Set([chat.json.reply, chat2.json.reply, chat3.json.reply, chat4.json.reply, chat5.json.reply]);
+  ok(distinct.size === 5, 'five different intents produced five structurally distinct replies');
+
   // ---- SSE streaming ---------------------------------------------------------------
   const streamUrl = `http://127.0.0.1:${server.address().port}/api/agents/${encodeURIComponent(target.id)}/chat?` +
     new URLSearchParams({ message: 'Stream this answer about my project', projectId: pid, page: '/agent-desk' });
