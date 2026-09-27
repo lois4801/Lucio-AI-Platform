@@ -268,3 +268,34 @@ start of every new session to evolve instead of rediscovering.
 - **Lesson:** the synthetic 555 phone number range is a strong smell-test the
   user already applies — if any UI shows a `555-01xx` number without a "sample"
   label, the honesty contract is broken.
+
+
+## Session 2026-09-27 (later) — Unsupervised live run: import → personalize → publish
+- **Heard:** "run a unsupervised import right now — pull the Atelier Lumière site
+  in, personalize a few texts yourself, and publish it live."
+- **Did end-to-end against the live server (not just tests):** imported
+  https://ujpbg4wm5dg2i.kimi.page/ (87 KB, 261 editable texts) under the
+  owner's org; applied 5 text edits across 2 artifact versions (hero + footer
+  duplicate "Paris · New York · Positano" both swapped to
+  "Kingston · Toronto · Ottawa", "[email protected]" → "hello@lucio.live",
+  "14 Rue de Sévigné, Paris III" → "232 Wellington St, Kingston ON",
+  "Est. 2012" → "Est. 2016"); published via `/api/sell/publish` → live at
+  `/live/atelier-lumi-re-fine-art-wedding-and-live-perfor`; verified the
+  served HTML carries every edit, zero old strings, both kenburns/drip
+  keyframe animations intact, fonts fully inlined (5 @font-face, no remote
+  stylesheet link — the only googleapis URL left is the data-imported-from
+  provenance attribute).
+- **Found and fixed an ops issue:** the Kimi-managed preview server (started
+  14:43) predated the Site Importer commit (15:00), so `/api/imports` 404'd on
+  the live app even though tests were green. Killed the stale process; the
+  preview card now restarts it from current code. **Lesson: a green test suite
+  says nothing about what the user's live server is running — always check
+  process start time vs. feature commit time when a live route 404s.**
+- **Lesson:** duplicate hero/footer strings are SEPARATE text-node ids — one
+  edit swapped only the footer copy; the live check (grep for the OLD string
+  still present) caught it. Always assert the old string is GONE, not just
+  that the new one appeared.
+- **Lesson:** the source site's middots are non-UTF8 bytes; byte-preserving
+  edits keep them exactly as the original — renders identically in-browser,
+  but don't trust naive `grep "·"` in Git Bash (encoding artifact masqueraded
+  as a missing string during verification).
