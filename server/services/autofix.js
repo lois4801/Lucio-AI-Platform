@@ -469,17 +469,25 @@ export function applyClawResult({ orgId, userId, incidentId, jobId }) {
   if (!job || job.project_id !== incident.project_id) throw Object.assign(new Error('claw job not found for this project'), { status: 404 });
   if (job.status !== 'completed') throw Object.assign(new Error(`claw job is ${job.status}`), { status: 409 });
 
+  // The workspace now materializes the whole project tree, so merge ONLY what
+  // the agent actually changed vs the project (create/update per jobOutput
+  // classification) — scaffold files identical to the tree must not count as
+  // patches or the >5-files guardian trips on every apply-back.
   const SKIP = new Set(['CONTEXT.md', 'session.json', '.claw-analog.toml']);
-  const entries = fs.readdirSync(job.workspace_dir).filter((f) => !SKIP.has(f) && !f.endsWith('.toml')).slice(0, 20);
   const files = fileContents(incident.project_id);
   const byPath = Object.fromEntries(files.map((f) => [f.path, f]));
   const patches = [];
-  for (const name of entries) {
-    const full = path.join(job.workspace_dir, name);
-    if (!fs.statSync(full).isFile()) continue;
-    const content = fs.readFileSync(full, 'utf8');
-    if (content.length > 128 * 1024) return escalate(orgId, incident, `claw output ${name} exceeds 128KB — refusing oversized apply`);
-    patches.push(byPath[name] ? { op: 'update', path: name, content } : { op: 'create', path: name, content });
+  if (job.workspace_dir && fs.existsSync(job.workspace_dir)) {
+    for (const name of fs.readdirSync(job.workspace_dir).sort().slice(0, 40)) {
+      if (SKIP.has(name) || name.endsWith('.toml')) continue;
+      const full = path.join(job.workspace_dir, name);
+      if (!fs.statSync(full).isFile()) continue;
+      const content = fs.readFileSync(full, 'utf8');
+      const existing = byPath[name];
+      if (existing && existing.content === content) continue; // unchanged scaffold
+      if (content.length > 128 * 1024) return escalate(orgId, incident, `claw output ${name} exceeds 128KB — refusing oversized apply`);
+      patches.push(existing ? { op: 'update', path: name, content } : { op: 'create', path: name, content });
+    }
   }
   const block = hardBlockCheck({ patches });
   if (block.blocked) return escalate(orgId, incident, `guardian hard block on claw output: ${block.reason}`);

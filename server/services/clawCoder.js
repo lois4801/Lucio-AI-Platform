@@ -65,9 +65,25 @@ export function scaffoldWorkspace(orgId, projectId) {
   const project = db.prepare(`SELECT * FROM builder_projects WHERE id = ? AND org_id = ?`).get(projectId, orgId);
   if (!project) throw Object.assign(new Error('project not found in this organization'), { status: 404 });
   const dir = path.join(WORKSPACES, projectId);
+  // Re-scaffold from scratch: the workspace must mirror the CURRENT project
+  // tree, never accumulate stale output from previous jobs.
+  fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
   const files = db.prepare(`SELECT path, size, hash FROM builder_files WHERE project_id = ? ORDER BY path`).all(projectId);
   const lastRun = db.prepare(`SELECT intent, status FROM builder_runs WHERE project_id = ? ORDER BY rowid DESC LIMIT 1`).get(projectId);
+  // Materialize the actual project tree into the workspace — the agent edits
+  // REAL files, not a manifest. Bounded so a huge tree can't blow up the job.
+  const SCAFFOLD_FILE_CAP = 50, SCAFFOLD_BYTE_CAP = 512 * 1024;
+  let scaffolded = 0, scaffoldBytes = 0;
+  const rows = db.prepare(`SELECT path, content FROM builder_files WHERE project_id = ? ORDER BY path LIMIT ?`).all(projectId, SCAFFOLD_FILE_CAP);
+  for (const r of rows) {
+    if (scaffoldBytes + r.content.length > SCAFFOLD_BYTE_CAP) break;
+    const safe = path.normalize(r.path).replace(/^(\.\.([\\/]|$))+/, '');
+    if (path.isAbsolute(safe) || safe.startsWith('..')) continue;
+    fs.mkdirSync(path.dirname(path.join(dir, safe)), { recursive: true });
+    fs.writeFileSync(path.join(dir, safe), r.content);
+    scaffolded++; scaffoldBytes += r.content.length;
+  }
   const ctx = [
     `# Lucio workspace context — project "${project.name}" (${project.app_type})`,
     `Status: ${project.status}. Files: ${files.length}.`,
@@ -267,8 +283,8 @@ export function applyJobToProject({ orgId, userId, jobId, files: selected = null
   applyOps(project.id, ops);
 
   // Report the evidence suite over the merged tree (pure check run — no rows persisted).
-  const tree = db.prepare(`SELECT path, content FROM builder_files WHERE project_id = ?`).all(project.id)
-    .map((r) => ({ path: r.path, content: r.content }));
+  const tree = db.prepare(`SELECT path, content, size FROM builder_files WHERE project_id = ?`).all(project.id)
+    .map((r) => ({ path: r.path, content: r.content, size: r.size }));
   const evidence = CHECKS.map((c) => ({ category: c.category, check: c.name, mandatory: !!c.mandatory, pass: c.run(tree).pass, detail: c.run(tree).detail }));
 
   audit(orgId, userId, 'claw.job.applied', 'claw_job', jobId, { projectId: project.id, files: targets.map((t) => t.path).join(','), checkpointId: cp.id }, '');
