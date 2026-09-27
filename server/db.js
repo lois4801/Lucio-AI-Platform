@@ -344,7 +344,50 @@ CREATE TABLE IF NOT EXISTS site_edits (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   decided_at TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_site_edits_proj ON site_edits(project_id, status);
+-- ---- Phase 10: publish / export / domain / hosting (production gate + pinned deployments) ----
+CREATE TABLE IF NOT EXISTS publish_requests (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  published_site_id TEXT NOT NULL REFERENCES published_sites(id) ON DELETE CASCADE,
+  artifact_version INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',        -- pending|approved|rejected
+  requested_by TEXT NOT NULL,
+  decided_by TEXT,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  decided_at TEXT
+);
+CREATE TABLE IF NOT EXISTS site_deployments (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  published_site_id TEXT NOT NULL REFERENCES published_sites(id) ON DELETE CASCADE,
+  artifact_version INTEGER NOT NULL,             -- PINNED build_artifacts version
+  environment TEXT NOT NULL DEFAULT 'production',
+  status TEXT NOT NULL DEFAULT 'active',         -- active|rolled_back
+  deployed_by TEXT NOT NULL,
+  approved_by TEXT,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  rolled_back_at TEXT
+);
+CREATE TABLE IF NOT EXISTS site_domains (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  published_site_id TEXT NOT NULL REFERENCES published_sites(id) ON DELETE CASCADE,
+  domain TEXT NOT NULL UNIQUE,
+  verification_status TEXT NOT NULL DEFAULT 'pending',  -- pending|verified|failed
+  verification_token TEXT NOT NULL,
+  verification_note TEXT,
+  ssl_status TEXT NOT NULL DEFAULT 'pending',           -- pending only — TLS is provisioned at the hosting layer, never faked
+  ssl_note TEXT NOT NULL DEFAULT 'TLS terminates at the hosting/reverse-proxy layer once the domain A/AAAA record points at this server.',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  verified_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_deploy_site ON site_deployments(published_site_id, status);
+CREATE INDEX IF NOT EXISTS idx_pubreq_site ON publish_requests(published_site_id, status);
+CREATE INDEX IF NOT EXISTS idx_domains_site ON site_domains(published_site_id);
 `);
 
 // Lightweight migrations: add columns to pre-existing tables when missing.

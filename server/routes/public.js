@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import { db } from '../db.js';
 import {
   getPublishedBySlug, recordVisit, recordEnquiry, getLatestSiteArtifact,
-  ownerView, ownerCreateRequest,
+  ownerView, ownerCreateRequest, getPublicArtifact, getSiteByVerifiedDomain,
 } from '../services/publish.js';
 
 export const publicRouter = Router();
@@ -25,10 +25,25 @@ const rateOk = (key, limit, windowMs) => {
 };
 setInterval(() => { const now = Date.now(); for (const [k, v] of hits) if (now > v.reset) hits.delete(k); }, 60_000).unref();
 
+// Phase 10 — custom-domain routing: a verified domain in the Host header serves its
+// site (real single-server custom domains once DNS A/AAAA points here). Verified
+// domains only; every other host falls through to the slug routes.
+publicRouter.use((req, res, next) => {
+  const site = getSiteByVerifiedDomain(req.hostname || req.headers.host || '');
+  if (!site) return next();
+  const artifact = getPublicArtifact(site);
+  if (!artifact) return res.status(404).send('No published version found.');
+  recordVisit(site.slug);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(artifact.content);
+});
+
 publicRouter.get('/live/:slug', (req, res) => {
   const site = getPublishedBySlug(req.params.slug);
   if (!site || site.status !== 'live') return res.status(404).send('This site is not live.');
-  const artifact = getLatestSiteArtifact(site.project_id);
+  // Phase 10: with an active PRODUCTION deployment the public link serves the PINNED
+  // artifact version; demo mode (no deployment) keeps serving the latest build.
+  const artifact = getPublicArtifact(site);
   if (!artifact) return res.status(404).send('No published version found.');
   recordVisit(req.params.slug);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');

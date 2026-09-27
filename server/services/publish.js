@@ -11,6 +11,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveTxt } from 'node:dns/promises';
 import { db, audit } from '../db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -210,6 +211,179 @@ export function listLeads(orgId, siteId = null) {
   return siteId
     ? db.prepare(`SELECT * FROM leads WHERE org_id = ? AND published_site_id = ? ORDER BY created_at DESC`).all(orgId, siteId)
     : db.prepare(`SELECT l.*, p.slug AS site_slug FROM leads l JOIN published_sites p ON p.id = l.published_site_id WHERE l.org_id = ? ORDER BY l.created_at DESC LIMIT 200`).all(orgId);
+}
+
+// ---- Phase 10: production publication gate + pinned deployments ----------------------
+// Demo lane (publishSite above) is unchanged — it shares the LATEST artifact for
+// pitching. Production is gated: a publish_request (pinned to the current artifact
+// version) must be approved by owner/admin; the owner self-approves explicitly.
+// Approval creates a site_deployments row and /live/:slug serves the PINNED version
+// from then on. Rollback = a new active deployment pinned to an older version.
+
+export function getPublishedForProject(orgId, projectId) {
+  return db.prepare(`SELECT * FROM published_sites WHERE project_id = ? AND org_id = ?`).get(projectId, orgId);
+}
+
+function deployProduction(orgId, site, artifactVersion, deployedBy, approvedBy, ip, note = '') {
+  // exactly one active deployment per site
+  db.prepare(`UPDATE site_deployments SET status = 'rolled_back', rolled_back_at = datetime('now')
+    WHERE published_site_id = ? AND status = 'active'`).run(site.id);
+  const id = crypto.randomUUID();
+  db.prepare(`INSERT INTO site_deployments (id, org_id, project_id, published_site_id, artifact_version, deployed_by, approved_by, note)
+    VALUES (?,?,?,?,?,?,?,?)`)
+    .run(id, orgId, site.project_id, site.id, artifactVersion, deployedBy, approvedBy || deployedBy, String(note || '').slice(0, 400));
+  audit(orgId, deployedBy, 'site.production_deploy', 'published_site', site.id,
+    { artifactVersion, approvedBy: approvedBy || deployedBy, selfApproved: !approvedBy }, ip);
+  return db.prepare(`SELECT * FROM site_deployments WHERE id = ?`).get(id);
+}
+
+export function requestProductionPublish(orgId, projectId, user, ip = '', note = '') {
+  const site = getPublishedForProject(orgId, projectId);
+  if (!site) throw new Error('publish the demo link first — production gates the live site, it does not create it');
+  if (site.status !== 'live') throw new Error('the demo link is offline — republish it first');
+  const artifact = getLatestSiteArtifact(projectId);
+  if (!artifact) throw new Error('nothing to publish — build the site first');
+  const id = crypto.randomUUID();
+  db.prepare(`INSERT INTO publish_requests (id, org_id, project_id, published_site_id, artifact_version, requested_by, note)
+    VALUES (?,?,?,?,?,?,?)`)
+    .run(id, orgId, projectId, site.id, artifact.version, user.id, String(note || '').slice(0, 400));
+  audit(orgId, user.id, 'site.publish_requested', 'published_site', site.id, { artifactVersion: artifact.version }, ip);
+  // Owner self-approval is explicit and audited — no waiting room for a one-person org.
+  if (user.role === 'owner' || user.role === 'admin') {
+    db.prepare(`UPDATE publish_requests SET status = 'approved', decided_by = ?, decided_at = datetime('now') WHERE id = ?`).run(user.id, id);
+    const deployment = deployProduction(orgId, site, artifact.version, user.id, null, ip, note);
+    return { request: getPublishRequest(orgId, id), deployment, selfApproved: true };
+  }
+  return { request: getPublishRequest(orgId, id), deployment: null, selfApproved: false };
+}
+
+export function getPublishRequest(orgId, id) {
+  return db.prepare(`SELECT * FROM publish_requests WHERE id = ? AND org_id = ?`).get(id, orgId);
+}
+
+export function listPublishRequests(orgId, { status } = {}) {
+  return status
+    ? db.prepare(`SELECT * FROM publish_requests WHERE org_id = ? AND status = ? ORDER BY created_at DESC`).all(orgId, status)
+    : db.prepare(`SELECT * FROM publish_requests WHERE org_id = ? ORDER BY created_at DESC`).all(orgId);
+}
+
+export function decidePublishRequest(orgId, id, { decision, note } = {}, user, ip = '') {
+  if (user.role !== 'owner' && user.role !== 'admin') throw Object.assign(new Error('only the owner or an admin can approve production publication'), { status: 403 });
+  const r = getPublishRequest(orgId, id);
+  if (!r) throw new Error('publish request not found');
+  if (r.status !== 'pending') throw new Error(`request is already ${r.status}`);
+  if (decision === 'reject') {
+    db.prepare(`UPDATE publish_requests SET status = 'rejected', decided_by = ?, decided_at = datetime('now'), note = ? WHERE id = ?`)
+      .run(user.id, String(note || '').slice(0, 400), id);
+    audit(orgId, user.id, 'site.publish_rejected', 'published_site', r.published_site_id, { requestId: id }, ip);
+    return { request: getPublishRequest(orgId, id) };
+  }
+  if (decision !== 'approve') throw new Error("decision must be 'approve' or 'reject'");
+  db.prepare(`UPDATE publish_requests SET status = 'approved', decided_by = ?, decided_at = datetime('now') WHERE id = ?`).run(user.id, id);
+  const site = db.prepare(`SELECT * FROM published_sites WHERE id = ?`).get(r.published_site_id);
+  const deployment = deployProduction(orgId, site, r.artifact_version, r.requested_by, user.id, ip, note);
+  return { request: getPublishRequest(orgId, id), deployment };
+}
+
+export function getActiveDeployment(orgId, publishedSiteId) {
+  return db.prepare(`SELECT * FROM site_deployments WHERE published_site_id = ? AND org_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1`)
+    .get(publishedSiteId, orgId);
+}
+
+export function listDeployments(orgId, publishedSiteId) {
+  return db.prepare(`SELECT * FROM site_deployments WHERE published_site_id = ? AND org_id = ? ORDER BY created_at DESC`).all(publishedSiteId, orgId);
+}
+
+// Pinned artifact for public serving — production pin wins; demo falls back to latest.
+export function getPublicArtifact(site) {
+  const active = db.prepare(`SELECT * FROM site_deployments WHERE published_site_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1`)
+    .get(site.id);
+  if (active) {
+    const pinned = db.prepare(`SELECT content, version FROM build_artifacts WHERE project_id = ? AND kind = 'site' AND version = ?`)
+      .get(site.project_id, active.artifact_version);
+    if (pinned) return { ...pinned, pinned: true, deploymentId: active.id };
+  }
+  const latest = getLatestSiteArtifact(site.project_id);
+  return latest ? { ...latest, pinned: false, deploymentId: null } : null;
+}
+
+export function rollbackDeployment(orgId, deploymentId, { version } = {}, user, ip = '') {
+  const d = db.prepare(`SELECT * FROM site_deployments WHERE id = ? AND org_id = ?`).get(deploymentId, orgId);
+  if (!d) throw new Error('deployment not found');
+  if (d.status !== 'active') throw new Error('only the active deployment can be rolled back');
+  let target = Number(version) || null;
+  if (target) {
+    const exists = db.prepare(`SELECT 1 FROM build_artifacts WHERE project_id = ? AND kind = 'site' AND version = ?`).get(d.project_id, target);
+    if (!exists) throw new Error(`artifact version ${target} not found for this project`);
+  } else {
+    const prev = db.prepare(`SELECT artifact_version FROM site_deployments WHERE published_site_id = ? AND status = 'rolled_back' ORDER BY created_at DESC LIMIT 1`)
+      .get(d.published_site_id);
+    if (!prev) throw new Error('no previous deployment to roll back to — pass an explicit version');
+    target = prev.artifact_version;
+  }
+  const site = db.prepare(`SELECT * FROM published_sites WHERE id = ?`).get(d.published_site_id);
+  const deployment = deployProduction(orgId, site, target, user.id, user.id, ip, `rollback from v${d.artifact_version} to v${target}`);
+  return { deployment, from: d.artifact_version, to: target };
+}
+
+// ---- Phase 10: custom domains (honest DNS verification; SSL never faked) -------------
+
+const DOMAIN_RE = /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/i;
+
+export function addDomain(orgId, publishedSiteId, domain, user, ip = '') {
+  const site = db.prepare(`SELECT * FROM published_sites WHERE id = ? AND org_id = ?`).get(publishedSiteId, orgId);
+  if (!site) throw new Error('published site not found');
+  const clean = String(domain || '').trim().toLowerCase().replace(/\.$/, '');
+  if (!DOMAIN_RE.test(clean) || clean.length > 253 || !clean.includes('.')) {
+    throw Object.assign(new Error('invalid domain — expected something like www.example.com'), { status: 400 });
+  }
+  if (db.prepare(`SELECT 1 FROM site_domains WHERE domain = ?`).get(clean)) {
+    throw Object.assign(new Error('domain is already attached to a site'), { status: 409 });
+  }
+  const id = crypto.randomUUID();
+  const token = crypto.randomBytes(16).toString('hex');
+  db.prepare(`INSERT INTO site_domains (id, org_id, published_site_id, domain, verification_token) VALUES (?,?,?,?,?)`)
+    .run(id, orgId, publishedSiteId, clean, token);
+  audit(orgId, user.id, 'site.domain_added', 'published_site', publishedSiteId, { domain: clean }, ip);
+  return db.prepare(`SELECT * FROM site_domains WHERE id = ?`).get(id);
+}
+
+// Resolver is injectable for tests; production uses the real DNS.
+export async function verifyDomain(orgId, id, resolver, user, ip = '') {
+  const d = db.prepare(`SELECT * FROM site_domains WHERE id = ? AND org_id = ?`).get(id, orgId);
+  if (!d) throw new Error('domain not found');
+  const lookup = resolver || ((domain) => resolveTxt(domain).then((rows) => rows.flat()));
+  let records = [];
+  let reason = '';
+  try {
+    records = await lookup(d.domain);
+  } catch (e) {
+    reason = String(e.code || e.message);
+  }
+  const expected = `lucio-verify=${d.verification_token}`;
+  const ok = records.some((r) => String(r).replace(/["']/g, '').trim() === expected);
+  if (ok) {
+    db.prepare(`UPDATE site_domains SET verification_status = 'verified', verification_note = NULL, verified_at = datetime('now') WHERE id = ?`).run(id);
+  } else {
+    db.prepare(`UPDATE site_domains SET verification_status = 'pending', verification_note = ? WHERE id = ?`)
+      .run(reason ? `DNS lookup failed (${reason})` : `TXT record ${expected} not found yet — DNS can take minutes to propagate`, id);
+  }
+  audit(orgId, user?.id || 'system', ok ? 'site.domain_verified' : 'site.domain_verify_failed', 'published_site', d.published_site_id,
+    { domain: d.domain, reason: reason || (ok ? 'token matched' : 'token mismatch') }, ip);
+  return db.prepare(`SELECT * FROM site_domains WHERE id = ?`).get(id);
+}
+
+export function listDomains(orgId, publishedSiteId) {
+  return db.prepare(`SELECT * FROM site_domains WHERE published_site_id = ? AND org_id = ? ORDER BY created_at DESC`).all(publishedSiteId, orgId);
+}
+
+// Host-header routing: verified domains only, live sites only.
+export function getSiteByVerifiedDomain(hostname) {
+  const host = String(hostname || '').toLowerCase().split(':')[0].replace(/\.$/, '');
+  if (!host || /^(localhost|127\.|0\.0\.0\.0|\[::|::1)/.test(host)) return null;
+  return db.prepare(`
+    SELECT p.* FROM site_domains d JOIN published_sites p ON p.id = d.published_site_id
+    WHERE d.domain = ? AND d.verification_status = 'verified' AND p.status = 'live'`).get(host) || null;
 }
 
 export function listPublished(orgId) {

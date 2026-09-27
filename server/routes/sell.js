@@ -4,6 +4,8 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import {
   publishSite, unpublishSite, listPublished, createDeal, listDeals, updateDeal,
   createStripePaymentLink, listChangeRequests, completeChangeRequest, listLeads,
+  requestProductionPublish, decidePublishRequest, listPublishRequests,
+  listDeployments, rollbackDeployment, addDomain, verifyDomain, listDomains,
 } from '../services/publish.js';
 
 export const sellRouter = Router();
@@ -19,6 +21,39 @@ sellRouter.post('/publish/:id/unpublish', requireRole('member'), (req, res) => {
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 sellRouter.get('/published', (req, res) => res.json({ sites: listPublished(req.user.orgId) }));
+
+// ---- Phase 10: production publication gate (demo stays separate above) ----
+sellRouter.post('/project/:projectId/publish-production/request', requireRole('member'), (req, res) => {
+  try {
+    const out = requestProductionPublish(req.user.orgId, req.params.projectId, req.user, req.ip, req.body?.note);
+    res.status(out.selfApproved ? 201 : 202).json(out);
+  } catch (e) { res.status(e.status || 400).json({ error: String(e.message || e) }); }
+});
+sellRouter.get('/publish-requests', (req, res) => res.json({ requests: listPublishRequests(req.user.orgId, { status: req.query.status }) }));
+sellRouter.post('/publish-requests/:id/decide', requireRole('member'), (req, res) => {
+  try { res.json(decidePublishRequest(req.user.orgId, req.params.id, req.body || {}, req.user, req.ip)); }
+  catch (e) { res.status(e.status || 400).json({ error: String(e.message || e) }); }
+});
+sellRouter.get('/published/:id/deployments', (req, res) => {
+  res.json({ deployments: listDeployments(req.user.orgId, req.params.id) });
+});
+sellRouter.post('/deployments/:id/rollback', requireRole('member'), (req, res) => {
+  try { res.json(rollbackDeployment(req.user.orgId, req.params.id, req.body || {}, req.user, req.ip)); }
+  catch (e) { res.status(e.status || 400).json({ error: String(e.message || e) }); }
+});
+
+// ---- Phase 10: custom domains (honest DNS verification; SSL never faked) ----
+sellRouter.post('/published/:id/domains', requireRole('member'), (req, res) => {
+  try { res.status(201).json({ domain: addDomain(req.user.orgId, req.params.id, req.body?.domain, req.user, req.ip) }); }
+  catch (e) { res.status(e.status || 400).json({ error: String(e.message || e) }); }
+});
+sellRouter.get('/published/:id/domains', (req, res) => {
+  res.json({ domains: listDomains(req.user.orgId, req.params.id) });
+});
+sellRouter.post('/domains/:id/verify', requireRole('member'), async (req, res) => {
+  try { res.json({ domain: await verifyDomain(req.user.orgId, req.params.id, null, req.user, req.ip) }); }
+  catch (e) { res.status(e.status || 400).json({ error: String(e.message || e) }); }
+});
 
 // Client deals (the sale: build fee + monthly, manual or Stripe)
 sellRouter.post('/deals', requireRole('member'), (req, res) => {

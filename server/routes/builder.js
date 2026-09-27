@@ -5,6 +5,7 @@ import { makePlan, buildFromGoal, getLatestSite, getLatestQA, listArtifacts, get
 import { DESIGN_UNIVERSES, MOTION_PERSONALITIES } from '../services/designUniverses.js';
 import { CREATION_MODES } from '../services/ldStyles.js';
 import { chat } from '../services/modelGateway.js';
+import { inlineMediaRefs } from '../services/pdfView.js';
 import {
   proposeEdit, listEdits, decideEdit, setLock, getLocks,
   compareVersions, listVersions, restoreVersion,
@@ -122,6 +123,22 @@ builderRouter.get('/project/:projectId/pdf', (req, res) => {
   const slug = req.params.projectId.slice(0, 8);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="lucio-${slug}-pdf-ready.html"`);
+  res.send(html);
+});
+
+// Phase 10 — self-contained export: the latest build as ONE portable HTML file.
+// Interactive states preserved (unlike the print-oriented PDF view); media inlined
+// as base64 within the §57 budget, remaining refs absolute so it also works hosted.
+// Export is separate from preview (screen), PDF view (print) and /live (hosted).
+builderRouter.get('/project/:projectId/export', (req, res) => {
+  if (!ownProject(req, res)) return;
+  const site = getLatestSite(req.params.projectId);
+  if (!site) return res.status(404).json({ error: 'no build yet — build the site first' });
+  const base = `${req.protocol}://${req.get('host')}`;
+  const { html, stats } = inlineMediaRefs(site.content, { baseUrl: base });
+  const slug = req.params.projectId.slice(0, 8);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="lucio-${slug}-site-export.html"`);
   res.send(html);
 });
 

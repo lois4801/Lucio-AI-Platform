@@ -4,10 +4,10 @@ Canonical spec: Lucio_AI_Platform_Single_Master_Implementation_Manual_v28_MARKET
 Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 
 ## Current position
-- Phase: 0 PASS · 1 PASS · 2 PASS · 3 PASS + expansion · 4 PASS · 5 PASS · 6 PASS · 7 PASS · 8 PASS · 9 PASS — Phase 10 next
+- Phase: 0 PASS · 1 PASS · 2 PASS · 3 PASS + expansion · 4 PASS · 5 PASS · 6 PASS · 7 PASS · 8 PASS · 9 PASS · 10 PASS — Phase 11 next
 - Branch: main
 - Last passing checkpoint: see git log
-- Next action: Phase 10 — per manual v28 phase list. Build contract: docs/kimi/PHASE9_CONTRACT.md (Phase 9, completed)
+- Next action: Phase 11 — per manual v28 phase list. Build contract: docs/kimi/PHASE10_CONTRACT.md (Phase 10, completed)
 - Release posture: local development build, not production
 
 ## Phase summary
@@ -25,7 +25,8 @@ Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 | 7 Cinematic Component Universe | DONE | Component/shader/gradient/motion/template registries; component pipeline (import→…→approve, quality gate, duplicate prevention, growth gaps, library search); cinematic engine (§70 AUTO gating, EXTREME-never-auto, performance policy, scroll-timeline validation, §62 audit, §63 anti-gimmick); recipe v6 + site_recipes persistence; convert / change-component routes; /api/library browser; §57 PDF-ready export |
 | 8 Unified Website Editor + Versioning | DONE | Proposal→approval edit pipeline (content/image/style/motion/component/section-order/section-visibility) over the stored recipe; §59 locks with 423 + audited override; STYLE_LOCK default (§60); content overrides + image key picks + section order/visibility in scaffold; compare + honest restore (new artifact version); full rebuilds preserve editor state; /editor UI |
 | 9 Preview / HTML / PDF / QA | DONE | Four site audit suites (accessibility/factual/visual/performance, deterministic + explainable) inside every QA artifact; device preview chrome (390/768/1280) around the same raw source; builder device switcher + audits card |
-| 10–17 | PENDING | Phase 10 next |
+| 10 Publish / Export / Domain / Hosting | DONE | Production publication gate (owner self-approve / member pending), pinned deployments with rollback, custom domains with real DNS TXT verification (SSL never faked), Host-header routing for verified domains, self-contained single-file HTML export, ClientsPage production dialog |
+| 11–17 | PENDING | Phase 11 next |
 | Sell architecture + map discovery (Pindrop parity) | DONE | Publish live links, owner portal with photo requests, deals/billing (manual default, Stripe-gated), leads inbox, enquiry-posting generated sites, pin-drop map discovery with street-view gating |
 
 ## Session-resume notes
@@ -36,4 +37,4 @@ Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 - Dev server: `npm run dev -- --port 7100` (log: lucio_dev.log); tests: `node scripts/test-phase3.js` (58) + `node scripts/test-phase4.js` (39).
 - ORPHANED VITE WATCH: dev.js's Vite child survives parent taskkill. Kill BOTH the :8787 PID and the :7100 PID, verify with netstat, before restart — a zombie Vite on [::1]:7100 served stale code during the Phase 4 E2E.
 - Sell architecture: dev.js Vite proxy now also forwards /live and /portal to :8787 — any preview server started before this change must be restarted or public links 404 through the dev port.
-- Test suites: test-sell.js (33) + test-google-places.js (38) + test-phase3.js (58) + test-phase4.js (39) + test-phase6.js (55) + test-assistant.js (34) + test-phase7.js (134) + test-phase8.js (65) + test-phase9.js (36) = 492 assertions.
+- Test suites: test-sell.js (33) + test-google-places.js (38) + test-phase3.js (58) + test-phase4.js (39) + test-phase6.js (55) + test-assistant.js (34) + test-phase7.js (134) + test-phase8.js (65) + test-phase9.js (36) + test-phase10.js (38) = 530 assertions.

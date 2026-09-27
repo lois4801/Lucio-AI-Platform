@@ -203,3 +203,13 @@
   all consume identical bytes.
 - Consequence: "previews share the same source" is structural (one route embeds
   another), not conventional — it cannot silently fork.
+- Phase 10: Production publication is a GATED flow pinned to an artifact version,
+  layered on top of the untouched demo lane — demo keeps serving LATEST for
+  pitching; production serves the pinned version only after an approved
+  publish_request (owner self-approves explicitly, audited; members wait for owner
+  approval). Rollback is a new active deployment row pinned to an older version,
+  never a destructive flip. Domains verify via a REAL DNS TXT lookup with an
+  injectable resolver; SSL is never faked — it stays `pending` with an honest note
+  that TLS is issued by the DNS/hosting provider. Export is a self-contained
+  single-file HTML via the existing §57 inlineMediaRefs (no zip library in deps);
+  media inlines as base64 within budget, remainder absolute.

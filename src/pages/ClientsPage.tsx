@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { BriefcaseBusiness, Copy, ExternalLink, Flag, CreditCard, CheckCircle2, HandCoins, Globe } from 'lucide-react';
+import { BriefcaseBusiness, Copy, ExternalLink, Flag, CreditCard, CheckCircle2, HandCoins, Globe, Rocket, RotateCcw, ShieldCheck, Download, Plus, X } from 'lucide-react';
 
 type Deal = {
   id: string; business_name: string; stage: string; build_fee_cents: number; monthly_cents: number;
@@ -20,6 +20,9 @@ type Deal = {
 type Request = { id: string; business_name: string; message: string; photo_file_id: string | null; status: string; created_at: string };
 type Lead = { id: string; name: string; email: string; message: string; site_slug: string; created_at: string };
 type PublishedSite = { id: string; project_id: string; project_name: string; slug: string; status: string; owner_token: string; visits: number; enquiries: number; published_at: string };
+type PublishReq = { id: string; project_id: string; published_site_id: string; artifact_version: number; status: string; note: string; created_at: string };
+type Deployment = { id: string; artifact_version: number; status: string; note: string; created_at: string };
+type SiteDomain = { id: string; domain: string; verification_status: string; verification_token: string; verification_note: string | null; ssl_status: string; ssl_note: string | null; verified_at: string | null; created_at: string };
 
 const STAGES = ['pitched', 'active', 'paused', 'churned'];
 const PAY_STATUSES = ['unknown', 'paid', 'failed'];
@@ -35,15 +38,30 @@ export default function ClientsPage() {
   const [payLinkFor, setPayLinkFor] = useState<{ deal: Deal; url: string } | null>(null);
   const [showNewDeal, setShowNewDeal] = useState(false);
   const [form, setForm] = useState({ business_name: '', build_fee: '', monthly: '', siteId: '', notes: '' });
+  const [me, setMe] = useState<{ role: string } | null>(null);
+  const [pubReqs, setPubReqs] = useState<PublishReq[]>([]);
+  const [deploys, setDeploys] = useState<Record<string, Deployment[]>>({});
+  const [domains, setDomains] = useState<Record<string, SiteDomain[]>>({});
+  const [prodFor, setProdFor] = useState<PublishedSite | null>(null);
+  const [newDomain, setNewDomain] = useState('');
 
   const load = async () => {
-    const [d, r, l, s] = await Promise.all([
+    const [m, d, r, l, s, q] = await Promise.all([
+      api<{ user: { role: string } }>('/auth/me'),
       api<{ deals: Deal[] }>('/sell/deals'),
       api<{ requests: Request[] }>('/sell/requests'),
       api<{ leads: Lead[] }>('/sell/leads'),
       api<{ sites: PublishedSite[] }>('/sell/published'),
+      api<{ requests: PublishReq[] }>('/sell/publish-requests'),
     ]);
-    setDeals(d.deals); setRequests(r.requests); setLeads(l.leads); setSites(s.sites);
+    setMe(m.user); setDeals(d.deals); setRequests(r.requests); setLeads(l.leads); setSites(s.sites); setPubReqs(q.requests);
+    const siteList = s.sites;
+    const [depPairs, domPairs] = await Promise.all([
+      Promise.all(siteList.map((site) => api<{ deployments: Deployment[] }>(`/sell/published/${site.id}/deployments`).then((x) => [site.id, x.deployments] as const))),
+      Promise.all(siteList.map((site) => api<{ domains: SiteDomain[] }>(`/sell/published/${site.id}/domains`).then((x) => [site.id, x.domains] as const))),
+    ]);
+    setDeploys(Object.fromEntries(depPairs));
+    setDomains(Object.fromEntries(domPairs));
   };
   useEffect(() => { load().catch(() => {}); }, []);
 
@@ -79,6 +97,28 @@ export default function ClientsPage() {
     navigator.clipboard?.writeText(text).then(() => setNotice(`${label} copied to clipboard`)).catch(() => setError('Clipboard unavailable — copy manually'));
   };
 
+  // ---- Phase 10: production gate, rollback, domains, export ----
+  const requestProd = (s: PublishedSite) =>
+    run(() => api(`/sell/project/${s.project_id}/publish-production/request`, { method: 'POST', body: JSON.stringify({}) }),
+      'Production publish requested');
+
+  const decideReq = (id: string, decision: string) =>
+    run(() => api(`/sell/publish-requests/${id}/decide`, { method: 'POST', body: JSON.stringify({ decision }) }),
+      `Publish request ${decision === 'approve' ? 'approved — site pinned' : 'rejected'}`);
+
+  const rollback = (dep: Deployment) =>
+    run(() => api(`/sell/deployments/${dep.id}/rollback`, { method: 'POST', body: JSON.stringify({}) }),
+      `Rolled back to artifact v${dep.artifact_version}`);
+
+  const addDomain = (s: PublishedSite) => run(async () => {
+    await api(`/sell/published/${s.id}/domains`, { method: 'POST', body: JSON.stringify({ domain: newDomain }) });
+    setNewDomain('');
+  }, 'Domain added — create the TXT record at your DNS provider, then hit “Verify now”');
+
+  const verifyDomain = (dom: SiteDomain) =>
+    run(() => api(`/sell/domains/${dom.id}/verify`, { method: 'POST', body: JSON.stringify({}) }),
+      dom.verification_status === 'verified' ? 'Domain verified' : 'DNS checked — see the note on the domain');
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between">
@@ -97,7 +137,7 @@ export default function ClientsPage() {
           <CardDescription>Live public links generated from the builder. The owner portal link is what you give the business owner — no Lucio account needed.</CardDescription></CardHeader>
         <CardContent>
           <Table>
-            <TableHeader><TableRow><TableHead>Site</TableHead><TableHead>Status</TableHead><TableHead>Visits</TableHead><TableHead>Enquiries</TableHead><TableHead>Public link</TableHead><TableHead>Owner portal</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Site</TableHead><TableHead>Status</TableHead><TableHead>Visits</TableHead><TableHead>Enquiries</TableHead><TableHead>Public link</TableHead><TableHead>Owner portal</TableHead><TableHead>Production</TableHead></TableRow></TableHeader>
             <TableBody>
               {sites.map((s) => (
                 <TableRow key={s.id}>
@@ -117,9 +157,15 @@ export default function ClientsPage() {
                       <Button size="sm" variant="ghost" title="Copy owner portal link" onClick={() => copy(`${window.location.origin}/portal/${s.owner_token}`, 'Owner portal link')}><Copy className="h-3.5 w-3.5" /></Button>
                     </span>
                   </TableCell>
+                  <TableCell>
+                    <Button size="sm" variant="outline" onClick={() => setProdFor(s)}>
+                      <Rocket className="h-3.5 w-3.5 mr-1" /> Production
+                      {deploys[s.id]?.some((dep) => dep.status === 'active') && <Badge className="ml-2" variant="secondary">pinned v{deploys[s.id].find((dep) => dep.status === 'active')?.artifact_version}</Badge>}
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
-              {!sites.length && <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">No published sites yet — build a site in the App Builder, then hit “Publish live link”.</TableCell></TableRow>}
+              {!sites.length && <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">No published sites yet — build a site in the App Builder, then hit “Publish live link”.</TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>
@@ -290,6 +336,95 @@ export default function ClientsPage() {
             <Input readOnly value={payLinkFor?.url || ''} onFocus={(e) => e.target.select()} />
             <Button variant="outline" onClick={() => copy(payLinkFor?.url || '', 'Payment link')}>Copy</Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!prodFor} onOpenChange={(open) => { if (!open) { setProdFor(null); setNewDomain(''); } }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Rocket className="h-5 w-5" /> Production & domains — {prodFor?.project_name}</DialogTitle>
+            <DialogDescription>
+              The demo link always serves the newest build. Production pins one approved artifact version and only changes when a publish request is approved. Custom domains serve this site after a real DNS TXT verification — SSL is issued by your DNS/hosting provider, never faked here.
+            </DialogDescription>
+          </DialogHeader>
+          {prodFor && (
+            <div className="space-y-5">
+              <div>
+                <h3 className="text-sm font-semibold mb-2">Production deployments</h3>
+                {deploys[prodFor.id]?.length ? (
+                  <ul className="divide-y rounded-md border">
+                    {deploys[prodFor.id].map((dep) => (
+                      <li key={dep.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                        <span className="flex items-center gap-2">
+                          <Badge variant={dep.status === 'active' ? 'default' : 'secondary'}>{dep.status}</Badge>
+                          <span>artifact v{dep.artifact_version}</span>
+                          <span className="text-xs text-muted-foreground">{new Date(dep.created_at).toLocaleString()}</span>
+                        </span>
+                        {dep.status === 'active' && (
+                          <Button size="sm" variant="outline" onClick={() => rollback(dep)}><RotateCcw className="h-3.5 w-3.5 mr-1" /> Roll back</Button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No production deployments yet — the public link serves the latest build (demo mode).</p>
+                )}
+                <div className="flex flex-wrap items-center gap-2 mt-2">
+                  <Button size="sm" onClick={() => requestProd(prodFor)}><Rocket className="h-3.5 w-3.5 mr-1" /> Request production publish</Button>
+                  <Button size="sm" variant="outline" onClick={() => window.open(`/api/builder/project/${prodFor.project_id}/export`, '_blank')}>
+                    <Download className="h-3.5 w-3.5 mr-1" /> Export site HTML
+                  </Button>
+                </div>
+                {pubReqs.filter((pr) => pr.project_id === prodFor.project_id && pr.status === 'pending').length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {pubReqs.filter((pr) => pr.project_id === prodFor.project_id && pr.status === 'pending').map((pr) => (
+                      <li key={pr.id} className="flex items-center justify-between gap-2 text-sm rounded-md border px-3 py-2">
+                        <span>Publish request — artifact v{pr.artifact_version} <span className="text-xs text-muted-foreground">· {new Date(pr.created_at).toLocaleString()}</span></span>
+                        {me && (me.role === 'owner' || me.role === 'admin') ? (
+                          <span className="flex gap-1">
+                            <Button size="sm" variant="outline" onClick={() => decideReq(pr.id, 'approve')}><CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Approve</Button>
+                            <Button size="sm" variant="outline" onClick={() => decideReq(pr.id, 'reject')}><X className="h-3.5 w-3.5 mr-1" /> Reject</Button>
+                          </span>
+                        ) : <Badge variant="secondary">awaiting owner approval</Badge>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold mb-2 flex items-center gap-1"><ShieldCheck className="h-4 w-4" /> Custom domains</h3>
+                {domains[prodFor.id]?.length ? (
+                  <ul className="divide-y rounded-md border">
+                    {domains[prodFor.id].map((dom) => (
+                      <li key={dom.id} className="px-3 py-2 text-sm space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium">{dom.domain}</span>
+                          <span className="flex items-center gap-1">
+                            <Badge variant={dom.verification_status === 'verified' ? 'default' : 'secondary'}>{dom.verification_status}</Badge>
+                            <Badge variant="outline">SSL {dom.ssl_status}</Badge>
+                            <Button size="sm" variant="ghost" onClick={() => verifyDomain(dom)}>Verify now</Button>
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          DNS TXT: <code className="bg-muted px-1 rounded">lucio-verify={dom.verification_token}</code>
+                          <Button size="sm" variant="ghost" className="h-5 px-1" onClick={() => copy(`lucio-verify=${dom.verification_token}`, 'TXT record value')}>copy</Button>
+                        </div>
+                        {dom.verification_note && <p className="text-xs text-amber-600 dark:text-amber-400">{dom.verification_note}</p>}
+                        {dom.ssl_note && <p className="text-xs text-muted-foreground">{dom.ssl_note}</p>}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No custom domains yet — add one, create the TXT record at your DNS provider, then verify.</p>
+                )}
+                <div className="flex gap-2 mt-2">
+                  <Input placeholder="www.clientbusiness.com" value={newDomain} onChange={(e) => setNewDomain(e.target.value)} />
+                  <Button size="sm" variant="outline" disabled={!newDomain.trim()} onClick={() => addDomain(prodFor)}><Plus className="h-3.5 w-3.5 mr-1" /> Add domain</Button>
+                </div>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

@@ -534,3 +534,54 @@ source; responsive, accessibility, factual, visual and performance QA pass.
 - Visual hex scan compared '#rrggbb' (with #) against captured 'rrggbb' — every palette
   color looked stray; normalized. Performance externals scan now strips JSON-LD blocks
   (schema.org is an identifier, not a request).
+
+## Phase 10 — Publish / Export / Domain / Hosting (manual v28 §13)
+
+### What shipped
+- Production publication gate, separate from the untouched demo lane: demo
+  (`POST /sell/publish`) still serves the LATEST artifact for pitching. Production
+  requires a publish_request pinned to the current artifact version; owner/admin
+  self-approve explicitly (201, audited `site.publish_requested` +
+  `site.production_deploy`); a plain member gets 202 pending and canNOT decide
+  (403) — the owner approves or rejects from the pending list.
+- Pinned deployments: approving creates a `site_deployments` row (exactly one
+  `active` per site; the previous active row flips to `rolled_back`). `/live/:slug`
+  serves the pinned artifact version only; with no active deployment it falls back
+  to latest (demo mode). Rebuilding (or an approved edit) does NOT change the live
+  site until a new request is approved.
+- Rollback = a new active deployment pinned to an older artifact: implicit target
+  is the most recent rolled_back deployment's version; an explicit `version` is
+  validated against `build_artifacts` (400 otherwise).
+- Custom domains with honest verification: `site_domains` rows carry a per-domain
+  token; verification is a REAL `node:dns` TXT lookup for `lucio-verify=<token>`
+  (resolver injectable for tests). Wrong TXT, DNS errors and not-yet-propagated
+  records all leave the domain `pending` with an honest note — never `verified`.
+  SSL status stays `pending` with a note that TLS is issued by the DNS/hosting
+  provider; it is never faked.
+- Host-header routing: a `publicRouter.use` middleware before the slug routes
+  serves the pinned artifact for a VERIFIED domain in the Host header (localhost /
+  127.0.0.0/8 / :: are never matched); unverified or unknown hosts fall through to
+  the normal routes unchanged.
+- Self-contained export: `GET /api/builder/project/:id/export` serves the latest
+  build as ONE portable HTML file via the existing §57 `inlineMediaRefs` (media
+  inlined as base64 within budget, remainder absolute under the request host) —
+  interactive states preserved, distinct from preview (screen), PDF view (print)
+  and /live (hosted).
+- ClientsPage: new "Production" column + dialog per published site — deployments
+  list with active pin + Roll back, Request production publish, pending requests
+  with Approve/Reject (or "awaiting owner approval" for non-owners), custom domain
+  add/verify with the TXT instruction and copy button, export button.
+
+### Verification
+- scripts/test-phase10.js — 38 assertions, all green: demo-first 400, export-404,
+  owner self-approve 201 + v1 pin, rebuild does not move the live site, v2 goes
+  live only after approval, exactly-one-active deployment invariant, rollback
+  restores v1 bytes + bad-version 400, domain validation 400 / duplicate 409,
+  resolver-injected verify (wrong TXT / ENOTFOUND / correct TXT), SSL never faked,
+  Host-header routing byte-identical to /live for a verified domain and not-serving
+  for an unverified one, HTTP verify uses the real DNS resolver honestly, member
+  202-pending + 403-decide + owner approve/reject, export attachment with inlined
+  or absolute media.
+- Full regression: sell(33) + google-places(38) + phase3(58) + phase4(39) +
+  phase6(55) + assistant(34) + phase7(134) + phase8(65) + phase9(36) + phase10(38)
+  = 530 assertions, 0 failures; tsc clean; vite build clean.
