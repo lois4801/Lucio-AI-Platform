@@ -207,3 +207,31 @@ start of every new session to evolve instead of rediscovering.
   schema's vocabulary when polling job state.
 - **Lesson:** verified-first ordering changes which provider answers `aiChat`
   — tests must not assume alphabetical order after a verify call.
+
+
+## Session 2026-09-27 (later) — Deep capture: copy animations/effects from any site
+- **Heard:** "Allow my app to copy all the animations, components, effects,
+  motions, transitions, tailwind etc from Framer-template sites (arpeggio,
+  collinscole, agencia, alexportz) or use them as templates for any project."
+- **Built:** deep asset inlining in `siteImporter.js` — `inlineExternalAssets`
+  scans the fetched HTML for external stylesheets + scripts (up to 24, 2 MB
+  each, 4-way pool, same SSRF guard per redirect hop) and swaps each tag for an
+  inlined `<style>/<script data-imported-from="…">` via STRING SURGERY on the
+  original HTML (no parser re-serialization → everything else byte-identical).
+  `type="module"` is preserved (Framer ships a 302 KB .mjs main script);
+  `</script` sequences inside inlined JS are escaped; preconnect hints drop.
+  Import now defaults to inlineAssets=true, persists an asset manifest
+  (`site_imports.assets_json`, with a PRAGMA-guarded ALTER migration for the
+  existing dev DB), and every inlined asset carries provenance. New
+  `GET /project/:id/snippets` serves full snippet content on demand; the
+  Import Studio gained an "Effects & components" tab (captured-assets manifest
+  + per-snippet copy buttons + copy-all-CSS / copy-all-JS) next to the Texts
+  tab. Live-validated against the real https://arpeggio.framer.website/: 3.6 MB
+  HTML, both external scripts captured, zero remote script/link tags left.
+- **Lesson:** Framer keeps ALL motion inside the HTML's own `<style>` blocks —
+  external assets were only scripts — so the "copy the animations" feature was
+  already 80% solved by the byte-preserving text editor; the missing 20% was
+  inlining remote scripts/modules.
+- **Lesson:** `new URL('https://host', base)` stringifies with a trailing slash
+  (`https://host/`) — normalize root URLs before using them as provenance
+  labels or tests compare against the un-slashed original href.

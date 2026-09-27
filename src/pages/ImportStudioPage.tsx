@@ -5,8 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
-  ArrowLeft, Check, ExternalLink, Globe, Loader2, RotateCcw, Rocket,
-  Save, Search, Sparkles, LayoutTemplate,
+  ArrowLeft, Check, Copy, CheckCheck, ExternalLink, Globe, Loader2, RotateCcw, Rocket,
+  Save, Search, Sparkles, LayoutTemplate, Wand2, FileCode2, ImageOff,
 } from 'lucide-react';
 
 type EditableText = { id: string; tag: string; context: string; text: string };
@@ -16,7 +16,9 @@ type ImportState = {
   version: number;
   texts: EditableText[];
   snippetCount: number;
+  assets: { url: string; kind: string; bytes: number; inlined: boolean; reason?: string }[];
 };
+type Snippet = { kind: string; name: string; hint?: string; content: string; chars?: number; src?: string };
 
 export default function ImportStudioPage() {
   const { projectId = '' } = useParams();
@@ -30,6 +32,10 @@ export default function ImportStudioPage() {
   const [templateName, setTemplateName] = useState('');
   const [showTemplateInput, setShowTemplateInput] = useState(false);
   const [liveSlug, setLiveSlug] = useState('');
+  const [tab, setTab] = useState<'texts' | 'effects'>('texts');
+  const [effects, setEffects] = useState<{ snippets: Snippet[]; assets: ImportState['assets'] } | null>(null);
+  const [effectsLoaded, setEffectsLoaded] = useState(false);
+  const [copied, setCopied] = useState('');
 
   const load = useCallback(() => {
     api<ImportState>(`/imports/project/${projectId}`)
@@ -37,6 +43,19 @@ export default function ImportStudioPage() {
       .catch((e) => setLoadError(e.message));
   }, [projectId]);
   useEffect(() => { load(); }, [load]);
+
+  const loadEffects = () => {
+    if (effectsLoaded) return;
+    api<{ snippets: Snippet[]; assets: ImportState['assets'] }>(`/imports/project/${projectId}/snippets`)
+      .then((d) => { setEffects(d); setEffectsLoaded(true); })
+      .catch(() => {});
+  };
+  const copySnippet = (key: string, text: string) => {
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(key);
+      setTimeout(() => setCopied(''), 1500);
+    }).catch(() => {});
+  };
 
   const stagedCount = Object.keys(staged).length;
   const texts = useMemo(() => {
@@ -101,6 +120,11 @@ export default function ImportStudioPage() {
             <Badge variant="secondary" className="ml-1">v{state.version}</Badge>
             <Badge variant="outline">{state.texts.length} editable texts</Badge>
             <Badge variant="outline">{state.snippetCount} effects/snippets</Badge>
+            {state.assets.length > 0 && (
+              <Badge variant="default">
+                {state.assets.filter((a) => a.inlined).length}/{state.assets.length} assets captured
+              </Badge>
+            )}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -145,17 +169,99 @@ export default function ImportStudioPage() {
 
         <div className="rounded-lg border bg-card flex flex-col max-h-[72vh]">
           <div className="p-3 border-b space-y-2">
-            <h2 className="font-semibold text-sm">Edit texts</h2>
-            <div className="relative">
-              <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-muted-foreground" />
-              <Input placeholder="Filter texts…" value={filter} onChange={(e) => setFilter(e.target.value)} className="pl-8" />
+            <div className="flex gap-1">
+              <button
+                type="button"
+                onClick={() => setTab('texts')}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium ${tab === 'texts' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
+              >
+                Texts
+              </button>
+              <button
+                type="button"
+                onClick={() => { setTab('effects'); loadEffects(); }}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium ${tab === 'effects' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
+              >
+                Effects &amp; components
+              </button>
             </div>
-            <Button size="sm" className="w-full" disabled={!stagedCount || busy !== ''} onClick={apply}>
-              {busy === 'apply' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 mr-1" />}
-              Apply {stagedCount || ''} edit{stagedCount === 1 ? '' : 's'}
-            </Button>
-            <p className="text-[11px] text-muted-foreground">Edits replace text only — scripts, styles, animations and effects stay byte-identical.</p>
+            {tab === 'texts' && (
+              <>
+                <div className="relative">
+                  <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-muted-foreground" />
+                  <Input placeholder="Filter texts…" value={filter} onChange={(e) => setFilter(e.target.value)} className="pl-8" />
+                </div>
+                <Button size="sm" className="w-full" disabled={!stagedCount || busy !== ''} onClick={apply}>
+                  {busy === 'apply' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 mr-1" />}
+                  Apply {stagedCount || ''} edit{stagedCount === 1 ? '' : 's'}
+                </Button>
+                <p className="text-[11px] text-muted-foreground">Edits replace text only — scripts, styles, animations and effects stay byte-identical.</p>
+              </>
+            )}
           </div>
+
+          {tab === 'effects' && (
+            <div className="overflow-y-auto flex-1 p-2 space-y-3">
+              {!effects && <p className="text-xs text-muted-foreground p-2 flex items-center gap-1"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading effects…</p>}
+              {effects && (
+                <>
+                  {effects.assets.length > 0 && (
+                    <div className="space-y-1">
+                      <h3 className="text-xs font-semibold flex items-center gap-1"><FileCode2 className="h-3.5 w-3.5" /> Captured assets</h3>
+                      {effects.assets.map((a, i) => (
+                        <div key={i} className="rounded-md border bg-background/50 px-2 py-1.5 text-[11px]">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate font-mono">{a.url}</span>
+                            <Badge variant={a.inlined ? 'default' : 'secondary'} className="text-[9px] shrink-0">
+                              {a.inlined ? `${a.kind} · ${(a.bytes / 1024).toFixed(1)} KB` : 'remote'}
+                            </Badge>
+                          </div>
+                          {!a.inlined && a.reason && <p className="text-destructive/80 mt-0.5">{a.reason}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-semibold flex items-center gap-1"><Wand2 className="h-3.5 w-3.5" /> Reusable snippets</h3>
+                      {effects.snippets.length > 0 && (
+                        <div className="flex gap-1">
+                          <Button size="sm" variant="outline" className="h-6 text-[10px] px-2"
+                            onClick={() => copySnippet('all-css', effects.snippets.filter((s) => s.kind === 'style').map((s) => s.content).join('\n\n'))}>
+                            {copied === 'all-css' ? <CheckCheck className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />} all CSS
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-6 text-[10px] px-2"
+                            onClick={() => copySnippet('all-js', effects.snippets.filter((s) => s.kind === 'script').map((s) => s.content).join('\n\n'))}>
+                            {copied === 'all-js' ? <CheckCheck className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />} all JS
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                    {effects.snippets.map((s, i) => (
+                      <div key={i} className="rounded-md border bg-background/50 px-2 py-1.5 text-[11px]">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="font-medium truncate">{s.name}</span>
+                            <span className="text-muted-foreground ml-1.5">{s.kind}{s.chars ? ` · ${(s.chars / 1024).toFixed(1)} KB` : ''}</span>
+                          </div>
+                          <Button size="sm" variant="ghost" className="h-6 w-6 p-0 shrink-0" onClick={() => copySnippet(`s${i}`, s.content)} aria-label={`Copy ${s.name}`}>
+                            {copied === `s${i}` ? <CheckCheck className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
+                          </Button>
+                        </div>
+                        {s.hint && <p className="text-muted-foreground truncate font-mono mt-0.5">{s.hint}</p>}
+                        {s.kind === 'script-ref' && <p className="text-muted-foreground truncate font-mono mt-0.5">{s.src}</p>}
+                      </div>
+                    ))}
+                    {!effects.snippets.length && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1"><ImageOff className="h-3.5 w-3.5" /> No snippets extracted.</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {tab === 'texts' && (
           <div className="overflow-y-auto flex-1 p-2 space-y-1">
             {texts.map((t) => {
               const stagedText = staged[t.id];
@@ -193,6 +299,7 @@ export default function ImportStudioPage() {
             })}
             {!texts.length && <p className="text-xs text-muted-foreground p-2">No texts match.</p>}
           </div>
+          )}
         </div>
       </div>
     </div>

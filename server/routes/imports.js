@@ -4,18 +4,22 @@ import { Router } from 'express';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import {
   importSite, getImportState, applyEdits, resetImport,
-  saveAsTemplate, listTemplates, useTemplate, deleteTemplate,
+  saveAsTemplate, listTemplates, useTemplate, deleteTemplate, getImportSnippets,
 } from '../services/siteImporter.js';
 
 export const importsRouter = Router();
 importsRouter.use(requireAuth);
 
 // Import a site by URL → creates a project with the imported HTML.
+// Body: { url, inlineAssets?: boolean } — inlineAssets defaults to true:
+// external stylesheets and scripts are fetched and inlined so the imported
+// site (and any template made from it) is fully self-contained — animations,
+// effects, motions and transitions survive even if the origin goes away.
 importsRouter.post('/', requireRole('member'), async (req, res) => {
   try {
     const url = String(req.body?.url || '').trim();
     if (!url) return res.status(400).json({ error: 'url is required' });
-    const out = await importSite(req.user.orgId, req.user, url, req.ip);
+    const out = await importSite(req.user.orgId, req.user, url, { inlineAssets: req.body?.inlineAssets !== false }, req.ip);
     res.status(201).json(out);
   } catch (e) {
     res.status(400).json({ error: String(e.message || e) });
@@ -28,6 +32,13 @@ importsRouter.get('/project/:projectId', (req, res) => {
   if (!state) return res.status(404).json({ error: 'project not found' });
   if (!state.import) return res.status(404).json({ error: 'project is not an imported site' });
   res.json(state);
+});
+
+// Full snippets + asset manifest (loaded on demand by the Effects panel).
+importsRouter.get('/project/:projectId/snippets', (req, res) => {
+  const out = getImportSnippets(req.user.orgId, req.params.projectId);
+  if (!out) return res.status(404).json({ error: 'imported project not found' });
+  res.json(out);
 });
 
 // Apply staged text edits → new artifact version (animations untouched).

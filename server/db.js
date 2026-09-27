@@ -246,6 +246,7 @@ CREATE TABLE IF NOT EXISTS site_imports (
   title TEXT NOT NULL DEFAULT '',
   original_path TEXT NOT NULL,
   texts_count INTEGER NOT NULL DEFAULT 0,
+  assets_json TEXT NOT NULL DEFAULT '[]',
   created_by TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -884,6 +885,10 @@ CREATE TABLE IF NOT EXISTS osm_cache (
 {
   const cols = db.prepare('PRAGMA table_info(component_assets)').all().map((c) => c.name);
   if (!cols.includes('performance_class')) db.exec(`ALTER TABLE component_assets ADD COLUMN performance_class TEXT NOT NULL DEFAULT 'STANDARD'`);
+}
+{
+  const cols = db.prepare('PRAGMA table_info(site_imports)').all().map((c) => c.name);
+  if (!cols.includes('assets_json')) db.exec(`ALTER TABLE site_imports ADD COLUMN assets_json TEXT NOT NULL DEFAULT '[]'`);
 }
 
 // Seed provider registry: local-first, external disabled by default (manual §7, §14)

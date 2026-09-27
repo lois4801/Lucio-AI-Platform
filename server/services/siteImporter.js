@@ -44,6 +44,24 @@ export function resetImporterFetch() {
 // ---------------------------------------------------------------------------
 // Fetch (SSRF-guarded, redirect-following, size-capped)
 
+async function readBody(res, maxBytes) {
+  const reader = res.body?.getReader();
+  let received = 0; const chunks = [];
+  if (reader) {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.length;
+      if (received > maxBytes) {
+        chunks.push(value.subarray(0, maxBytes - (received - value.length)));
+        break;
+      }
+      chunks.push(value);
+    }
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks.map((c) => Buffer.from(c))));
+}
+
 export async function fetchSiteHtml(rawUrl) {
   let url = assertSafeUrl(String(rawUrl || '').trim());
   const redirects = [];
@@ -63,27 +81,107 @@ export async function fetchSiteHtml(rawUrl) {
       continue;
     }
     if (!res.ok) throw new Error(`import: source returned HTTP ${res.status}`);
-    const reader = res.body?.getReader();
-    let received = 0; const chunks = [];
-    if (reader) {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        received += value.length;
-        if (received > IMPORT_MAX_BYTES) {
-          chunks.push(value.subarray(0, IMPORT_MAX_BYTES - (received - value.length)));
-          break;
-        }
-        chunks.push(value);
-      }
-    }
-    const html = new TextDecoder().decode(Buffer.concat(chunks.map((c) => Buffer.from(c))));
+    const html = await readBody(res, IMPORT_MAX_BYTES);
     if (!/<(!doctype|html|head|body|main|section|div)[\s>]/i.test(html.slice(0, 8000))) {
       throw new Error('import: response is not an HTML page');
     }
     return { html, finalUrl: String(url), status: res.status, bytes: html.length, redirects };
   }
   throw new Error('import: too many redirects');
+}
+
+// ---------------------------------------------------------------------------
+// Deep asset capture — sites like Framer templates keep ALL of their motion in
+// EXTERNAL stylesheets and scripts. String-surgery inlining on the ORIGINAL
+// HTML (no parser re-serialization) keeps everything else byte-identical, and
+// the result is fully self-contained: copyable as a template, immune to the
+// origin disappearing, animations/effects/transitions intact.
+
+const ASSET_MAX_BYTES = 2 * 1024 * 1024;
+const MAX_INLINE_ASSETS = 24;
+const ASSET_CONCURRENCY = 4;
+
+async function fetchAssetText(rawUrl) {
+  let url = assertSafeUrl(rawUrl);
+  for (let hop = 0; hop <= 3; hop++) {
+    const res = await fetchImpl(String(url), {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(IMPORT_TIMEOUT_MS),
+      headers: { 'User-Agent': 'LucioAIImporter/1.0 (asset inlining)', Accept: 'text/css,text/javascript,*/*;q=0.8' },
+    });
+    if ([301, 302, 303, 307, 308].includes(res.status)) {
+      const loc = res.headers.get('location');
+      if (!loc) throw new Error('redirect without location');
+      url = assertSafeUrl(new URL(loc, url).toString());
+      continue;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await readBody(res, ASSET_MAX_BYTES);
+    return { text, bytes: text.length };
+  }
+  throw new Error('too many redirects');
+}
+
+function tagAttr(tag, name) {
+  const m = tag.match(new RegExp(`${name}\\s*=\\s*(["'])(.*?)\\1`, 'i'));
+  return m ? m[2] : null;
+}
+
+export async function inlineExternalAssets(html, pageUrl) {
+  const targets = [];
+  const linkRe = /<link\b[^>]*>/gi;
+  let m;
+  while ((m = linkRe.exec(html)) && targets.length < MAX_INLINE_ASSETS) {
+    const tag = m[0];
+    if (!/rel\s*=\s*["']?stylesheet/i.test(tag)) continue;
+    const href = tagAttr(tag, 'href');
+    if (!href || href.startsWith('data:') || href.startsWith('blob:')) continue;
+    const u = new URL(href, pageUrl);
+    if (!/^https?:/i.test(u.protocol)) continue;
+    const abs = u.pathname === '/' && !u.search ? u.toString().replace(/\/$/, '') : u.toString();
+    targets.push({ match: tag, kind: 'style', url: abs });
+  }
+  const scriptRe = /<script\b[^>]*\bsrc\s*=\s*(["'])([\s\S]*?)\1[^>]*>\s*<\/script>/gi;
+  while ((m = scriptRe.exec(html)) && targets.length < MAX_INLINE_ASSETS) {
+    const u = new URL(m[2], pageUrl);
+    if (!/^https?:/i.test(u.protocol)) continue;
+    const abs = u.pathname === '/' && !u.search ? u.toString().replace(/\/$/, '') : u.toString();
+    const isModule = /type\s*=\s*["']module["']/i.test(m[0]);
+    targets.push({ match: m[0], kind: 'script', url: abs, isModule });
+  }
+
+  const assets = [];
+  let cursor = 0;
+  async function worker() {
+    for (;;) {
+      const i = cursor++;
+      if (i >= targets.length) return;
+      const t = targets[i];
+      try {
+        const { text, bytes } = await fetchAssetText(t.url);
+        const inline = t.kind === 'style'
+          ? `<style data-imported-from="${t.url}">\n${text}\n</style>`
+          : `<script${t.isModule ? ' type="module"' : ''} data-imported-from="${t.url}">\n${text.replace(/<\/script/gi, '<\\/script')}\n</script>`;
+        assets[i] = { url: t.url, kind: t.kind, bytes, inlined: true };
+        t.inline = inline;
+      } catch (e) {
+        assets[i] = { url: t.url, kind: t.kind, bytes: 0, inlined: false, reason: String(e.message || e).slice(0, 120) };
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(ASSET_CONCURRENCY, Math.max(1, targets.length)) }, worker));
+
+  // Replace each matched tag exactly once, on the original string.
+  let out = html;
+  for (const t of targets) {
+    if (!t.inline) continue;
+    const idx = out.indexOf(t.match);
+    if (idx === -1) continue;
+    out = out.slice(0, idx) + t.inline + out.slice(idx + t.match.length);
+  }
+  // Drop preconnect/dns-prefetch hints that point at hosts we just inlined.
+  out = out.replace(/<link\b[^>]*rel\s*=\s*["']?(preconnect|dns-prefetch)[^>]*>/gi, '');
+  return { html: out, assets };
 }
 
 // ---------------------------------------------------------------------------
@@ -214,8 +312,23 @@ function ownProjectRow(orgId, projectId) {
 // ---------------------------------------------------------------------------
 // Import / state / edits / reset
 
-export async function importSite(orgId, user, rawUrl, ip = '') {
-  const { html, finalUrl, status, bytes } = await fetchSiteHtml(rawUrl);
+export async function importSite(orgId, user, rawUrl, { inlineAssets = true } = {}, ip = '') {
+  const fetched = await fetchSiteHtml(rawUrl);
+  let { html } = fetched;
+  const { finalUrl, status, bytes } = fetched;
+  // Deep capture: inline external stylesheets + scripts so animations, effects,
+  // motions and transitions are part of the project — not references that die
+  // with the origin site.
+  let assets = [];
+  if (inlineAssets) {
+    try {
+      const inlined = await inlineExternalAssets(html, finalUrl);
+      html = inlined.html;
+      assets = inlined.assets;
+    } catch {
+      assets = [{ url: '(asset scan)', kind: 'scan', bytes: 0, inlined: false, reason: 'asset inlining failed — site imported with remote references only' }];
+    }
+  }
   const $ = cheerio.load(html);
   const title = String(
     $('meta[property="og:title"]').attr('content') || $('title').first().text() || new URL(finalUrl).hostname
@@ -228,11 +341,11 @@ export async function importSite(orgId, user, rawUrl, ip = '') {
     .run(projectId, orgId, title, `Imported from ${finalUrl}`, 'website', user.id);
   insertSiteArtifact(projectId, html);
   const originalPath = writeOriginal(`${importId}.html`, html);
-  db.prepare(`INSERT INTO site_imports (id, org_id, project_id, source_url, final_url, http_status, bytes, title, original_path, texts_count, created_by)
-              VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(importId, orgId, projectId, String(rawUrl), finalUrl, status, bytes, title, originalPath, texts.length, user.id);
-  audit(orgId, user.id, 'import.create', 'project', projectId, { source: String(rawUrl), finalUrl, bytes, texts: texts.length }, ip);
-  return { projectId, importId, title, finalUrl, bytes, textsCount: texts.length };
+  db.prepare(`INSERT INTO site_imports (id, org_id, project_id, source_url, final_url, http_status, bytes, title, original_path, texts_count, assets_json, created_by)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(importId, orgId, projectId, String(rawUrl), finalUrl, status, bytes, title, originalPath, texts.length, JSON.stringify(assets), user.id);
+  audit(orgId, user.id, 'import.create', 'project', projectId, { source: String(rawUrl), finalUrl, bytes, texts: texts.length, assetsInlined: assets.filter((a) => a.inlined).length }, ip);
+  return { projectId, importId, title, finalUrl, bytes, textsCount: texts.length, assets };
 }
 
 export function getImportState(orgId, projectId) {
@@ -246,6 +359,21 @@ export function getImportState(orgId, projectId) {
     version: site?.version || 0,
     texts: site ? indexEditableTexts(site.content) : [],
     snippetCount: site ? extractSnippets(site.content).length : 0,
+    assets: record ? safeParse(record.assets_json) : [],
+  };
+}
+
+// Snippets + assets with full content, for the Effects panel (loaded on demand —
+// payloads can be large for motion-heavy sites).
+export function getImportSnippets(orgId, projectId) {
+  const project = ownProjectRow(orgId, projectId);
+  if (!project) return null;
+  const record = db.prepare(`SELECT assets_json FROM site_imports WHERE project_id = ? AND org_id = ?`).get(projectId, orgId);
+  if (!record) return null;
+  const site = getLatestSite(projectId);
+  return {
+    snippets: site ? extractSnippets(site.content) : [],
+    assets: safeParse(record.assets_json),
   };
 }
 

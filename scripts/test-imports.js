@@ -74,12 +74,32 @@ function fakeResponse(html, status = 200) {
   };
 }
 
+// Framer-template-style page: ALL motion lives in EXTERNAL css/js + a CDN script.
+const FRAMER_CSS = `.hero-title > span { display: inline-block; animation: rise 1.1s cubic-bezier(.22,1,.36,1) both; }\n.reveal > p { opacity: 0; transform: translateY(30px); transition: opacity .8s ease, transform .8s ease; }\n.reveal.in > p { opacity: 1; transform: none; }\n@keyframes rise { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: none; } }`;
+const FRAMER_JS = `window.addEventListener('scroll', () => {\n  document.querySelectorAll('.reveal').forEach((el) => {\n    if (el.getBoundingClientRect().top < window.innerHeight * 0.85) el.classList.add('in');\n  });\n});\nconsole.log('framer-motion-ready');`;
+const FRAMER_HTML = `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><title>Arpeggio — Digital Agency</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://cdn.framer.example/site.css">
+<script src="https://cdn.framer.example/site.js" defer></script>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-black text-white">
+<section class="hero"><h1 class="hero-title"><span>Motion, perfected.</span></h1></section>
+<section class="reveal"><p>We build brands that move.</p></section>
+</body></html>`;
+
 async function main() {
   const importer = await import('../server/services/siteImporter.js');
   importer.setImporterFetchForTests(async (url) => {
     const u = String(url);
     if (u.includes('not-html')) return fakeResponse('{"json": true}');
     if (u.includes('http-error')) return fakeResponse('boom', 500);
+    if (u.endsWith('.css')) return fakeResponse(FRAMER_CSS);
+    if (u.includes('cdn.tailwindcss.com')) return fakeResponse('/* tailwind cdn stub */');
+    if (u.endsWith('.js')) return fakeResponse(FRAMER_JS);
+    if (u.includes('arpeggio')) return fakeResponse(FRAMER_HTML);
     return fakeResponse(SAMPLE_HTML);
   });
 
@@ -190,11 +210,44 @@ async function main() {
   ok(live.status === 200 && live.text.includes('Light, remembered.'), 'live URL serves the site');
   ok(live.text.includes(MOTION_JS), 'live site keeps the motion script');
 
+  // --- deep capture: framer-style site with external motion assets --------------------
+  const fr = await call('POST', '/api/imports', { url: 'https://arpeggio.framer.example/' });
+  ok(fr.status === 201, 'framer-style site imported (201)');
+  ok(fr.json.assets.length === 3 && fr.json.assets.every((a) => a.inlined), 'all 3 external assets captured', JSON.stringify(fr.json.assets));
+  const frPrev = await callText('GET', `/api/builder/project/${fr.json.projectId}/preview`);
+  ok(!/<link\b[^>]*rel\s*=\s*["']?stylesheet/i.test(frPrev.text), 'external stylesheet link replaced');
+  ok(!/rel\s*=\s*["']?preconnect/i.test(frPrev.text), 'preconnect hints dropped');
+  ok(frPrev.text.includes('data-imported-from="https://cdn.framer.example/site.css"'), 'inlined style carries provenance');
+  ok(frPrev.text.includes('.hero-title > span') && frPrev.text.includes('@keyframes rise'), 'motion CSS (child selectors + keyframes) inlined');
+  ok(frPrev.text.includes('data-imported-from="https://cdn.tailwindcss.com"'), 'CDN script (tailwind) inlined too');
+  ok(frPrev.text.includes('framer-motion-ready'), 'motion script inlined');
+  const frState = await call('GET', `/api/imports/project/${fr.json.projectId}`);
+  ok(frState.json.assets.length === 3, 'asset manifest persisted on the import');
+
+  const frHero = frState.json.texts.find((t) => t.text === 'Motion, perfected.');
+  ok(Boolean(frHero), 'framer hero text indexed');
+  const frEdit = await call('PUT', `/api/imports/project/${fr.json.projectId}/texts`, { edits: [{ id: frHero.id, text: 'Brands in motion.' }] });
+  ok(frEdit.json.applied === 1, 'framer site text editable');
+  const frPrev2 = await callText('GET', `/api/builder/project/${fr.json.projectId}/preview`);
+  ok(frPrev2.text.includes('Brands in motion.') && frPrev2.text.includes('.hero-title > span') && frPrev2.text.includes('framer-motion-ready'),
+    'motion CSS + JS survive text edit byte-intact');
+
+  const frTpl = await call('POST', `/api/imports/project/${fr.json.projectId}/save-template`, { name: 'Framer Motion Base' });
+  ok(frTpl.status === 201, 'framer site saved as template');
+  const frSnips = await call('GET', `/api/imports/project/${fr.json.projectId}/snippets`);
+  ok(frSnips.status === 200 && frSnips.json.snippets.some((s) => s.kind === 'style' && s.content.includes('@keyframes rise')), 'effects panel serves style snippets with content');
+  ok(frSnips.json.snippets.some((s) => s.kind === 'script' && s.content.includes('framer-motion-ready')), 'effects panel serves motion script snippets');
+
+  // opt-out: inlineAssets:false keeps remote references
+  const lite = await call('POST', '/api/imports', { url: 'https://arpeggio.framer.example/', inlineAssets: false });
+  const litePrev = await callText('GET', `/api/builder/project/${lite.json.projectId}/preview`);
+  ok(lite.json.assets.length === 0 && /<link\b[^>]*rel\s*=\s*["']?stylesheet/i.test(litePrev.text), 'inlineAssets:false keeps remote references');
+
   // authed owner can delete the template
   const delOk = await call('DELETE', `/api/imports/templates/${tpl.json.templateId}`);
   ok(delOk.status === 200, 'owner deletes template');
   const listAfter = await call('GET', '/api/imports/templates');
-  ok(listAfter.json.templates.length === 0, 'template list empty after delete');
+  ok(listAfter.json.templates.length === 1 && listAfter.json.templates[0].name === 'Framer Motion Base', 'template list reflects delete');
 
   // --- org isolation + cleanup --------------------------------------------------------
   cookie = '';
