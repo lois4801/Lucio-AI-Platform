@@ -60,6 +60,17 @@ type ProspectRow = {
   address?: string; social_profiles?: string | string[]; source?: string; created_at?: string;
 };
 type Scan = { id: string; status: string; created_at: string; coverage: any; query: any };
+type ScanUnit = { name: string; status: 'queued' | 'running' | 'done'; found: number };
+type ScanProgress = {
+  scanId: string; status: string; error: string | null; startedAt: string; completedAt: string | null;
+  phase: string; unitsPlanned: number; unitsCompleted: number; units: ScanUnit[];
+  discovered: number; duplicatesRemoved: number; toVerify: number; verified: number; processed: number;
+  gapCandidates: number; lastEvent: string; updatedAt: number | null;
+};
+const PHASE_LABEL: Record<string, string> = {
+  starting: 'Preparing scan…', discovery: 'Scanning areas', verification: 'Verifying business websites',
+  scoring: 'Scoring leads', done: 'Complete', failed: 'Failed',
+};
 type Evidence = { id: string; field_name: string; value: string; source_provider: string; source_type: string; confidence: number; retrieved_at: string };
 type ProviderMeta = { id: string; label: string; is_live: boolean; configured: boolean };
 type Universe = { id: string; name: string; inspiration: string; motion: string; headingFont: string; palette: { bg: string; accent: string; ink: string } };
@@ -293,16 +304,17 @@ export default function MarketScanPage() {
   };
 
 
-  const startScan = async () => {
-    setError(''); setNotice(''); setSampleWarning(''); setScanning(true);
+  // Async scan + live per-city progress polling. The POST answers 202 with a
+  // scanId immediately; we poll /scans/:id/progress every 1.5s so the user
+  // watches each area fill in, then load full results when status=complete.
+  const [progress, setProgress] = useState<ScanProgress | null>(null);
+  const pollRef = useRef<number | null>(null);
+  const stopPolling = () => { if (pollRef.current !== null) { clearInterval(pollRef.current); pollRef.current = null; } };
+  useEffect(() => () => stopPolling(), []);
+
+  const finishScan = async (scanId: string) => {
     try {
-      const d = await api<{ scanId: string; coverage: any; results: ProspectRow[] }>('/scans', {
-        method: 'POST',
-        // Sources omitted on purpose: the server picks LIVE Google Places first
-        // when configured, and degrades to the labeled fixture directory otherwise.
-        body: JSON.stringify({ industry: form.industry, region: form.region, city: form.city, minScore: form.minScore, maxResults: form.maxResults }),
-      });
-      const full = await api<{ scan: Scan & { prospects: ProspectRow[] } }>(`/scans/${d.scanId}`);
+      const full = await api<{ scan: Scan & { prospects: ProspectRow[] } }>(`/scans/${scanId}`);
       setScan(full.scan);
       const prospects = full.scan.prospects.filter((p) => p.lead_score >= form.minScore);
       setResults(prospects);
@@ -310,9 +322,38 @@ export default function MarketScanPage() {
       setSampleWarning(sampleCount > 0
         ? `⚠ ${sampleCount} of ${prospects.length} listings are SAMPLE data — live business lookup failed or was throttled this run (demo records, not verified to exist). Re-scan later, or add a Google Places key for verified live data.`
         : '');
-      setNotice(`Scan complete: ${d.coverage.unique_businesses} unique businesses, ${d.coverage.website_gap_candidates} website-gap candidates. ${d.coverage.coverage_notes}`);
-      loadScans();
-    } catch (e: any) { setError(e.message); } finally { setScanning(false); }
+      setNotice(`Scan complete: ${full.scan.coverage?.unique_businesses} unique businesses, ${full.scan.coverage?.website_gap_candidates} website-gap candidates. ${full.scan.coverage?.coverage_notes || ''}`);
+    } finally { setScanning(false); loadScans(); }
+  };
+
+  const startScan = async () => {
+    setError(''); setNotice(''); setSampleWarning(''); setScanning(true); setProgress(null);
+    stopPolling();
+    try {
+      const d = await api<{ scanId: string }>('/scans/async', {
+        method: 'POST',
+        // Sources omitted on purpose: the server picks LIVE Google Places first
+        // when configured, and degrades to the labeled fixture directory otherwise.
+        body: JSON.stringify({ industry: form.industry, region: form.region, city: form.city, minScore: form.minScore, maxResults: form.maxResults }),
+      });
+      const tick = async () => {
+        let p: ScanProgress;
+        try { p = await api<ScanProgress>(`/scans/${d.scanId}/progress`); }
+        catch { return; } // transient poll error — keep polling
+        setProgress(p);
+        if (p.status === 'complete') {
+          stopPolling();
+          await finishScan(d.scanId);
+        } else if (p.status === 'failed') {
+          stopPolling();
+          setError(p.error || 'Scan failed');
+          setScanning(false);
+          loadScans();
+        }
+      };
+      await tick();
+      pollRef.current = window.setInterval(tick, 1500);
+    } catch (e: any) { setError(e.message); setScanning(false); }
   };
 
   const act = async (path: string, okMsg: string) => {
@@ -523,10 +564,54 @@ export default function MarketScanPage() {
             <Button onClick={startScan} disabled={scanning}>{scanning ? 'Scanning…' : 'Start Scan'}</Button>
           </div>
           {scanning && (
-            <p className="text-xs text-muted-foreground">
-              Live scan in progress — businesses are being verified against their real websites in parallel.
-              Region-wide scans typically finish in 1–3 minutes; keep this tab open.
-            </p>
+            <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/30 p-3 space-y-2.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold flex items-center gap-2">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+                  </span>
+                  {PHASE_LABEL[progress?.phase || 'starting'] || progress?.phase}
+                </span>
+                <span className="text-muted-foreground tabular-nums">
+                  {progress?.startedAt ? `${Math.max(0, Math.round((Date.now() - new Date(progress.startedAt).getTime()) / 1000))}s elapsed` : 'starting…'}
+                  {progress && progress.unitsPlanned > 1 ? ` · ${progress.unitsCompleted}/${progress.unitsPlanned} areas` : ''}
+                </span>
+              </div>
+
+              {/* Per-city chips — each area fills in as its query completes */}
+              {progress && progress.units.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {progress.units.slice(0, 24).map((u) => (
+                    <span key={u.name} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium border transition-colors ${
+                      u.status === 'done' ? 'bg-green-100 dark:bg-green-900/40 border-green-300 dark:border-green-700 text-green-800 dark:text-green-300'
+                      : u.status === 'running' ? 'bg-amber-100 dark:bg-amber-900/40 border-amber-400 dark:border-amber-600 text-amber-900 dark:text-amber-200 animate-pulse'
+                      : 'bg-muted/60 border-muted text-muted-foreground'}`}>
+                      {u.status === 'done' ? `${u.name} · ${u.found}` : u.name}
+                    </span>
+                  ))}
+                  {progress.units.length > 24 && <span className="text-[11px] text-muted-foreground">+{progress.units.length - 24} more</span>}
+                </div>
+              )}
+
+              {/* Verification / scoring counters */}
+              {progress && (progress.phase === 'verification' || progress.phase === 'scoring') && progress.toVerify > 0 && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] text-muted-foreground">
+                    <span>{progress.phase === 'verification' ? `Verifying websites — ${progress.verified}/${progress.toVerify}` : `Scoring leads — ${progress.processed}/${progress.toVerify}`}</span>
+                    <span>{progress.discovered} businesses found{progress.gapCandidates > 0 ? ` · ${progress.gapCandidates} gap candidates` : ''}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full bg-amber-500 transition-all duration-500"
+                      style={{ width: `${Math.min(100, Math.round(((progress.phase === 'verification' ? progress.verified : progress.processed) / Math.max(1, progress.toVerify)) * 100))}%` }} />
+                  </div>
+                </div>
+              )}
+              {progress && progress.phase === 'discovery' && (
+                <p className="text-[11px] text-muted-foreground">{progress.discovered} businesses found so far…</p>
+              )}
+              {progress?.lastEvent && <p className="text-[11px] text-muted-foreground truncate">{progress.lastEvent}</p>}
+            </div>
           )}
           {error && <p className="text-sm text-destructive">{error}</p>}
           {notice && <p className="text-sm text-green-600 dark:text-green-400">{notice}</p>}

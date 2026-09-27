@@ -171,6 +171,7 @@ CREATE TABLE IF NOT EXISTS prospects (
   location TEXT DEFAULT '',
   confidence REAL DEFAULT 0,
   notes TEXT DEFAULT '',
+  source TEXT DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -881,6 +882,7 @@ CREATE TABLE IF NOT EXISTS osm_cache (
   if (!cols.includes('lat')) db.exec('ALTER TABLE prospects ADD COLUMN lat REAL');
   if (!cols.includes('lng')) db.exec('ALTER TABLE prospects ADD COLUMN lng REAL');
   if (!cols.includes('auto_profile_json')) db.exec(`ALTER TABLE prospects ADD COLUMN auto_profile_json TEXT NOT NULL DEFAULT ''`);
+  if (!cols.includes('source')) db.exec(`ALTER TABLE prospects ADD COLUMN source TEXT NOT NULL DEFAULT ''`);
 }
 {
   const cols = db.prepare('PRAGMA table_info(component_assets)').all().map((c) => c.name);

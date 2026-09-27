@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db, audit } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { runMarketScan, runNearbyScan, listScans, getScan, resolveWebsitePresence, providerMeta } from '../services/discovery/pipeline.js';
+import { runMarketScan, runNearbyScan, listScans, getScan, getScanProgress, resolveWebsitePresence, providerMeta } from '../services/discovery/pipeline.js';
 import { generateWebsiteOpportunity, createProjectFromOpportunity, listOpportunities } from '../services/opportunity.js';
 import { INDUSTRIES, REGIONS } from '../services/discovery/providers.js';
 import { AUTO_INDUSTRIES } from '../services/autoData.js';
@@ -28,6 +28,57 @@ marketScansRouter.post('/', requireRole('member'), async (req, res) => {
 });
 
 marketScansRouter.get('/', (req, res) => res.json({ scans: listScans(req.user.orgId) }));
+
+// Async scan — answers 202 {scanId} immediately (the scan row is created
+// synchronously, before the first provider query), then the scan runs in the
+// background. The client polls GET /:id/progress for per-city/per-phase state
+// and fetches GET /:id when status becomes 'complete'.
+marketScansRouter.post('/async', requireRole('member'), (req, res) => {
+  const t0 = Date.now();
+  let responded = false;
+  const fail = (e) => { if (!responded) { responded = true; res.status(500).json({ error: String(e.message || e) }); } };
+  try {
+    runMarketScan(req.user.orgId, req.user, req.body || {}, req.ip, {
+      onScanId: (scanId) => { if (!responded) { responded = true; res.status(202).json({ scanId }); } },
+    }).then((result) => {
+      wideEvent('scan.completed', {
+        orgId: req.user.orgId, industry: result.coverage?.requested_industry,
+        geography: result.coverage?.requested_geography, unique: result.coverage?.unique_businesses,
+        gapCandidates: result.coverage?.website_gap_candidates, budgetUsed: result.coverage?.request_budget_used,
+        durationMs: Date.now() - t0, async: true,
+      });
+    }).catch(fail);
+  } catch (e) { fail(e); }
+});
+
+// Live progress snapshot — in-memory per-city/per-phase state while a scan
+// runs, with a coverage_json fallback once the process/memory entry is gone.
+marketScansRouter.get('/:id/progress', (req, res) => {
+  const row = db.prepare(`SELECT id, status, error, started_at, completed_at, coverage_json FROM market_scans WHERE id = ? AND org_id = ?`).get(req.params.id, req.user.orgId);
+  if (!row) return res.status(404).json({ error: 'scan not found' });
+  const live = getScanProgress(row.id);
+  let coverage = {};
+  try { coverage = JSON.parse(row.coverage_json || '{}'); } catch { coverage = {}; }
+  res.json({
+    scanId: row.id,
+    status: row.status,
+    error: row.error || null,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    phase: live?.phase || (row.status === 'complete' ? 'done' : row.status === 'failed' ? 'failed' : 'unknown'),
+    unitsPlanned: live?.unitsPlanned ?? coverage.geography_units_planned ?? 0,
+    unitsCompleted: live?.unitsCompleted ?? coverage.geography_units_completed ?? 0,
+    units: live?.units || [],
+    discovered: live?.discovered ?? coverage.unique_businesses ?? 0,
+    duplicatesRemoved: live?.duplicatesRemoved ?? coverage.duplicates_removed ?? 0,
+    toVerify: live?.toVerify ?? 0,
+    verified: live?.verified ?? 0,
+    processed: live?.processed ?? 0,
+    gapCandidates: live?.gapCandidates ?? coverage.website_gap_candidates ?? 0,
+    lastEvent: live?.lastEvent || '',
+    updatedAt: live?.updatedAt ?? null,
+  });
+});
 
 // Operator metadata: industries and regions exposed by the configured providers
 marketScansRouter.get('/meta', (req, res) => {

@@ -299,3 +299,49 @@ start of every new session to evolve instead of rediscovering.
   edits keep them exactly as the original — renders identically in-browser,
   but don't trust naive `grep "·"` in Git Bash (encoding artifact masqueraded
   as a missing string during verification).
+
+
+## Session 2026-09-27 (later) — Live per-city scan progress
+- **Heard:** "add live per-city progress polling to the scanner… A whole-province
+  scan sits on 'Scanning…' — that flow verifies every business with a live fetch
+  one at a time, plus one Overpass query per city. check the live state and the
+  code paths."
+- **Live state found:** POST /api/scans awaited the ENTIRE scan (per-city
+  Overpass serially, then a 6-worker verification pool with a 90s wall — not
+  literally one-at-a-time — then a serial scoring loop). Zero intermediate
+  state reached the client. Progress info existed server-side mid-run but was
+  only written to the DB at the end.
+- **Built:** (1) in-memory live progress store in the pipeline (`setLive`/
+  `getScanProgress`) with per-unit discovery events, verification counters via
+  an `onProgress` hook on `verifyAllPresences`, per-lead scoring events, and
+  phase transitions (starting → discovery → verification → scoring → done/
+  failed); partial coverage persisted into `coverage_json` at city boundaries.
+  (2) `POST /api/scans/async` — answers 202 `{scanId}` synchronously (the scan
+  row insert happens in the async fn's sync prefix, so `onScanId` fires before
+  the first provider query) and runs the scan in the background; sync POST /
+  unchanged for tests and API compat. (3) `GET /api/scans/:id/progress` —
+  live snapshot with coverage_json fallback. (4) Scanner UI: Start Scan now
+  uses the async endpoint and polls every 1.5s, rendering a live panel — pulsing
+  phase header + elapsed, per-city chips that turn green with found counts as
+  each area completes, a verification/scoring progress bar, and the last event
+  line. Poll interval cleaned up on completion/failure/unmount.
+- **Bugs caught by the new suite (test-scan-progress.js, 23 assertions):**
+  (a) per-city patch state was rebuilt from the STALE initial array on every
+  event, so only the last city ever showed done — fixed with a Map as single
+  source of truth; (b) `prospects.source` column did not exist in db.js at all
+  (the previous scanner-honesty commit selected it in getScan) — the dev DB
+  survived because its error was masked by the stale preview server; added the
+  column to CREATE TABLE + the PRAGMA-guarded migration and made upsertProspect
+  persist it. Latent crash that only the fresh-DB suite exposed.
+- **Live-verified** with a real Plumbing × Nova Scotia async scan: watched
+  Halifax:5 / Dartmouth:5 / Sydney:5 land, Truro/Bedford/Lunenburg burn their
+  60s Overpass windows visibly as "running", then verification 44/44 and
+  scoring 44/44 — completed with all sources labeled `fixture-directory`.
+- **Lesson:** a green suite said nothing about the live server again — the
+  standalone API reproduced cleanly past the point where the dev.js wrapper
+  had died; when a wrapper process shows "alive but no listeners", suspect
+  stale overlapping processes before suspecting your code. Reproduce under the
+  simplest possible runtime before debugging.
+- **Lesson:** adding a SELECT column without adding the column to the schema +
+  migration is a crash waiting for the first fresh DB. Every SELECT column
+  must exist in CREATE TABLE, the migration block, and the upsert path.

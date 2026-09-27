@@ -218,22 +218,54 @@ const UNKNOWN_RESOLUTION = {
   evidence: [], intel: null,
 };
 
-export async function verifyAllPresences(businesses, { wallMs = VERIFY_WALL_MS } = {}) {
+export async function verifyAllPresences(businesses, { wallMs = VERIFY_WALL_MS, onProgress } = {}) {
   const list = businesses.slice();
   const resolutions = new Array(list.length).fill(null);
   const t0 = Date.now();
   let cursor = 0;
   let budgetHit = false;
+  let doneCount = 0;
+  const total = list.length;
   const worker = async () => {
     for (;;) {
       if (Date.now() - t0 > wallMs) { budgetHit = true; return; }
       const i = cursor++;
       if (i >= list.length) return;
       resolutions[i] = await resolveWebsitePresence(list[i], { timeoutMs: VERIFY_FETCH_TIMEOUT_MS });
+      doneCount++;
+      if (onProgress) onProgress(doneCount, total);
     }
   };
   await Promise.all(Array.from({ length: Math.max(1, Math.min(VERIFY_CONCURRENCY, list.length)) }, worker));
   return { resolutions: resolutions.map((r) => r || { ...UNKNOWN_RESOLUTION, last_verified_at: new Date().toISOString() }), budgetHit };
+}
+
+// ---------------------------------------------------------------------------
+// Live progress — the UI polls GET /api/scans/:id/progress while an async scan
+// runs, so a whole-province scan shows each city filling in instead of one long
+// "Scanning…". In-memory snapshots (cheap Map updates, no DB writes per event),
+// persisted into coverage_json at city boundaries so history shows partial
+// coverage too. NOTE: scans run in-process — a server restart kills a running
+// scan regardless of progress plumbing.
+
+const MAX_LIVE_SCANS = 100;
+const liveScans = new Map();
+
+function setLive(scanId, patch) {
+  const prev = liveScans.get(scanId) || { scanId, status: 'running', phase: 'starting', units: [], startedAt: new Date().toISOString() };
+  const next = { ...prev, ...patch, updatedAt: Date.now() };
+  liveScans.set(scanId, next);
+  if (liveScans.size > MAX_LIVE_SCANS) {
+    const stale = [...liveScans.entries()]
+      .filter(([, v]) => v.status !== 'running' && Date.now() - (v.updatedAt || 0) > 10 * 60_000)
+      .slice(0, liveScans.size - MAX_LIVE_SCANS);
+    for (const [k] of stale) liveScans.delete(k);
+  }
+  return next;
+}
+
+export function getScanProgress(scanId) {
+  return liveScans.get(scanId) || null;
 }
 
 // ---------------------------------------------------------------------------
@@ -307,6 +339,7 @@ export function upsertProspect(orgId, scanId, biz, resolution, scoring) {
     recommended_service: scoring.recommended_service, recommended_offer: scoring.recommended_offer,
     crm_stage: 'DISCOVERED', last_verified_at: resolution.last_verified_at,
     lat: biz.lat ?? null, lng: biz.lng ?? null,
+    source: biz.source || '',
   };
 
   let prospectId;
@@ -360,7 +393,7 @@ export function insertEvidence(orgId, prospectId, scanId, ev) {
 // ---------------------------------------------------------------------------
 // Scan orchestration (§17.13.3–§17.13.4, §17.13.17)
 
-export async function runMarketScan(orgId, user, rawQuery, ip = '') {
+export async function runMarketScan(orgId, user, rawQuery, ip = '', hooks = {}) {
   const scanId = crypto.randomUUID();
   const req = normalizeRequest(rawQuery);
   const providers = getProviders(req.sources);
@@ -377,6 +410,10 @@ export async function runMarketScan(orgId, user, rawQuery, ip = '') {
   db.prepare(`INSERT INTO market_scans (id, org_id, name, query_json, status, created_by, started_at) VALUES (?,?,?,?,'running',?,?)`)
     .run(scanId, orgId, rawQuery.name || `${req.industry || 'Businesses'} — ${req.city || req.region || req.province || 'Canada'}`, JSON.stringify(req), user.id, startedAt);
   audit(orgId, user.id, 'scan.start', 'market_scan', scanId, { industry: req.industry, province: req.province, city: req.city }, ip);
+  setLive(scanId, { status: 'running', phase: 'starting', startedAt });
+  // Fires synchronously — the async route uses this to answer 202 {scanId}
+  // before the first provider query resolves.
+  if (hooks.onScanId) hooks.onScanId(scanId);
 
   const coverage = {
     requested_geography: req.city || req.region || req.province || 'Canada',
@@ -399,7 +436,15 @@ export async function runMarketScan(orgId, user, rawQuery, ip = '') {
 
     const candidates = [];
     const sourceErrors = {};
+    // Single source of truth for per-city state — snapshot reads happen via
+    // setLive, so patches must mutate THIS map, not re-map a stale array.
+    const unitState = new Map(units.map((name) => [name, { name, status: 'queued', found: 0 }]));
+    const syncUnits = () => [...unitState.values()];
+    setLive(scanId, { phase: 'discovery', unitsPlanned: units.length, unitsCompleted: 0, units: syncUnits(), lastEvent: `Expanding ${req.region || req.province || 'region'} into ${units.length} area(s)…` });
     for (const unit of units) {
+      unitState.get(unit).status = 'running';
+      setLive(scanId, { units: syncUnits(), lastEvent: `Scanning ${unit}…` });
+      const foundBefore = candidates.length;
       for (const p of providers) {
         const params = { ...req, city: req.city || (p.geographyUnits ? unit : req.city) };
         if (p.id === 'user-list') params.userRecords = req.userRecords;
@@ -417,6 +462,17 @@ export async function runMarketScan(orgId, user, rawQuery, ip = '') {
         coverage.request_budget_used += 1;
       }
       coverage.geography_units_completed++;
+      const found = candidates.length - foundBefore;
+      unitState.get(unit).status = 'done';
+      unitState.get(unit).found = found;
+      const snap = setLive(scanId, {
+        units: syncUnits(),
+        unitsCompleted: coverage.geography_units_completed,
+        discovered: candidates.length,
+        lastEvent: `${unit}: ${found} business(es) found`,
+      });
+      coverage.progress = { phase: snap.phase, unitsCompleted: snap.unitsCompleted, unitsPlanned: snap.unitsPlanned, discovered: snap.discovered };
+      db.prepare(`UPDATE market_scans SET coverage_json = ? WHERE id = ?`).run(JSON.stringify(coverage), scanId);
     }
     if (Object.keys(sourceErrors).length) coverage.source_errors = sourceErrors;
     if (req.sources.includes('osm-overpass') && isOsmLiveEnabled()) {
@@ -435,10 +491,14 @@ export async function runMarketScan(orgId, user, rawQuery, ip = '') {
     let gapCandidates = 0;
     const results = [];
     const toVerify = merged.slice(0, req.maxResults);
-    const { resolutions, budgetHit } = await verifyAllPresences(toVerify);
+    setLive(scanId, { phase: 'verification', toVerify: toVerify.length, verified: 0, processed: 0, discovered: merged.length, lastEvent: `Verifying ${toVerify.length} business website(s)…` });
+    const { resolutions, budgetHit } = await verifyAllPresences(toVerify, {
+      onProgress: (done, total) => setLive(scanId, { verified: done, lastEvent: `Verified ${done}/${total} websites…` }),
+    });
     if (budgetHit) {
       coverage.coverage_notes += ' Live website verification hit the per-scan time budget; unverified businesses are marked UNKNOWN — reverify them individually.';
     }
+    setLive(scanId, { phase: 'scoring', lastEvent: 'Scoring opportunities & saving leads…' });
     for (let i = 0; i < toVerify.length; i++) {
       const biz = toVerify[i];
       const resolution = resolutions[i];
@@ -454,6 +514,7 @@ export async function runMarketScan(orgId, user, rawQuery, ip = '') {
         score_explanation: scoring.score_explanation, recommended_offer: scoring.recommended_offer,
         public_phone: biz.public_phone, crm_stage: 'DISCOVERED', created, updated,
       });
+      setLive(scanId, { processed: i + 1, gapCandidates, lastEvent: `Scoring ${i + 1}/${toVerify.length} — ${biz.business_name}` });
     }
     coverage.website_gap_candidates = gapCandidates;
 
@@ -467,10 +528,12 @@ export async function runMarketScan(orgId, user, rawQuery, ip = '') {
     db.prepare(`UPDATE market_scans SET status = 'complete', coverage_json = ?, records_discovered = ?, unique_businesses = ?, duplicates_removed = ?, website_gap_candidates = ?, request_budget_used = ?, completed_at = datetime('now') WHERE id = ?`)
       .run(JSON.stringify(coverage), coverage.records_discovered, coverage.unique_businesses, coverage.duplicates_removed, coverage.website_gap_candidates, coverage.request_budget_used, scanId);
     audit(orgId, user.id, 'scan.complete', 'market_scan', scanId, { unique: coverage.unique_businesses, gap_candidates: gapCandidates }, ip);
+    setLive(scanId, { status: 'complete', phase: 'done', lastEvent: `Done — ${coverage.unique_businesses} businesses, ${gapCandidates} gap candidates` });
     return { scanId, coverage, results, auto, auto_drafts: autoDrafts };
   } catch (e) {
     db.prepare(`UPDATE market_scans SET status = 'failed', error = ?, completed_at = datetime('now') WHERE id = ?`).run(String(e.message || e), scanId);
     audit(orgId, user.id, 'scan.failed', 'market_scan', scanId, { error: String(e.message || e) }, ip);
+    setLive(scanId, { status: 'failed', phase: 'failed', error: String(e.message || e), lastEvent: `Failed — ${String(e.message || e).slice(0, 120)}` });
     throw e;
   }
 }
