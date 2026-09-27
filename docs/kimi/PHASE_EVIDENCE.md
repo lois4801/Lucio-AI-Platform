@@ -912,3 +912,40 @@ source; responsive, accessibility, factual, visual and performance QA pass.
   no secret leakage, history persistence, SSE content-type + meta + >5 tokens
   + done-byte-exact + grounded stream.
 - Full regression: 891 assertions across 21 suites, 0 failures; tsc clean; build clean.
+
+## Claw Coder — Claw Code harness as the active AI coder
+
+### What shipped
+- Vendored Claw Code (MIT) Rust workspace at vendor/claw-code/ (5MB, 188 files):
+  the upstream-current claw/claw-analog runtime + docs; superseded Python tree,
+  session artifacts, CI, and host setup scripts excluded (VENDORED.md documents
+  exactly what/why). CLI flags grounded in the vendored clap source, not guesses.
+- New table claw_jobs (org-scoped, prompt, status, workspace_dir, transcript,
+  exit_code, error). BYOK provider keys NEVER persisted — they exist only as
+  child-process env vars for the run's duration.
+- server/services/clawCoder.js: honest status (detects cargo + built
+  rust/target/{release,debug}/claw-analog binary; CLAW_RUNNER_CMD override for
+  sandboxes/tests) — unconfigured hosts fail closed with numbered enablement
+  steps (same pattern as the git adapter). scaffoldWorkspace() writes a real
+  CONTEXT.md per job (project name/status, file list with hashes/sizes, latest
+  build intent, brief JSON) under data/claw-workspaces/<project>. executeJob()
+  spawns claw-analog with the NDJSON stdout contract, streams stdout lines over
+  SSE, captures stderr separately, records exit code + capped transcript,
+  audits job lifecycle.
+- Routes /api/claw: GET status, POST jobs (member; 501 + steps when
+  unconfigured; async execution), GET jobs / jobs/:id (org-scoped), GET
+  jobs/:id/events (SSE with transcript replay for late subscribers; terminal
+  status closes the stream).
+- UI: /claw "Claw Coder" page — runtime status card, enablement steps when
+  unconfigured, job form (project picker, BYOK key field labeled never-stored,
+  prompt), job list, live NDJSON console via EventSource.
+
+### Verification
+- scripts/test-claw-coder.js — 29/29: fail-closed status + 501 with steps on a
+  bare host, runner-override detection, validation (empty/over-long prompt,
+  unknown project), end-to-end fake-harness run (CONTEXT.md seen by agent,
+  output file lands in workspace, exit 0, transcript persisted), BYOK key
+  reaches child env (length-only signal) and is grep-absent from jobs+audit,
+  SSE live lines + terminal status + snapshot, finished-job replay
+  (interruption-safe), cross-org 404, viewer 403, audit rows.
+- Full regression: 920 assertions across 22 suites, 0 failures; tsc clean; build clean.

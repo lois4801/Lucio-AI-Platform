@@ -716,6 +716,22 @@ CREATE TABLE IF NOT EXISTS agent_messages (
   context_json TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- Claw Coder jobs (Claw Code harness runs). BYOK keys are never persisted —
+-- they exist only as child-process env vars for the duration of a run.
+CREATE TABLE IF NOT EXISTS claw_jobs (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued',
+  workspace_dir TEXT NOT NULL DEFAULT '',
+  transcript_json TEXT NOT NULL DEFAULT '[]',
+  exit_code INTEGER,
+  error TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  completed_at TEXT
+);
 `);
 
 // Lightweight migrations: add columns to pre-existing tables when missing.

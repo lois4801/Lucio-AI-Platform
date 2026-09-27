@@ -35,6 +35,18 @@ Both packs feed the `agent_directory` table via boot-time ingestion
 (`server/services/agentPacks.js`); license attribution is stored per agent row
 and surfaced in the UI.
 
+## Claw Code (AI coder harness)
+
+- **Claw Code** (UltraWorkers and Claw Code contributors, MIT, Copyright (c)
+  2026 — see `vendor/claw-code/LICENSE`, preserved verbatim): the Rust workspace
+  (`rust/`, the upstream-current `claw` / `claw-analog` runtime per upstream
+  USAGE.md) vendored at `vendor/claw-code/`. Lucio spawns `claw-analog`
+  non-interactively (`--workspace --stream --output-format ndjson
+  --accept-danger-non-interactive --max-turns 24 --session`) via
+  `server/services/clawCoder.js`. Excluded: the superseded Python `src/` tree,
+  `.claude/`/`.omx/`/`.port_sessions/` session artifacts, `.github/`, `assets/`,
+  `docs/`, `tests/`, and host setup scripts — see `vendor/claw-code/VENDORED.md`.
+
 ## Explicitly NOT used
 - **Atoms.dev platform code** (proprietary): no backend code, private prompts,
   brand assets, or trade dress were accessed or copied. Public help docs were used

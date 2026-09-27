@@ -41,6 +41,7 @@ import { benchmarksRouter } from './routes/benchmarks.js';
 import { optimizeRouter } from './routes/optimize.js';
 import { nexusRouter } from './routes/nexus.js';
 import { agentsRouter } from './routes/agents.js';
+import { clawRouter } from './routes/claw.js';
 import { requestCounter } from './services/enterprise.js';
 import { ingestPacks } from './services/agentPacks.js';
 
@@ -97,6 +98,7 @@ app.use('/api/apps', appStudioRouter);
   app.use('/api/optimize', optimizeRouter);
   app.use('/api/nexus', nexusRouter);
   app.use('/api/agents', agentsRouter);
+  app.use('/api/claw', clawRouter);
   // Public surface (no auth): live client sites, enquiries, owner portal.
   // Mounted BEFORE the SPA fallback so /live and /portal are never swallowed.
   app.use(publicRouter);
