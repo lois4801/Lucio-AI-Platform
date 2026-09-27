@@ -9,6 +9,7 @@ import EditorPage from '@/pages/EditorPage';
 import ComponentLibraryPage from '@/pages/ComponentLibraryPage';
 import ProjectsPage from '@/pages/ProjectsPage';
 import ImportStudioPage from '@/pages/ImportStudioPage';
+import AiProvidersPage from '@/pages/AiProvidersPage';
 import ProspectsPage from '@/pages/ProspectsPage';
 import ResearchPage from '@/pages/ResearchPage';
 import FilesPage from '@/pages/FilesPage';
@@ -87,6 +88,7 @@ export default function App() {
         <Route path="/library" element={page(<ComponentLibraryPage />)} />
         <Route path="/scanner" element={page(<MarketScanPage />)} />
         <Route path="/projects" element={page(<ProjectsPage />)} />
+        <Route path="/ai-providers" element={page(<AiProvidersPage />)} />
         <Route path="/import-studio/:projectId" element={page(<ImportStudioPage />)} />
         <Route path="/prospects" element={page(<ProspectsPage />)} />
         <Route path="/clients" element={page(<ClientsPage />)} />

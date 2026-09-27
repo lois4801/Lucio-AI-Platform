@@ -767,6 +767,24 @@ CREATE TABLE IF NOT EXISTS claw_jobs (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   completed_at TEXT
 );
+-- Multi-AI BYOK vault: one key per provider per org, AES-256-GCM encrypted at
+-- rest (plaintext exists only in memory for the duration of a call/run).
+CREATE TABLE IF NOT EXISTS ai_provider_keys (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL REFERENCES organizations(id),
+  provider TEXT NOT NULL,
+  label TEXT NOT NULL DEFAULT '',
+  api_key_enc TEXT NOT NULL,
+  model TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'unverified',
+  status_detail TEXT NOT NULL DEFAULT '',
+  last_verified_at TEXT,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(org_id, provider)
+);
 -- Multi-Agent Auto-Fix: watcher/triager/specialist/verifier/guardian loop.
 CREATE TABLE IF NOT EXISTS autofix_incidents (
   id TEXT PRIMARY KEY,

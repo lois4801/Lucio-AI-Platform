@@ -180,3 +180,30 @@ start of every new session to evolve instead of rediscovering.
 - **Lesson:** template copies are deliberately NOT `site_imports` rows — the
   import-texts endpoint rejects them honestly and they flow through the normal
   builder lane, avoiding a two-headed editing model for the same HTML.
+
+
+## Session 2026-09-27 (later) — Multi-AI layer: all providers at once
+- **Heard:** "Allow me to integrate all AI at once like Kimi, Claude, ChatGPT
+  inside my app to help me build apps/software/websites."
+- **Built:** `ai_provider_keys` BYOK vault (AES-256-GCM, master secret from
+  `LUCIO_SECRET_KEY` or a generated `data/.ai-vault-secret`; masked in all API
+  responses; plaintext only in memory per call) covering Kimi, Claude, OpenAI,
+  OpenRouter, DeepSeek, Gemini. `multiAi.js` speaks the three real wire
+  protocols (OpenAI-compatible chat completions, Anthropic Messages with
+  x-api-key + anthropic-version, Gemini generateContent) and exposes two
+  strategies: `aiChat` (fallback chain, verified providers first) and
+  `aiCouncil` (fan-out to every enabled provider in parallel — the "all AIs at
+  once" panel). New `/api/ai` router: key CRUD, live verify probe (1-token
+  call; 401/403 → status `invalid`), enable toggles, council. Gateway
+  `/api/gateway/chat` now routes to real AI when keys exist and falls back to
+  the sovereign engine when not. `clawCoder.executeJob` injects decrypted keys
+  as standard child-process env vars (BYOK contract preserved — an integration
+  test runs a fake harness that writes `process.env.MOONSHOT_API_KEY` to disk
+  and asserts the value and its absence from the transcript). New
+  `/ai-providers` page: connect all providers in one grid, verify/toggle/delete
+  each, Multi-AI council with side-by-side answers + latencies, and a
+  best-available chat box.
+- **Lesson:** claw terminal status is `completed`, not `complete` — match the
+  schema's vocabulary when polling job state.
+- **Lesson:** verified-first ordering changes which provider answers `aiChat`
+  — tests must not assume alphabetical order after a verify call.

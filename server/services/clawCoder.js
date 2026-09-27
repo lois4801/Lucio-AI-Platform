@@ -11,6 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import { db, audit } from '../db.js';
+import { buildProviderEnv } from './aiVault.js';
 import { applyOps, createCheckpoint } from './nexus/vfs.js';
 import { CHECKS } from './nexus/evidence.js';
 import { hashContent } from './nexus/protocol.js';
@@ -167,7 +168,11 @@ export function executeJob(orgId, jobId, key = '') {
   const job = db.prepare(`SELECT * FROM claw_jobs WHERE id = ? AND org_id = ?`).get(jobId, orgId);
   if (!job) return;
   const status = clawStatus();
-  const env = { ...process.env };
+  // BYOK contract: vault keys are decrypted ONLY to become child-process env
+  // vars for the duration of the run — never persisted, logged, or transcripted.
+  let vaultEnv = {};
+  try { vaultEnv = buildProviderEnv(orgId); } catch { /* run with explicit key / ambient env only */ }
+  const env = { ...process.env, ...vaultEnv };
   const k = String(key || '').trim();
   if (k) { env.ANTHROPIC_API_KEY = k; env.ANTHROPIC_AUTH_TOKEN = k; }
   if (process.env.ANTHROPIC_BASE_URL) env.ANTHROPIC_BASE_URL = process.env.ANTHROPIC_BASE_URL;

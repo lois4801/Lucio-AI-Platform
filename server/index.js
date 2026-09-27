@@ -46,6 +46,7 @@ import { geoRouter } from './routes/geo.js';
 import { autofixRouter } from './routes/autofix.js';
 import { autoDataRouter } from './routes/autoData.js';
 import { importsRouter } from './routes/imports.js';
+import { aiRouter } from './routes/aiProviders.js';
 import { ensureCatalog } from './services/autoData.js';
 import { requestCounter } from './services/enterprise.js';
 import { ingestPacks } from './services/agentPacks.js';
@@ -110,6 +111,7 @@ app.use('/api/apps', appStudioRouter);
   app.use('/api/autodata', autoDataRouter);
   app.use('/api/geo', geoRouter);
   app.use('/api/imports', importsRouter);
+  app.use('/api/ai', aiRouter);
   // Public surface (no auth): live client sites, enquiries, owner portal.
   // Mounted BEFORE the SPA fallback so /live and /portal are never swallowed.
   app.use(publicRouter);

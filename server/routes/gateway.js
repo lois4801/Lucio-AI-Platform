@@ -23,8 +23,15 @@ gatewayRouter.post('/providers/:id/toggle', requireRole('admin'), (req, res) => 
   }
 });
 
-gatewayRouter.post('/chat', (req, res) => {
+gatewayRouter.post('/chat', async (req, res) => {
   const { messages } = req.body || {};
   if (!Array.isArray(messages)) return res.status(400).json({ error: 'messages array required' });
-  res.json(chat(messages));
+  // Real multi-AI when the org has configured BYOK keys; sovereign engine otherwise.
+  try {
+    const { aiChat } = await import('../services/multiAi.js');
+    res.json(await aiChat(req.user.orgId, { messages: messages.slice(0, 40) }));
+  } catch (e) {
+    if (e.code === 'NO_AI_KEYS' || e.code === 'ALL_AI_FAILED') return res.json(chat(messages));
+    res.status(400).json({ error: String(e.message || e) });
+  }
 });

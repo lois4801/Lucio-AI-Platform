@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import {
   LayoutDashboard, Hammer, FolderKanban, Radar, Search, Files, TerminalSquare, ScrollText,
-  Cpu, LogOut, ScanSearch, BriefcaseBusiness, Blocks, PencilRuler, Bot, AppWindow, Gauge, Rocket, BotMessageSquare, Code, Wrench, Database } from 'lucide-react';
+  Cpu, LogOut, ScanSearch, BriefcaseBusiness, Blocks, PencilRuler, Bot, AppWindow, Gauge, Rocket, BotMessageSquare, Code, Wrench, Database, Sparkles } from 'lucide-react';
 import AssistantPanel from '@/components/AssistantPanel';
 
 const NAV = [
@@ -30,6 +30,7 @@ const NAV = [
   { to: '/jobs', label: 'Sandbox Jobs', icon: TerminalSquare },
   { to: '/audit', label: 'Audit Log', icon: ScrollText },
   { to: '/gateway', label: 'Model Gateway', icon: Cpu },
+  { to: '/ai-providers', label: 'AI Providers', icon: Sparkles },
 ];
 
 export default function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
