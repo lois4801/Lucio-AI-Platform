@@ -448,3 +448,9 @@ start of every new session to evolve instead of rediscovering.
 - queryOverpass: per-city deadline 60s → 25s (OVERPASS_CITY_CAP_MS), per-request timeout 15s → 10s (OVERPASS_REQ_TIMEOUT_MS; healthy mirrors answer 1.4–8s measured), fallback reduced from 2 passes × 4 mirrors + 1.5s settle pause to ONE pass × 2 mirrors (OVERPASS_FALLBACK_ENDPOINTS), race-first strategy kept (OVERPASS_RACE_ENDPOINTS=2). Worst case is now race + 2 tries, hard-trimmed at 25s — roughly half the old worst case and typically a few seconds.
 - All knobs env-tunable without code changes. Full regression: 38 suites green; tsc clean.
 - Standing directive logged: every change commits AND pushes to github.com/lois4801/Lucio-AI-Platform immediately (owner works across ChatGPT/Claude and needs the repo always current).
+
+## 2026-09-27 — Scan history deletion (per-scan + delete all)
+- DELETE /api/scans/:id and DELETE /api/scans (owner-wide wipe). deleteScanArtifacts removes the scan's prospects, evidence_records, and per-prospect rows in website_opportunities / client_deals / outreach_drafts / comm_log; builder_projects spawned from a prospect SURVIVE (source_prospect_id nulled, never the project). Deleting a running scan IS the cancel — the background loop's final UPDATE no-ops on the vanished row.
+- Data-model note: upsertProspect dedupes across scans and re-homes scan_id to the LATEST scan that found a business — a prospect belongs to its most recent scan, so deleting that scan removes it.
+- UI: per-row trash (confirm) + "Clear all" in the Scan history card header on the Scanner page.
+- Tests: scripts/test-scan-delete.js (19 assertions, incl. org isolation + delete-as-cancel); all 39 suites green; tsc clean.

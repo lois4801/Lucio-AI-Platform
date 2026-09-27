@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db, audit } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { runMarketScan, runNearbyScan, listScans, getScan, getScanProgress, resolveWebsitePresence, providerMeta } from '../services/discovery/pipeline.js';
+import { runMarketScan, runNearbyScan, listScans, getScan, getScanProgress, resolveWebsitePresence, providerMeta, deleteScan, deleteAllScans } from '../services/discovery/pipeline.js';
 import { generateWebsiteOpportunity, createProjectFromOpportunity, listOpportunities } from '../services/opportunity.js';
 import { INDUSTRIES, REGIONS } from '../services/discovery/providers.js';
 import { AUTO_INDUSTRIES } from '../services/autoData.js';
@@ -28,6 +28,22 @@ marketScansRouter.post('/', requireRole('member'), async (req, res) => {
 });
 
 marketScansRouter.get('/', (req, res) => res.json({ scans: listScans(req.user.orgId) }));
+
+// Delete ONE scan and everything it produced (prospects, evidence, per-prospect
+// opportunities/deals/drafts). Deleting a running scan IS the cancel.
+marketScansRouter.delete('/:id', requireRole('member'), (req, res) => {
+  const out = deleteScan(req.user.orgId, req.params.id);
+  if (!out) return res.status(404).json({ error: 'scan not found' });
+  audit(req.user.orgId, req.user.id, 'scan.delete', 'market_scan', req.params.id, out, req.ip);
+  res.json(out);
+});
+
+// Delete ALL scans for the org — full history wipe.
+marketScansRouter.delete('/', requireRole('member'), (req, res) => {
+  const out = deleteAllScans(req.user.orgId);
+  audit(req.user.orgId, req.user.id, 'scan.delete_all', 'market_scan', '', out, req.ip);
+  res.json(out);
+});
 
 // Async scan — answers 202 {scanId} immediately (the scan row is created
 // synchronously, before the first provider query), then the scan runs in the

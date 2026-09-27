@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Radar, RefreshCw, FileText, Ban, FolderPlus, Eye, Navigation, Search as SearchIcon, ScanSearch, Hammer, HandCoins, UserRound, MapPin, Phone, Globe, Facebook, Instagram, Music2, Youtube, Linkedin, Sparkles, Download } from 'lucide-react';
+import { Radar, RefreshCw, FileText, Ban, FolderPlus, Eye, Navigation, Search as SearchIcon, ScanSearch, Hammer, HandCoins, UserRound, MapPin, Phone, Globe, Facebook, Instagram, Music2, Youtube, Linkedin, Sparkles, Download, Trash2 } from 'lucide-react';
 
 // Leaflet is loaded from CDN on demand (same pattern as scanner libs).
 function loadScript(src: string): Promise<void> {
@@ -119,6 +119,16 @@ export default function MarketScanPage() {
 
   const loadScans = () => api<{ scans: Scan[] }>('/scans').then((d) => setScans(d.scans)).catch(() => {});
   useEffect(() => { loadScans(); }, []);
+  const removeScan = async (id: string) => {
+    if (!window.confirm('Delete this scan and all of its prospects, evidence and opportunities?')) return;
+    await api(`/scans/${id}`, { method: 'DELETE' }).catch((e) => window.alert(e.message));
+    loadScans();
+  };
+  const removeAllScans = async () => {
+    if (!window.confirm(`Delete ALL ${scans.length} scans and everything they produced? This cannot be undone.`)) return;
+    await api('/scans', { method: 'DELETE' }).catch((e) => window.alert(e.message));
+    loadScans();
+  };
 
   const runNearby = async (lat: number, lng: number) => {
     if (nearbyLoading) return;
@@ -673,7 +683,14 @@ export default function MarketScanPage() {
       )}
 
       <Card>
-        <CardHeader><CardTitle>Scan history</CardTitle></CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle>Scan history</CardTitle>
+          {scans.length > 0 && (
+            <Button size="sm" variant="ghost" onClick={removeAllScans}>
+              <Trash2 className="h-3.5 w-3.5 mr-1" /> Clear all
+            </Button>
+          )}
+        </CardHeader>
         <CardContent>
           <ul className="divide-y">
             {scans.map((s) => (
@@ -686,6 +703,7 @@ export default function MarketScanPage() {
                     const d = await api<{ scan: Scan & { prospects: ProspectRow[] } }>(`/scans/${s.id}`);
                     setScan(d.scan); setResults(d.scan.prospects);
                   }}><FileText className="h-3.5 w-3.5" /></Button>
+                  <Button size="sm" variant="ghost" aria-label="Delete scan" onClick={() => removeScan(s.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
                 </span>
               </li>
             ))}

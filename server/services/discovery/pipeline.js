@@ -625,4 +625,44 @@ export function getScan(orgId, scanId) {
   return { ...s, query: safeParse(s.query_json), coverage: safeParse(s.coverage_json), prospects };
 }
 
+// Delete everything ONE scan produced: its prospects, their evidence, and the
+// per-prospect artifacts (opportunities, deals, outreach drafts, comm log).
+// Projects spawned from a prospect survive — their source link is nulled, not
+// the project. If the scan is still running this IS the cancel: the background
+// loop's final UPDATE matches no row and harmlessly no-ops.
+export function deleteScan(orgId, scanId) {
+  const s = db.prepare(`SELECT id, status FROM market_scans WHERE id = ? AND org_id = ?`).get(scanId, orgId);
+  if (!s) return null;
+  const deleted = deleteScanArtifacts(orgId, scanId);
+  db.prepare(`DELETE FROM market_scans WHERE id = ? AND org_id = ?`).run(scanId, orgId);
+  return { id: scanId, status: s.status, deleted };
+}
+
+export function deleteAllScans(orgId) {
+  const rows = db.prepare(`SELECT id FROM market_scans WHERE org_id = ?`).all(orgId);
+  const totals = { prospects: 0, evidence: 0, opportunities: 0, deals: 0, drafts: 0, commLog: 0, projectLinks: 0 };
+  for (const r of rows) {
+    const d = deleteScanArtifacts(orgId, r.id);
+    for (const k of Object.keys(totals)) totals[k] += d[k] || 0;
+  }
+  db.prepare(`DELETE FROM market_scans WHERE org_id = ?`).run(orgId);
+  return { deleted: { scans: rows.length, ...totals } };
+}
+
+function deleteScanArtifacts(orgId, scanId) {
+  const prospectIds = db.prepare(`SELECT id FROM prospects WHERE scan_id = ? AND org_id = ?`).all(scanId, orgId).map((r) => r.id);
+  const inList = prospectIds.length ? `(${prospectIds.map(() => '?').join(',')})` : null;
+  const evidence = db.prepare(`DELETE FROM evidence_records WHERE scan_id = ? AND org_id = ?`).run(scanId, orgId).changes;
+  let opportunities = 0, deals = 0, drafts = 0, commLog = 0, projectLinks = 0;
+  if (inList) {
+    opportunities = db.prepare(`DELETE FROM website_opportunities WHERE org_id = ? AND prospect_id IN ${inList}`).run(orgId, ...prospectIds).changes;
+    deals = db.prepare(`DELETE FROM client_deals WHERE org_id = ? AND prospect_id IN ${inList}`).run(orgId, ...prospectIds).changes;
+    drafts = db.prepare(`DELETE FROM outreach_drafts WHERE org_id = ? AND prospect_id IN ${inList}`).run(orgId, ...prospectIds).changes;
+    commLog = db.prepare(`DELETE FROM comm_log WHERE org_id = ? AND prospect_id IN ${inList}`).run(orgId, ...prospectIds).changes;
+    projectLinks = db.prepare(`UPDATE builder_projects SET source_prospect_id = NULL WHERE org_id = ? AND source_prospect_id IN ${inList}`).run(orgId, ...prospectIds).changes;
+  }
+  const prospects = db.prepare(`DELETE FROM prospects WHERE scan_id = ? AND org_id = ?`).run(scanId, orgId).changes;
+  return { prospects, evidence, opportunities, deals, drafts, commLog, projectLinks };
+}
+
 function safeParse(s) { try { return JSON.parse(s); } catch { return {}; } }
