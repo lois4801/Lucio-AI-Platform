@@ -52,7 +52,7 @@ console.log('== Configuration gating ==');
   const meta = listProviderMeta();
   ok(meta.find((m) => m.id === 'google-places').configured === true && meta.find((m) => m.id === 'fixture-directory').is_live === false, 'provider meta exposes live/configured flags for UI badges');
   const req = normalizeRequest({ industry: 'Plumbing', city: 'Halifax' });
-  ok(req.sources[0] === 'google-places', 'default scan sources put live Google first');
+  ok(req.sources[0] === 'osm-overpass' && req.sources[1] === 'google-places', 'default scan sources put keyless live OSM first, Google second');
 }
 
 console.log('== Normalization: real Google fields -> candidate schema ==');

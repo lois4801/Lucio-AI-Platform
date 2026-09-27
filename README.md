@@ -9,7 +9,7 @@ Lucio AI Platform is a sovereign, self-hosted "agency in a box": a map-first mar
 ## Features
 
 ### Find — Market Scanner
-- **Full-bleed dark discovery map** (Leaflet + CartoDB dark tiles): color-coded markers — 🔴 no website · 🟠 weak/social-only · 🟢 has a site — with permanent business-name labels.
+- **Full-bleed dark discovery map** (Leaflet + keyless live OpenStreetMap tiles, multi-source fallback): color-coded markers — 🔴 no website · 🟠 weak/social-only · 🟢 has a site — with permanent business-name labels.
 - **Pin-drop scanning**: click anywhere (or search a city/address) to scan a 3 km radius via the **Google Places API (New)** — real live business data, website-status detection, opportunity scoring, and CRM upsert in one pass.
 - **Rich business cards**: gap badge, confidence meter, one-click Google verification, copy-phone, and a gradient **Make website →** action.
 - **Evidence-first pipeline**: every material field (name, phone, address, website status) keeps provenance and retrieval time; suppressed businesses stop being processed.
@@ -77,7 +77,7 @@ node scripts/test-assistant.js     # 34 — assistant squad behaviors
 
 ## Tech stack
 
-React 19 + TypeScript + Vite + Tailwind/shadcn (frontend) · Express + better-sqlite3 (backend) · Leaflet + OpenStreetMap/CartoDB (maps) · Google Places API (New) (live data, when keyed) · zero required external AI APIs — a deterministic sovereign engine drives every core workflow.
+React 19 + TypeScript + Vite + Tailwind/shadcn (frontend) · Express + better-sqlite3 (backend) · Leaflet + keyless live OpenStreetMap tiles (maps, always-on with multi-source fallback) · OpenStreetMap Overpass API (live business POIs, keyless) · Google Places API (New) (live data, when keyed) · zero required external AI APIs — a deterministic sovereign engine drives every core workflow.
 
 ## Project layout
 

@@ -9,6 +9,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lucio-sell-'));
 process.env.LUCIO_DATA_DIR = tmp;
 delete process.env.GOOGLE_PLACES_API_KEY;   // fixture-mode assertions below
 delete process.env.STRIPE_SECRET_KEY;       // manual-billing assertions below
+process.env.OSM_LIVE_ENABLED = '';          // fixture-mode assertions below (.env would re-add it)
 
 const { createApp } = await import('../server/index.js');
 const { db } = await import('../server/db.js');

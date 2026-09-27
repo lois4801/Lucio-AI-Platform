@@ -1038,3 +1038,13 @@ on; suppression respected; delivery still honest — `sent` only via webhook or 
 - scripts/test-claw-coder.js — 31/31 (+2): binary mode detected over HTTP on configured hosts; fail-closed
   phase now runs under a CLAW_VENDOR_DIR empty-dir hook so both paths are deterministic everywhere.
 - Full regression: 1010 assertions across 24 suites, 0 failures.
+
+### Keyless live maps + OSM Overpass provider (2026-09-27)
+- scripts/test-osm-overpass.js — 35/35: tag-map query shape, bbox + around queries, endpoint
+  rotation on 429/5xx, per-(industry,city) 24 h cache reuse, scan HTTP budget with honest
+  "budget reached" note, pin-drop nearby prefers OSM when Google unkeyed, fixture fallback
+  honestly labeled on Overpass failure, provider meta, authz (401).
+- Frontend: CARTO layer (now key-gated) replaced with keyless 4-source tile fallback chain;
+  dark styling via CSS filter on the tile pane; OSM attribution control.
+- Full regression: 1045 assertions across 25 suites, 0 failures (sell + autodata pinned to
+  fixture mode after .env began exporting OSM_LIVE_ENABLED=true via server/index.js loader).

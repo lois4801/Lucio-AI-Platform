@@ -814,6 +814,11 @@ CREATE TABLE IF NOT EXISTS auto_build_jobs (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   completed_at TEXT
 );
+CREATE TABLE IF NOT EXISTS osm_cache (
+  key TEXT PRIMARY KEY,
+  payload_json TEXT NOT NULL DEFAULT '[]',
+  fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `);
 
 // Lightweight migrations: add columns to pre-existing tables when missing.

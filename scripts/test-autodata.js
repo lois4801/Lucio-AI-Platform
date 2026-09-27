@@ -13,6 +13,7 @@ import crypto from 'node:crypto';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lucio-ad-'));
 process.env.LUCIO_DATA_DIR = tmp;
 process.env.BUILDER_RUNTIME_ENABLED = 'true';
+process.env.OSM_LIVE_ENABLED = '';   // fixture-mode scan assertions (.env would re-add it)
 
 let passed = 0, failed = 0;
 function ok(cond, name, extra = '') {

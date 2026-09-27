@@ -6,10 +6,18 @@
 // -> Generate website opportunity brief.
 import crypto from 'node:crypto';
 import { db, audit } from '../../db.js';
-import { getProviders, listProviderMeta, fixtureDirectoryProvider, nearestCity } from './providers.js';
+import { getProviders, listProviderMeta, fixtureDirectoryProvider, nearestCity, GEO_UNITS, CITY_COORDS } from './providers.js';
 import { googlePlacesProvider, isGooglePlacesConfigured } from './googlePlaces.js';
 import { fetchWithGuards } from '../ssrfGuard.js';
 import { autoDirectoryProvider, enrichProspect, ensureForScan, autoDraftHook } from '../autoData.js';
+import {
+  osmOverpassProvider, isOsmLiveEnabled, osmDefaultBudget,
+  setOsmCityResolver, setOsmGeoUnits,
+} from './osmOverpass.js';
+
+// Keyless live coverage: city coordinates + region→cities for the OSM provider.
+setOsmCityResolver(() => CITY_COORDS);
+setOsmGeoUnits(GEO_UNITS);
 
 // ---------------------------------------------------------------------------
 // Normalize + geography expansion (§17.13.1, §17.13.3)
@@ -35,15 +43,24 @@ export function normalizeRequest(q) {
     websiteStatus: q.websiteStatus || 'ANY',
     minScore: Math.max(0, Math.min(100, Number(q.minScore) || 0)),
     maxResults: Math.max(1, Math.min(200, Number(q.maxResults) || 50)),
-    // Default: every configured provider, LIVE Google Places first when its key is
-    // set (owner directive). getProviders filters out unconfigured providers, so
-    // the fallback list degrades cleanly to the labeled fixture directory.
-    sources: Array.isArray(q.sources) && q.sources.length ? q.sources : ['google-places', 'fixture-directory'],
+    // Default: OSM Overpass first (live, keyless, always on when enabled),
+    // LIVE Google Places next when its key is set, fixture directory last.
+    // getProviders filters out unconfigured providers, so the fallback list
+    // degrades cleanly.
+    sources: Array.isArray(q.sources) && q.sources.length ? q.sources : ['osm-overpass', 'google-places', 'fixture-directory'],
+    // Per-scan HTTP budget for the keyless OSM provider (cached cities don't
+    // consume it). Keeps whole-province scans polite on public instances.
+    osmBudget: Math.max(0, Math.min(20, Number(q.osmBudget ?? osmDefaultBudget()))),
     userRecords: Array.isArray(q.userRecords) ? q.userRecords : [],
   };
 }
 
-export function providerMeta() { return listProviderMeta(); }
+export function providerMeta() {
+  return [
+    { id: 'osm-overpass', label: osmOverpassProvider.label, is_live: true, configured: isOsmLiveEnabled() },
+    ...listProviderMeta(),
+  ];
+}
 
 export function expandGeography(req, providers) {
   // Geography expands into units (cities) via providers that support unit listing.
@@ -305,6 +322,12 @@ export async function runMarketScan(orgId, user, rawQuery, ip = '') {
   const scanId = crypto.randomUUID();
   const req = normalizeRequest(rawQuery);
   const providers = getProviders(req.sources);
+  // Keyless live OSM coverage leads the scan whenever it's requested and
+  // enabled (OSM_LIVE_ENABLED=true) — real data with no key required.
+  const osmBudget = { left: req.osmBudget, http: 0 };
+  if (req.sources.includes('osm-overpass') && isOsmLiveEnabled() && !providers.some((p) => p.id === 'osm-overpass')) {
+    providers.unshift(osmOverpassProvider);
+  }
   // The auto data engine backs every scan with generated coverage for all 172
   // verticals, unless the caller explicitly narrowed the source list.
   if (!providers.some((p) => p.id === 'auto-directory')) providers.push(autoDirectoryProvider);
@@ -338,13 +361,15 @@ export async function runMarketScan(orgId, user, rawQuery, ip = '') {
       for (const p of providers) {
         const params = { ...req, city: req.city || (p.geographyUnits ? unit : req.city) };
         if (p.id === 'user-list') params.userRecords = req.userRecords;
+        if (p.id === 'osm-overpass') params._osmBudget = osmBudget;
         try {
           const rows = await p.search(params);
           candidates.push(...rows);
           if (!coverage.sources_completed.includes(p.id)) coverage.sources_completed.push(p.id);
         } catch (pe) {
-          // One failing provider (e.g. Places quota/key issue) must not sink the
-          // whole scan — record it and continue with the remaining sources.
+          // One failing provider (e.g. Places quota/key issue, Overpass
+          // overload) must not sink the whole scan — record it and continue
+          // with the remaining sources.
           sourceErrors[p.id] = String(pe.message || pe);
         }
         coverage.request_budget_used += 1;
@@ -352,6 +377,12 @@ export async function runMarketScan(orgId, user, rawQuery, ip = '') {
       coverage.geography_units_completed++;
     }
     if (Object.keys(sourceErrors).length) coverage.source_errors = sourceErrors;
+    if (req.sources.includes('osm-overpass') && isOsmLiveEnabled()) {
+      coverage.osm_http_requests = osmBudget.http;
+      if (osmBudget.exhausted) {
+        coverage.coverage_notes += ' OpenStreetMap live-query budget reached for this scan — remaining cities used cached/generated providers only.';
+      }
+    }
 
     coverage.records_discovered = candidates.length;
     const { merged, duplicatesRemoved } = dedupeCandidates(candidates.filter((c) =>
@@ -414,11 +445,22 @@ export async function runNearbyScan(orgId, user, { lat, lng, industry = '', maxR
   if (isGooglePlacesConfigured()) {
     candidates = await googlePlacesProvider.nearby({ lat, lng, industry, maxResults });
     source = 'google-places (live)';
+  } else if (isOsmLiveEnabled()) {
+    try {
+      candidates = await osmOverpassProvider.nearby({ lat, lng, industry, maxResults });
+      source = 'osm-overpass (live)';
+      note = 'Live OpenStreetMap businesses within 3 km of the dropped pin (keyless, open data © OSM contributors).';
+    } catch (e) {
+      const city = nearestCity(lat, lng);
+      candidates = await fixtureDirectoryProvider.search({ industry, city, maxResults });
+      source = 'fixture-directory (dev data)';
+      note = `OpenStreetMap live query failed (${String(e.message || e).slice(0, 140)}) — showing fixture businesses for the nearest city center (${city}). Coordinates are approximate.`;
+    }
   } else {
     const city = nearestCity(lat, lng);
     candidates = await fixtureDirectoryProvider.search({ industry, city, maxResults });
     source = 'fixture-directory (dev data)';
-    note = `Live Google Places not configured — showing fixture businesses for the nearest city center (${city}). Coordinates are approximate.`;
+    note = `Live providers not configured — showing fixture businesses for the nearest city center (${city}). Coordinates are approximate.`;
   }
   for (const c of candidates) { if (!c.industry) c.industry = industry; }
 

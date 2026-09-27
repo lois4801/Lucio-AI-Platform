@@ -124,15 +124,42 @@ export default function MarketScanPage() {
     p.website_gap_signal === 'GAP_NO_VERIFIED_WEBSITE' ? '#dc2626'
     : p.website_gap_signal === 'GAP_NONE' ? '#16a34a' : '#d97706';
 
-  // Initialize Leaflet map once — dark "command center" style like the reference:
-  // CartoDB dark-matter tiles, zoom top-right, click = pin-drop scan.
+  // Initialize Leaflet map once — dark "command center" style. Base maps are
+  // KEYLESS live OpenStreetMap-family tiles (CARTO basemaps now require an API
+  // key, which is what the "API KEY REQUIRED" watermark was): the chain
+  // automatically fails over if a provider throttles or is unreachable, so
+  // the map is always on. The dark look comes from a CSS filter on the tile
+  // pane — markers live in the overlay pane and stay untouched.
+  const TILE_SOURCES = [
+    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    'https://tile.opentopomap.org/{z}/{x}/{y}.png',
+    'https://a.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png',
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+  ];
   useEffect(() => {
     let cancelled = false;
     loadLeaflet().then((L) => {
       if (cancelled || mapRef.current) return;
       const map = L.map('prospect-map', { center: [56.13, -106.35], zoom: 4, zoomControl: false, attributionControl: false });
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, subdomains: 'abcd' }).addTo(map);
+      const tilePane = map.getPane('tilePane') as HTMLElement | undefined;
+      if (tilePane) tilePane.style.filter = 'invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.95) saturate(0.3)';
+      let srcIdx = 0, layer: any = null, tileErrors = 0;
+      const addSource = (i: number) => {
+        layer = L.tileLayer(TILE_SOURCES[i], { maxZoom: 19, subdomains: 'abc', crossOrigin: true });
+        layer.on('tileerror', () => {
+          tileErrors++;
+          if (tileErrors >= 6 && srcIdx < TILE_SOURCES.length - 1) {
+            srcIdx++; tileErrors = 0;
+            layer.remove();
+            addSource(srcIdx);
+          }
+        });
+        layer.addTo(map);
+      };
+      addSource(0);
       L.control.zoom({ position: 'topright' }).addTo(map);
+      L.control.attribution({ position: 'bottomright', prefix: false })
+        .addAttribution('© OpenStreetMap contributors · live keyless tiles').addTo(map);
       map.on('click', (e: any) => { runNearbyRef.current(e.latlng.lat, e.latlng.lng); });
       mapRef.current = map;
       setMapReady(true);
