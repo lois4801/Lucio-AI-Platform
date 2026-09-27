@@ -43,13 +43,21 @@ const GAP_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'out
   GAP_NO_VERIFIED_WEBSITE: 'default', GAP_BROKEN: 'destructive', GAP_SOCIAL_ONLY: 'secondary',
   GAP_WEAK: 'secondary', GAP_NONE: 'outline', GAP_UNKNOWN: 'outline',
 };
+// Honesty rules: fixture/demo records must be visibly labeled and must NOT get a
+// "Check for yourself" link — an unverifiable link that disproves its own data is
+// worse than no link. Live records keep the verification link + a live-source tag.
+const SAMPLE_RE = /fixture|dev data/i;
+const SOURCE_LABEL: Record<string, string> = {
+  'osm-overpass': 'OpenStreetMap (live)', 'google-places': 'Google Places (live)',
+  'auto-directory': 'Directory (live)', 'fixture-directory': 'Sample data',
+};
 
 type ProspectRow = {
   id: string; business_name: string; city: string; province_state: string; industry: string;
   website_status: string; website_gap_signal: string; website_confidence: number; lead_score: number;
   priority: string; score_explanation: string; recommended_offer: string; public_phone: string;
   crm_stage: string; suppression_status: string; lat?: number | null; lng?: number | null;
-  address?: string; social_profiles?: string | string[];
+  address?: string; social_profiles?: string | string[]; source?: string; created_at?: string;
 };
 type Scan = { id: string; status: string; created_at: string; coverage: any; query: any };
 type Evidence = { id: string; field_name: string; value: string; source_provider: string; source_type: string; confidence: number; retrieved_at: string };
@@ -83,6 +91,7 @@ export default function MarketScanPage() {
   const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [sampleWarning, setSampleWarning] = useState('');
   const [meta, setMeta] = useState<{ industries: string[]; regions: string[]; providers: ProviderMeta[]; mapsEmbedKey?: string }>({ industries: FALLBACK_INDUSTRIES, regions: FALLBACK_REGIONS, providers: [] });
   const [mapReady, setMapReady] = useState(false);
   const [mapFailed, setMapFailed] = useState('');
@@ -113,6 +122,10 @@ export default function MarketScanPage() {
         const fresh = d.results.filter((r) => !seen.has(`${r.business_name}|${r.city}`.toLowerCase()));
         return [...rs, ...fresh];
       });
+      const isSampleSource = SAMPLE_RE.test(d.source || '');
+      setSampleWarning(isSampleSource
+        ? `⚠ ${d.results.length} sample listing(s) — live business lookup failed for this pin-drop (demo data, not verified to exist). Re-try shortly, or add a Google Places key for verified results.`
+        : '');
       setNotice(`Pin-drop scan near ${lat.toFixed(4)}, ${lng.toFixed(4)}: ${d.results.length} businesses (${d.source}). ${d.note || ''}`);
     } catch (e: any) { setError(e.message); }
     finally { setNearbyLoading(false); }
@@ -202,6 +215,14 @@ export default function MarketScanPage() {
         : gapKey === 'GAP_NO_VERIFIED_WEBSITE' ? 'Likely has no website'
         : GAP_LABEL[gapKey] || 'Website gap detected';
       const googleCheck = `https://www.google.com/search?q=${encodeURIComponent(`${p.business_name} ${p.city}`)}`;
+      const isSample = SAMPLE_RE.test(p.source || '');
+      const sampleBanner = isSample
+        ? `<div style="margin-top:10px;background:#fef3c7;border:1px solid #f59e0b;color:#92400e;border-radius:8px;padding:8px 10px;font-size:11px;line-height:1.45">
+            ⚠ <b>SAMPLE LISTING</b> — demo data. Live business lookup was unavailable or failed for this scan, so this business is <b>not verified to exist</b>. Don't pitch it as real.
+          </div>`
+        : `<div style="margin-top:10px;font-size:10.5px;color:#16a34a;font-weight:700">✓ Live record · ${esc(SOURCE_LABEL[p.source || ''] || p.source || 'live source')}</div>`;
+      const verifyLink = isSample ? '' :
+        `<a href="${googleCheck}" target="_blank" rel="noreferrer" style="display:inline-block;margin-top:8px;background:#fff;border:1px solid #e7e5e4;border-radius:9999px;padding:4px 10px;font-size:11px;color:#1c1917;text-decoration:none;font-weight:600">Check for yourself ↗</a>`;
       const detail = `<div style="width:250px;font-family:system-ui,-apple-system,sans-serif;color:#1c1917">
         <div style="background:${badge.bg};color:${badge.fg};font-weight:700;font-size:11px;border-radius:9999px;padding:5px 10px;display:inline-block">${esc(badge.label)}</div>
         <div style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:11px;color:#57534e">
@@ -212,7 +233,8 @@ export default function MarketScanPage() {
           </span>
           <b style="color:#1c1917">${confLabel}</b> · ${confPct}% — ${esc(confNote)}
         </div>
-        <a href="${googleCheck}" target="_blank" rel="noreferrer" style="display:inline-block;margin-top:8px;background:#fff;border:1px solid #e7e5e4;border-radius:9999px;padding:4px 10px;font-size:11px;color:#1c1917;text-decoration:none;font-weight:600">Check for yourself ↗</a>
+        ${verifyLink}
+        ${sampleBanner}
         <div style="margin-top:12px;font-size:15px;font-weight:800;line-height:1.25">${esc(p.business_name)}</div>
         <div style="font-size:10px;letter-spacing:.12em;color:#b45309;font-weight:700;margin-top:2px">${esc((p.industry || 'LOCAL BUSINESS').toUpperCase())}</div>
         ${p.address ? `<div style="display:flex;gap:6px;margin-top:10px;font-size:11.5px;color:#44403c"><span>📍</span><span>${esc(p.address)}</span></div>` : `<div style="display:flex;gap:6px;margin-top:10px;font-size:11.5px;color:#44403c"><span>📍</span><span>${esc(p.city)}, ${esc(p.province_state)}</span></div>`}
@@ -272,7 +294,7 @@ export default function MarketScanPage() {
 
 
   const startScan = async () => {
-    setError(''); setNotice(''); setScanning(true);
+    setError(''); setNotice(''); setSampleWarning(''); setScanning(true);
     try {
       const d = await api<{ scanId: string; coverage: any; results: ProspectRow[] }>('/scans', {
         method: 'POST',
@@ -282,7 +304,12 @@ export default function MarketScanPage() {
       });
       const full = await api<{ scan: Scan & { prospects: ProspectRow[] } }>(`/scans/${d.scanId}`);
       setScan(full.scan);
-      setResults(full.scan.prospects.filter((p) => p.lead_score >= form.minScore));
+      const prospects = full.scan.prospects.filter((p) => p.lead_score >= form.minScore);
+      setResults(prospects);
+      const sampleCount = prospects.filter((p) => SAMPLE_RE.test(p.source || '')).length;
+      setSampleWarning(sampleCount > 0
+        ? `⚠ ${sampleCount} of ${prospects.length} listings are SAMPLE data — live business lookup failed or was throttled this run (demo records, not verified to exist). Re-scan later, or add a Google Places key for verified live data.`
+        : '');
       setNotice(`Scan complete: ${d.coverage.unique_businesses} unique businesses, ${d.coverage.website_gap_candidates} website-gap candidates. ${d.coverage.coverage_notes}`);
       loadScans();
     } catch (e: any) { setError(e.message); } finally { setScanning(false); }
@@ -376,6 +403,7 @@ export default function MarketScanPage() {
       <Card className="overflow-hidden rounded-none border-0 shadow-none -mx-6 lg:-mx-8">
         <CardContent className="p-0 relative">
           {mapFailed && <p className="text-sm text-amber-600 dark:text-amber-400 absolute top-3 left-3 right-3 z-[1100] bg-background/95 rounded-lg p-3">Map could not load ({mapFailed}). Check your internet connection — map tiles and Leaflet load from CDN.</p>}
+          {sampleWarning && <p className="text-xs text-amber-700 dark:text-amber-300 absolute bottom-3 left-3 right-3 z-[1100] bg-amber-50/95 dark:bg-amber-950/95 border border-amber-300 dark:border-amber-700 rounded-lg p-3 shadow-lg">{sampleWarning}</p>}
           <div id="prospect-map" className="h-[calc(100vh-7rem)] min-h-[480px] w-full relative z-0 bg-[#0c0a09]" />
 
           {/* Overlay search bar — geocode then pin-drop scan (like the reference) */}

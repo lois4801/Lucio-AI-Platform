@@ -235,3 +235,36 @@ start of every new session to evolve instead of rediscovering.
 - **Lesson:** `new URL('https://host', base)` stringifies with a trailing slash
   (`https://host/`) — normalize root URLs before using them as provenance
   labels or tests compare against the un-slashed original href.
+
+
+## Session 2026-09-27 (later) — Scanner honesty: sample data must not carry a "verify it yourself" link
+- **Heard:** "Fix the issue in market scanning. Because when I click the 'Check
+  for yourself' the actual Business or service doesnt really exists." (User
+  clicked the popup's Google-search link on "Country Pet Resort, 167 Harbour
+  Rd, Lunenburg, NS, 902-555-0756" and Google correctly reported the business
+  does not exist.)
+- **Root cause:** those listings are `fixture-directory` records (synthetic
+  demo data — the 902-555-01xx phone range is the giveaway) returned when the
+  keyless Overpass source is throttled on this host. Legitimate fallback, BUT
+  the map popup rendered an unconditional "Check for yourself ↗" Google-search
+  link for EVERY result — including the sample rows — so one click on a demo
+  record actively disproved the whole scan in the user's eyes.
+- **Built:** (1) `getScan` in `pipeline.js` now selects `source` for each
+  prospect so the UI can tell live from sample rows (the POST `/scans`
+  response already carried per-result source; only the detail SELECT lacked
+  it). (2) `MarketScanPage` popup now detects `fixture|dev data` sources and,
+  for sample rows, shows an amber "⚠ SAMPLE LISTING — demo data, not verified
+  to exist, don't pitch it as real" banner and OMITS the "Check for yourself"
+  link entirely; live rows instead get a green "✓ Live record · <provider>"
+  tag and keep the verification link. (3) Scan-level amber warning banner over
+  the map counts sample rows ("⚠ N of M listings are SAMPLE data …") and the
+  pin-drop path warns when its whole result set is sample data. Fixtures were
+  NOT removed — they remain the labeled fallback when live lookup is
+  unavailable; honesty is the fix, not deletion.
+- **Lesson:** a "verify it yourself" link attached to unverifiable data is
+  worse than no link — it converts a hidden fallback into visible evidence
+  that the app lies. Any data surface that mixes live + fixture records must
+  label provenance per record BEFORE offering verification affordances.
+- **Lesson:** the synthetic 555 phone number range is a strong smell-test the
+  user already applies — if any UI shows a `555-01xx` number without a "sample"
+  label, the honesty contract is broken.
