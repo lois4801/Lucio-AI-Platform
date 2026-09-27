@@ -5,7 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Hammer, Download, LayoutTemplate, Loader2, Sparkles } from 'lucide-react';
+import { Plus, Trash2, Hammer, Download, LayoutTemplate, Loader2, Sparkles, Brain } from 'lucide-react';
+
+type HostLearning = {
+  host: string; attempts: number; successes: number;
+  learnedUa: string | null; learnedWww: string | null; moduleStrategy: string | null;
+  avgTexts: number; jsRenderedCount: number; lastStatus: number; lastError: string | null; updatedAt: string;
+};
 
 type Template = {
   id: string; name: string; description: string; projectId: string; createdAt: string;
@@ -23,10 +29,12 @@ export default function ProjectsPage() {
   const [importing, setImporting] = useState(false);
   const [usingTpl, setUsingTpl] = useState('');
   const [error, setError] = useState('');
+  const [learnings, setLearnings] = useState<HostLearning[]>([]);
 
   const load = () => {
     api<{ projects: Project[] }>('/projects').then((d) => setProjects(d.projects)).catch(() => {});
     api<{ templates: Template[] }>('/imports/templates').then((d) => setTemplates(d.templates)).catch(() => {});
+    api<{ learnings: HostLearning[] }>('/imports/learnings').then((d) => setLearnings(d.learnings)).catch(() => {});
   };
   useEffect(() => { load(); }, []);
 
@@ -113,6 +121,28 @@ export default function ProjectsPage() {
           </form>
         </CardContent>
       </Card>
+      {learnings.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base"><Brain className="h-5 w-5" /> Import intelligence</CardTitle>
+            <CardDescription>What the importer has learned about each host — every import makes the next one smarter.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {learnings.map((l) => (
+              <div key={l.host} className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-mono text-xs">{l.host}</span>
+                <Badge variant="outline" className="text-[10px]">{l.successes}/{l.attempts} ok</Badge>
+                {l.learnedUa && <Badge variant="secondary" className="text-[10px]">{l.learnedUa} UA</Badge>}
+                {l.learnedWww && <Badge variant="secondary" className="text-[10px]">{l.learnedWww} host</Badge>}
+                {l.moduleStrategy === 'remote' && <Badge variant="secondary" className="text-[10px]">modules remote</Badge>}
+                {l.jsRenderedCount > 0 && <Badge variant="outline" className="text-[10px]">JS shell ×{l.jsRenderedCount}</Badge>}
+                {l.lastStatus >= 400 && <Badge variant="destructive" className="text-[10px]">last: HTTP {l.lastStatus}</Badge>}
+                <span className="text-xs text-muted-foreground ml-auto">{l.avgTexts} texts avg</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
       {templates.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-lg font-semibold flex items-center gap-2"><LayoutTemplate className="h-5 w-5" /> My templates</h2>

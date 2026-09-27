@@ -429,3 +429,9 @@ start of every new session to evolve instead of rediscovering.
   copy; two runs → different brands, different html; AI-key run = AI-authored
   preview with provider credited; garbage-AI run = honest template fallback
   with `ai_rejected` reason. Full sweep: 36 suites green, tsc clean.
+
+## 2026-09-27 — Importer learns per host (black-screen + bot-wall fix)
+- Root causes of the black/broken preview on arbitrary URLs: (1) JS-rendered shells — almost no static text, app mounted by a `type="module"` script whose dynamic `import()` chunks resolve against the PREVIEW document URL and die; (2) relative asset refs (`/pic.jpg`, `/app.js`) resolving against our `/api/builder/...` preview URL instead of the origin; (3) bot-style importer UA getting 403'd by corporate hosts with no retry.
+- Fix: adaptive fetch — UA retry on 401/403/406, www/bare host-variant retry on DNS failures, ordered by a per-host learnings registry (`import_host_learnings`); module scripts kept remote (absolutized) on hosts learned to be JS shells; all remaining relative refs absolutized against the origin (asset tags + CSS url(), never `<a href>`); render-health diagnosis (`health_json`) per import.
+- UI: amber "JS-rendered shell" banner in Import Studio; "Import intelligence" panel on Projects showing per-host learned strategies.
+- Tests: scripts/test-import-learning.js (31 assertions); all 37 suites green; tsc clean.

@@ -42,52 +42,168 @@ export function resetImporterFetch() {
 }
 
 // ---------------------------------------------------------------------------
-// Fetch (SSRF-guarded, redirect-following, size-capped)
+// Per-host learnings — the importer learns on every run and adapts. Facts are
+// recorded per hostname (global: a host fact is a host fact, not org-private):
+// which user-agent the host accepts, whether it prefers the www/bare variant,
+// whether its pages are JS-rendered shells, and how its module scripts must be
+// handled so the imported page does not preview blank/black.
+
+export function getHostLearning(hostname) {
+  if (!hostname) return null;
+  const row = db.prepare(`SELECT * FROM import_host_learnings WHERE host = ?`).get(String(hostname).toLowerCase());
+  if (!row) return null;
+  return {
+    host: row.host, attempts: row.attempts, successes: row.successes,
+    learnedUa: row.learned_ua, learnedWww: row.learned_www, moduleStrategy: row.module_strategy,
+    avgTexts: row.avg_texts, jsRenderedCount: row.js_rendered_count,
+    lastStatus: row.last_status, lastError: row.last_error, updatedAt: row.updated_at,
+  };
+}
+
+function recordHostLearning(hostname, outcome) {
+  const host = String(hostname || '').toLowerCase();
+  if (!host) return;
+  const prev = db.prepare(`SELECT * FROM import_host_learnings WHERE host = ?`).get(host);
+  const attempts = (prev?.attempts || 0) + 1;
+  const successes = (prev?.successes || 0) + (outcome.ok ? 1 : 0);
+  const avgTexts = attempts > 1
+    ? ((prev.avg_texts * (attempts - 1)) + (outcome.texts || 0)) / attempts
+    : (outcome.texts || 0);
+  const jsRenderedCount = (prev?.js_rendered_count || 0) + (outcome.jsRendered ? 1 : 0);
+  // Remember what WORKED. Failures never overwrite a known-good strategy.
+  const learnedUa = outcome.ok ? (outcome.ua || '') : (prev?.learned_ua || '');
+  const learnedWww = outcome.ok ? (outcome.wwwVariant || prev?.learned_www || '') : (prev?.learned_www || '');
+  let moduleStrategy = prev?.module_strategy || '';
+  if (outcome.ok && outcome.moduleStrategy) moduleStrategy = outcome.moduleStrategy;
+  db.prepare(`INSERT INTO import_host_learnings (host, attempts, successes, learned_ua, learned_www, module_strategy, avg_texts, js_rendered_count, last_status, last_error, updated_at)
+              VALUES (@host, @attempts, @successes, @learnedUa, @learnedWww, @moduleStrategy, @avgTexts, @jsRenderedCount, @lastStatus, @lastError, datetime('now'))
+              ON CONFLICT(host) DO UPDATE SET attempts=@attempts, successes=@successes, learned_ua=@learnedUa,
+                learned_www=@learnedWww, module_strategy=@moduleStrategy, avg_texts=@avgTexts,
+                js_rendered_count=@jsRenderedCount, last_status=@lastStatus, last_error=@lastError, updated_at=datetime('now')`)
+    .run({
+      host, attempts, successes, learnedUa, learnedWww, moduleStrategy,
+      avgTexts, jsRenderedCount,
+      lastStatus: outcome.status || 0, lastError: String(outcome.error || '').slice(0, 200),
+    });
+}
+
+export function listLearnings() {
+  return db.prepare(`SELECT * FROM import_host_learnings ORDER BY updated_at DESC LIMIT 50`).all()
+    .map((row) => ({
+      host: row.host, attempts: row.attempts, successes: row.successes,
+      learnedUa: row.learned_ua || null, learnedWww: row.learned_www || null, moduleStrategy: row.module_strategy || null,
+      avgTexts: Math.round(row.avg_texts || 0), jsRenderedCount: row.js_rendered_count,
+      lastStatus: row.last_status, lastError: row.last_error || null, updatedAt: row.updated_at,
+    }));
+}
+
+// User agents: corporate and template hosts often 403 a bot-style UA. Start with
+// the honest importer UA; per-host learnings promote the browser UA once a host
+// proves to wall it off.
+const UA_IMPORTER = 'LucioAIImporter/1.0 (site import for client work)';
+const UA_BROWSER = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+
+function hostVariants(url, learning) {
+  const host = new URL(url).hostname;
+  const alt = host.startsWith('www.') ? host.slice(4) : `www.${host}`;
+  const learned = learning?.learnedWww || '';
+  const candidates = [host, alt].filter((h, i, a) => a.indexOf(h) === i);
+  // Learned variant first.
+  candidates.sort((a, b) => {
+    const score = (h) => learned === 'www' ? (h.startsWith('www.') ? 0 : 1) : learned === 'bare' ? (h.startsWith('www.') ? 1 : 0) : 0;
+    return score(a) - score(b);
+  });
+  return candidates;
+}
 
 async function readBody(res, maxBytes) {
-  const reader = res.body?.getReader();
-  let received = 0; const chunks = [];
-  if (reader) {
+  const reader = res.body.getReader();
+  const chunks = [];
+  let size = 0;
+  const decoder = new TextDecoder('utf-8', { fatal: false });
+  let text = '';
+  try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      received += value.length;
-      if (received > maxBytes) {
-        chunks.push(value.subarray(0, maxBytes - (received - value.length)));
-        break;
-      }
-      chunks.push(value);
+      size += value.length;
+      if (size > maxBytes) throw new Error(`import: response exceeds ${Math.round(maxBytes / 1024)}KB limit`);
+      chunks.push(decoder.decode(value, { stream: true }));
     }
+    chunks.push(decoder.decode());
+    text = chunks.join('');
+  } finally {
+    try { await reader.cancel(); } catch { /* best-effort */ }
   }
-  return new TextDecoder().decode(Buffer.concat(chunks.map((c) => Buffer.from(c))));
+  return text;
 }
 
-export async function fetchSiteHtml(rawUrl) {
-  let url = assertSafeUrl(String(rawUrl || '').trim());
-  const redirects = [];
-  for (let hop = 0; hop <= 3; hop++) {
-    const res = await fetchImpl(String(url), {
-      redirect: 'manual',
-      signal: AbortSignal.timeout(IMPORT_TIMEOUT_MS),
-      headers: { 'User-Agent': 'LucioAIImporter/1.0 (site import for client work)', Accept: 'text/html,application/xhtml+xml,*/*;q=0.8' },
-    });
-    if ([301, 302, 303, 307, 308].includes(res.status)) {
-      const loc = res.headers.get('location');
-      if (!loc) throw new Error('import: redirect without location header');
-      const next = new URL(loc, url);
-      url = assertSafeUrl(next.toString()); // validate target BEFORE following
-      redirects.push({ from: String(url === next ? url : new URL(loc, url)), to: String(next), status: res.status });
-      url = next;
-      continue;
-    }
-    if (!res.ok) throw new Error(`import: source returned HTTP ${res.status}`);
-    const html = await readBody(res, IMPORT_MAX_BYTES);
-    if (!/<(!doctype|html|head|body|main|section|div)[\s>]/i.test(html.slice(0, 8000))) {
-      throw new Error('import: response is not an HTML page');
-    }
-    return { html, finalUrl: String(url), status: res.status, bytes: html.length, redirects };
+async function tryFetchHtml(url, ua) {
+  const res = await fetchImpl(String(url), {
+    redirect: 'manual',
+    signal: AbortSignal.timeout(IMPORT_TIMEOUT_MS),
+    headers: {
+      'User-Agent': ua,
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+    },
+  });
+  if ([301, 302, 303, 307, 308].includes(res.status)) {
+    const loc = res.headers.get('location');
+    if (!loc) throw new Error('import: redirect without location header');
+    const next = new URL(loc, url);
+    return { redirect: assertSafeUrl(next.toString()) }; // validate BEFORE following
   }
-  throw new Error('import: too many redirects');
+  if (!res.ok) {
+    const e = new Error(`import: source returned HTTP ${res.status}`);
+    e.httpStatus = res.status;
+    throw e;
+  }
+  const html = await readBody(res, IMPORT_MAX_BYTES);
+  if (!/<(!doctype|html|head|body|main|section|div)[\s>]/i.test(html.slice(0, 8000))) {
+    throw new Error('import: response is not an HTML page');
+  }
+  return { html, finalUrl: String(url), status: res.status, bytes: html.length };
+}
+
+// Fetch (SSRF-guarded, redirect-following, size-capped, ADAPTIVE): retries a
+// bot-walled host with the browser UA and the www/bare host variant, ordered by
+// what the learnings say worked last time.
+export async function fetchSiteHtml(rawUrl, learning = null) {
+  const url = assertSafeUrl(String(rawUrl || '').trim());
+  const redirects = [];
+  const uaOrder = learning?.learnedUa === 'browser' ? [UA_BROWSER, UA_IMPORTER] : [UA_IMPORTER, UA_BROWSER];
+  let lastError = null;
+  for (const host of hostVariants(url, learning)) {
+    for (const ua of uaOrder) {
+      let current = new URL(url);
+      current.hostname = host;
+      let currentUrl = current.toString();
+      try {
+        for (let hop = 0; hop <= 3; hop++) {
+          const r = await tryFetchHtml(currentUrl, ua);
+          if (r.redirect) {
+            redirects.push({ from: currentUrl, to: String(r.redirect), status: 'redirect' });
+            currentUrl = String(r.redirect);
+            continue;
+          }
+          return {
+            ...r, redirects,
+            strategy: { ua: ua === UA_BROWSER ? 'browser' : 'importer', hostVariant: host.startsWith('www.') ? 'www' : 'bare' },
+          };
+        }
+        throw new Error('import: too many redirects');
+      } catch (e) {
+        lastError = e;
+        // 401/403/406 → the host walls this UA off: try the next UA.
+        if ([401, 403, 406].includes(e.httpStatus)) continue;
+        // DNS/connection-level failure → try the other host variant.
+        if (/ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNREFUSED|blocked IP/i.test(String(e.message || e))) continue;
+        throw e;
+      }
+    }
+  }
+  throw lastError || new Error('import: host unreachable');
 }
 
 // ---------------------------------------------------------------------------
@@ -127,7 +243,7 @@ function tagAttr(tag, name) {
   return m ? m[2] : null;
 }
 
-export async function inlineExternalAssets(html, pageUrl) {
+export async function inlineExternalAssets(html, pageUrl, { keepModulesRemote = false } = {}) {
   const targets = [];
   const linkRe = /<link\b[^>]*>/gi;
   let m;
@@ -147,6 +263,14 @@ export async function inlineExternalAssets(html, pageUrl) {
     if (!/^https?:/i.test(u.protocol)) continue;
     const abs = u.pathname === '/' && !u.search ? u.toString().replace(/\/$/, '') : u.toString();
     const isModule = /type\s*=\s*["']module["']/i.test(m[0]);
+    if (isModule && keepModulesRemote) {
+      // JS-rendered shells (Framer-style): the module bootstraps dynamic import()
+      // chunks that resolve against the DOCUMENT origin. Inlining would rewrite
+      // those chunks to our preview URL and the app never mounts → black screen.
+      // Keep the module remote (absolutized URL) so chunks resolve at the origin.
+      targets.push({ match: m[0], kind: 'script', url: abs, isModule, keepRemote: true });
+      continue;
+    }
     targets.push({ match: m[0], kind: 'script', url: abs, isModule });
   }
 
@@ -157,6 +281,10 @@ export async function inlineExternalAssets(html, pageUrl) {
       const i = cursor++;
       if (i >= targets.length) return;
       const t = targets[i];
+      if (t.keepRemote) {
+        assets[i] = { url: t.url, kind: 'script', bytes: 0, inlined: false, keptRemote: true, reason: 'module script kept remote — dynamic chunks resolve against the origin' };
+        continue;
+      }
       try {
         const { text, bytes } = await fetchAssetText(t.url);
         const inline = t.kind === 'style'
@@ -182,6 +310,63 @@ export async function inlineExternalAssets(html, pageUrl) {
   // Drop preconnect/dns-prefetch hints that point at hosts we just inlined.
   out = out.replace(/<link\b[^>]*rel\s*=\s*["']?(preconnect|dns-prefetch)[^>]*>/gi, '');
   return { html: out, assets };
+}
+
+// ---------------------------------------------------------------------------
+// Reference absolutization — assets the importer did NOT inline (images,
+// videos, module scripts, anything beyond MAX_INLINE_ASSETS) still carry
+// relative URLs that resolve against OUR preview URL instead of the origin,
+// rendering the preview broken. Rewrite src/href on asset tags (never <a>) to
+// absolute URLs, plus url(...) inside <style> blocks.
+
+const ASSET_TAGS = 'img|script|link|source|video|audio|track|embed|input';
+const SKIP_SCHEMES = /^(data:|blob:|mailto:|tel:|javascript:|#|\/\/)/i;
+
+function absolutizeUrlRef(value, pageUrl) {
+  const v = String(value || '').trim();
+  if (!v || SKIP_SCHEMES.test(v)) return null;
+  let u;
+  try { u = new URL(v, pageUrl); } catch { return null; }
+  if (!/^https?:/i.test(u.protocol)) return null;
+  return u.pathname === '/' && !u.search ? u.toString().replace(/\/$/, '') : u.toString();
+}
+
+export function absolutizeResourceRefs(html, pageUrl) {
+  let out = html.replace(new RegExp(`<(${ASSET_TAGS})\\b([^>]*)>`, 'gi'), (whole, tag, attrs) => {
+    const fixed = attrs.replace(/\b(src|href|poster)\s*=\s*(["'])(.*?)\2/gi, (a, name, quote, value) => {
+      const abs = absolutizeUrlRef(value, pageUrl);
+      return abs ? ` ${name}=${quote}${abs.replace(/"/g, '%22')}${quote}` : a;
+    });
+    return fixed === attrs ? whole : `<${tag}${fixed}>`;
+  });
+  out = out.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, (whole, css) => {
+    const fixed = css.replace(/url\(\s*(["']?)([^"')\s]+)\1\s*\)/gi, (a, quote, value) => {
+      if (/^(data:|blob:|#)/i.test(value)) return a;
+      let u;
+      try { u = new URL(value, pageUrl); } catch { return a; }
+      if (!/^https?:/i.test(u.protocol)) return a;
+      return `url("${u.toString()}")`;
+    });
+    return fixed === css ? whole : whole.replace(css, fixed);
+  });
+  return out;
+}
+
+// Render-health diagnosis: was this a JS-rendered shell with almost no static
+// text? Do failed assets or remote module scripts make a black/blank preview
+// likely? The importer records this per run and learns per host.
+export function assessRenderHealth(html, textCount, assets) {
+  const scripts = (html.match(/<script\b/gi) || []).length;
+  const jsRendered = textCount < 15 && scripts > 0;
+  const failed = assets.filter((a) => !a.inlined && !a.keptRemote && a.kind !== 'scan').length;
+  return {
+    textCount, scripts,
+    jsRendered,
+    assetsInlined: assets.filter((a) => a.inlined).length,
+    assetsKeptRemote: assets.filter((a) => a.keptRemote).length,
+    assetsFailed: failed,
+    blackScreenRisk: jsRendered || failed > 0,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -313,27 +498,48 @@ function ownProjectRow(orgId, projectId) {
 // Import / state / edits / reset
 
 export async function importSite(orgId, user, rawUrl, { inlineAssets = true } = {}, ip = '') {
-  const fetched = await fetchSiteHtml(rawUrl);
+  const host = (() => { try { return new URL(String(rawUrl).trim()).hostname.toLowerCase(); } catch { return ''; } })();
+  const learning = host ? getHostLearning(host) : null;
+  let fetched;
+  try {
+    fetched = await fetchSiteHtml(rawUrl, learning);
+  } catch (e) {
+    if (host) recordHostLearning(host, { ok: false, status: e.httpStatus || 0, error: e.message });
+    throw e;
+  }
   let { html } = fetched;
-  const { finalUrl, status, bytes } = fetched;
+  const { finalUrl, status, bytes, strategy } = fetched;
   // Deep capture: inline external stylesheets + scripts so animations, effects,
   // motions and transitions are part of the project — not references that die
-  // with the origin site.
+  // with the origin site. Hosts learned to be JS-rendered shells keep module
+  // scripts remote so their dynamic chunks resolve against the origin.
+  const keepModulesRemote = learning?.moduleStrategy === 'remote';
   let assets = [];
   if (inlineAssets) {
     try {
-      const inlined = await inlineExternalAssets(html, finalUrl);
+      const inlined = await inlineExternalAssets(html, finalUrl, { keepModulesRemote });
       html = inlined.html;
       assets = inlined.assets;
     } catch {
       assets = [{ url: '(asset scan)', kind: 'scan', bytes: 0, inlined: false, reason: 'asset inlining failed — site imported with remote references only' }];
     }
   }
+  // Everything left relative (images, media, remote modules, overflow assets)
+  // must resolve against the ORIGIN, not our preview URL.
+  html = absolutizeResourceRefs(html, finalUrl);
   const $ = cheerio.load(html);
   const title = String(
     $('meta[property="og:title"]').attr('content') || $('title').first().text() || new URL(finalUrl).hostname
   ).replace(/\s+/g, ' ').trim().slice(0, 120) || 'Imported site';
   const texts = indexEditableTexts(html);
+  const health = assessRenderHealth(html, texts.length, assets);
+  if (host) {
+    recordHostLearning(host, {
+      ok: true, ua: strategy.ua, wwwVariant: strategy.hostVariant, status,
+      texts: texts.length, jsRendered: health.jsRendered,
+      moduleStrategy: keepModulesRemote || health.jsRendered ? 'remote' : '',
+    });
+  }
 
   const projectId = crypto.randomUUID();
   const importId = crypto.randomUUID();
@@ -341,11 +547,11 @@ export async function importSite(orgId, user, rawUrl, { inlineAssets = true } = 
     .run(projectId, orgId, title, `Imported from ${finalUrl}`, 'website', user.id);
   insertSiteArtifact(projectId, html);
   const originalPath = writeOriginal(`${importId}.html`, html);
-  db.prepare(`INSERT INTO site_imports (id, org_id, project_id, source_url, final_url, http_status, bytes, title, original_path, texts_count, assets_json, created_by)
-              VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(importId, orgId, projectId, String(rawUrl), finalUrl, status, bytes, title, originalPath, texts.length, JSON.stringify(assets), user.id);
-  audit(orgId, user.id, 'import.create', 'project', projectId, { source: String(rawUrl), finalUrl, bytes, texts: texts.length, assetsInlined: assets.filter((a) => a.inlined).length }, ip);
-  return { projectId, importId, title, finalUrl, bytes, textsCount: texts.length, assets };
+  db.prepare(`INSERT INTO site_imports (id, org_id, project_id, source_url, final_url, http_status, bytes, title, original_path, texts_count, assets_json, health_json, created_by)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(importId, orgId, projectId, String(rawUrl), finalUrl, status, bytes, title, originalPath, texts.length, JSON.stringify(assets), JSON.stringify(health), user.id);
+  audit(orgId, user.id, 'import.create', 'project', projectId, { source: String(rawUrl), finalUrl, bytes, texts: texts.length, assetsInlined: assets.filter((a) => a.inlined).length, jsRendered: health.jsRendered }, ip);
+  return { projectId, importId, title, finalUrl, bytes, textsCount: texts.length, assets, health, strategy };
 }
 
 export function getImportState(orgId, projectId) {
@@ -360,6 +566,7 @@ export function getImportState(orgId, projectId) {
     texts: site ? indexEditableTexts(site.content) : [],
     snippetCount: site ? extractSnippets(site.content).length : 0,
     assets: record ? safeParse(record.assets_json) : [],
+    health: record ? safeParse(record.health_json) : null,
   };
 }
 

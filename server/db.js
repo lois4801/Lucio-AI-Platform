@@ -236,6 +236,19 @@ CREATE TABLE IF NOT EXISTS build_artifacts (
 -- Imported external websites: original snapshot on disk (data/imports/<id>.html),
 -- working copy lives in build_artifacts like any other site so preview / publish
 -- / sell architecture all work unchanged on imported projects.
+CREATE TABLE IF NOT EXISTS import_host_learnings (
+  host TEXT PRIMARY KEY,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  successes INTEGER NOT NULL DEFAULT 0,
+  learned_ua TEXT NOT NULL DEFAULT '',
+  learned_www TEXT NOT NULL DEFAULT '',
+  module_strategy TEXT NOT NULL DEFAULT '',
+  avg_texts REAL NOT NULL DEFAULT 0,
+  js_rendered_count INTEGER NOT NULL DEFAULT 0,
+  last_status INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS site_imports (
   id TEXT PRIMARY KEY,
   org_id TEXT NOT NULL REFERENCES organizations(id),
@@ -891,6 +904,7 @@ CREATE TABLE IF NOT EXISTS osm_cache (
 {
   const cols = db.prepare('PRAGMA table_info(site_imports)').all().map((c) => c.name);
   if (!cols.includes('assets_json')) db.exec(`ALTER TABLE site_imports ADD COLUMN assets_json TEXT NOT NULL DEFAULT '[]'`);
+  if (!cols.includes('health_json')) db.exec("ALTER TABLE site_imports ADD COLUMN health_json TEXT NOT NULL DEFAULT ''")
 }
 
 // Seed provider registry: local-first, external disabled by default (manual §7, §14)

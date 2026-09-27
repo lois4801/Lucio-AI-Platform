@@ -6,17 +6,22 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
   ArrowLeft, Check, Copy, CheckCheck, ExternalLink, Globe, Loader2, RotateCcw, Rocket,
-  Save, Search, Sparkles, LayoutTemplate, Wand2, FileCode2, ImageOff,
+  Save, Search, Sparkles, LayoutTemplate, Wand2, FileCode2, ImageOff, AlertTriangle,
 } from 'lucide-react';
 
 type EditableText = { id: string; tag: string; context: string; text: string };
+type RenderHealth = {
+  textCount: number; scripts: number; jsRendered: boolean;
+  assetsInlined: number; assetsKeptRemote: number; assetsFailed: number; blackScreenRisk: boolean;
+};
 type ImportState = {
   project: { id: string; name: string; status: string };
   import: { id: string; sourceUrl: string; finalUrl: string; title: string; bytes: number; createdAt: string } | null;
   version: number;
   texts: EditableText[];
   snippetCount: number;
-  assets: { url: string; kind: string; bytes: number; inlined: boolean; reason?: string }[];
+  assets: { url: string; kind: string; bytes: number; inlined: boolean; keptRemote?: boolean; reason?: string }[];
+  health?: RenderHealth | null;
 };
 type Snippet = { kind: string; name: string; hint?: string; content: string; chars?: number; src?: string };
 
@@ -155,6 +160,22 @@ export default function ImportStudioPage() {
       )}
 
       {notice && <p className="text-sm text-primary flex items-center gap-1"><Sparkles className="h-4 w-4" /> {notice}</p>}
+
+      {state.health?.blackScreenRisk && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-500" />
+          <div className="space-y-1">
+            <p className="font-medium">This source is a JavaScript-rendered shell — the preview may look blank or black.</p>
+            <p className="text-muted-foreground">
+              The page only exposes {state.health.textCount} static text{state.health.textCount === 1 ? '' : 's'} but ships {state.health.scripts} script{state.health.scripts === 1 ? '' : 's'}
+              {state.health.jsRendered ? ' — its content is built in the browser at runtime' : ''}.
+              {state.health.assetsKeptRemote > 0 && <> {state.health.assetsKeptRemote} module script{state.health.assetsKeptRemote === 1 ? ' is' : 's are'} kept loading from the origin so the app can mount.</>}
+              {state.health.assetsFailed > 0 && <> {state.health.assetsFailed} asset{state.health.assetsFailed === 1 ? '' : 's'} failed to capture — the importer will retry with a learned strategy on the next import of this host.</>}
+            </p>
+            <p className="text-muted-foreground">Every import of this host teaches the importer a better strategy. Reset or re-import to apply what it learned.</p>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-[1fr_380px]">
         <div className="rounded-lg border overflow-hidden bg-background">

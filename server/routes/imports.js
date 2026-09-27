@@ -5,6 +5,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import {
   importSite, getImportState, applyEdits, resetImport,
   saveAsTemplate, listTemplates, useTemplate, deleteTemplate, getImportSnippets,
+  listLearnings,
 } from '../services/siteImporter.js';
 
 export const importsRouter = Router();
@@ -69,6 +70,10 @@ importsRouter.post('/project/:projectId/save-template', requireRole('member'), (
     res.status(201).json(out);
   } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
+
+// What the importer has LEARNED per host (UA walls, www/bare variants,
+// JS-rendered module strategy) — powers the Import intelligence panel.
+importsRouter.get('/learnings', (req, res) => res.json({ learnings: listLearnings() }));
 
 // Template library.
 importsRouter.get('/templates', (req, res) => res.json({ templates: listTemplates(req.user.orgId) }));
