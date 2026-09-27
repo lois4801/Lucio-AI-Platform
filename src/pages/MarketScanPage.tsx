@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { api } from '@/lib/api';
+import AgentAssist from '@/components/AgentAssist';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -483,6 +484,8 @@ export default function MarketScanPage() {
           {notice && <p className="text-sm text-green-600 dark:text-green-400">{notice}</p>}
         </CardContent>
       </Card>
+
+      <AgentAssist context="scanner" industry={form.industry} scanId={scan?.id || ''} />
 
       {scan && (
         <Card>

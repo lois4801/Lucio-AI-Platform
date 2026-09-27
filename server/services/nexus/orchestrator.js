@@ -139,8 +139,27 @@ export async function executeRun(orgId, runId, userId) {
       return { messages: [`Structured brief drafted (${gen.provider})`], brief: null, planNote: gen.content };
     });
     const brief = { ...getProject(orgId, run.project_id).brief, ...briefFromIntent(r.intent, getProject(orgId, run.project_id).brief) };
-    const plan = buildPlan(brief);
+    // Wire the Auto Data Engine content pack for this industry (when covered) so
+    // every generated site ships pre-loaded hero copy, services, FAQs, CTAs and
+    // SEO tags. Additive only — a missing pack never blocks or changes the plan.
+    let contentPack = null;
+    try {
+      const { getContentPack } = await import('../autoData.js');
+      const pack = getContentPack(brief.industry);
+      if (pack) {
+        contentPack = {
+          industry: pack.industry, family: pack.family_label, keywords: pack.keywords,
+          heroes: pack.heroes, taglines: pack.taglines, services: pack.services,
+          faqs: pack.faqs, ctas: pack.ctas, seo: pack.seo,
+        };
+        db.prepare(`UPDATE builder_projects SET brief_json = ? WHERE id = ?`)
+          .run(JSON.stringify({ ...getProject(orgId, run.project_id).brief, contentPack }), run.project_id);
+      }
+    } catch { /* content packs are additive — never break a build */ }
+    const briefWithPack = contentPack ? { ...brief, contentPack } : brief;
+    const plan = buildPlan(briefWithPack);
     emit('plan.created', 'product-manager', { planId: `${runId}-plan-1`, steps: plan.steps.map((s) => s.task) });
+    if (contentPack) emit('content.pack', 'product-manager', { industry: contentPack.industry, family: contentPack.family, heroes: contentPack.heroes.length, services: contentPack.services.length, faqs: contentPack.faqs.length, seoTemplates: contentPack.seo?.title_templates?.length || 0 });
     if (!guard(plan.steps.length > 0, 'plan produced no steps', 'retry with a more specific intent')) return getRun(orgId, runId);
 
     r = setStatus(orgId, r, 'building');
@@ -157,7 +176,7 @@ export async function executeRun(orgId, runId, userId) {
       await agentStep(r, 'qa-engineer', 'verify-only', async () => ({ messages: ['verify mode: preserving working tree, running evidence suite on current files'] }));
     } else {
       const engOut = await agentStep(r, 'frontend-engineer', 'implement', async () => {
-        const { files, meta } = generateFiles(brief);
+        const { files, meta } = generateFiles(briefWithPack);
         const ops = Object.entries(files).map(([path, content]) => ({ op: getFileExists(run.project_id, path) ? 'update' : 'create', path, content }));
         applyOps(run.project_id, ops);
         for (const [path, content] of Object.entries(files)) {

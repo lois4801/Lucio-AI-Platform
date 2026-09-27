@@ -3,7 +3,7 @@
 // keys are accepted per request (body.key or x-claw-key header) and never stored.
 import { Router } from 'express';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { clawStatus, createJob, getJob, listJobs, executeJob, subscribeJob } from '../services/clawCoder.js';
+import { clawStatus, createJob, getJob, listJobs, executeJob, subscribeJob, jobOutput, applyJobToProject } from '../services/clawCoder.js';
 
 export const clawRouter = Router();
 clawRouter.use(requireAuth);
@@ -28,6 +28,20 @@ clawRouter.get('/jobs/:id', (req, res) => {
   const j = getJob(req.user.orgId, req.params.id);
   if (!j) return res.status(404).json({ error: 'job not found' });
   res.json({ job: j });
+});
+
+// Files the job wrote into its workspace, with create/update/unchanged status vs
+// the project's current tree — the preview behind "Apply to project".
+clawRouter.get('/jobs/:id/output', requireRole('member'), (req, res) => {
+  try { res.json(jobOutput(req.user.orgId, req.params.id)); }
+  catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
+// Merge selected (or all changed) job output files into the NEXUS project as an
+// immutable checkpoint. Guardian-screened; evidence suite re-run for the report.
+clawRouter.post('/jobs/:id/apply', requireRole('member'), (req, res) => {
+  try { res.json(applyJobToProject({ orgId: req.user.orgId, userId: req.user.id, jobId: req.params.id, files: req.body?.files || null })); }
+  catch (e) { res.status(e.status || 500).json({ error: e.message }); }
 });
 
 clawRouter.get('/jobs/:id/events', (req, res) => {

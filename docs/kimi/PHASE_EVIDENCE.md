@@ -1048,3 +1048,10 @@ on; suppression respected; delivery still honest — `sent` only via webhook or 
   dark styling via CSS filter on the tile pane; OSM attribution control.
 - Full regression: 1045 assertions across 25 suites, 0 failures (sell + autodata pinned to
   fixture mode after .env began exporting OSM_LIVE_ENABLED=true via server/index.js loader).
+
+### Builder integration batch (2026-09-27)
+- scripts/test-nexus-contentpack.js — 20/20: pack pre-load (services/FAQ/SEO meta/data.json/brief/event), uncovered-industry placeholder parity, evidence green.
+- scripts/test-autofix-auto.js — 16/16: ask-first staging vs auto hands-free chain (fix → parented /verify → completed → RESOLVED + run.unblocked), loop guard (verify runs never re-intake, incident count stable), .md repair.
+- scripts/test-claw-apply.js — 21/21: output preview (create/update/unchanged, scaffolding excluded), selection-filtered checkpoint apply, post-merge evidence report, guardian 409s (uncompleted/oversized/destructive/sensitive/no-op), authz.
+- scripts/test-agent-suggest.js — 15/15: hint until enabled, enabled-only deterministic suggestions with shape contract + limits, scanner context + industry param, grounded chat on a suggested agent.
+- Full regression: 1117 assertions across 29 suites, 0 failures; tsc + build green.

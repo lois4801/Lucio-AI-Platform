@@ -11,6 +11,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import { db, audit } from '../db.js';
+import { applyOps, createCheckpoint } from './nexus/vfs.js';
+import { CHECKS } from './nexus/evidence.js';
+import { hashContent } from './nexus/protocol.js';
 
 const DATA_DIR = process.env.LUCIO_DATA_DIR || path.resolve(fileURLToPath(new URL('../../', import.meta.url)), 'data');
 const WORKSPACES = path.join(DATA_DIR, 'claw-workspaces');
@@ -196,4 +199,78 @@ export function executeJob(orgId, jobId, key = '') {
     audit(orgId, job.user_id, okExit ? 'claw.job.completed' : 'claw.job.failed', 'claw_job', jobId, { exitCode: code }, '');
   });
   return child;
+}
+
+// --- "Apply to project" — merge a finished job's workspace into its NEXUS project ----
+// Preview first, apply second: the UI lists exactly what the agent wrote (create /
+// update / unchanged vs the current VFS tree), the owner picks, and one click
+// applies the selection as an immutable checkpoint under the same guardian rules
+// as the auto-fix path (no destructive or sensitive-surface content, size caps).
+
+const SKIP_OUTPUT = new Set(['CONTEXT.md', 'session.json']);
+const OUTPUT_CAP_FILES = 20;
+const OUTPUT_CAP_BYTES = 128 * 1024;
+// Assignment-scoped (not blunt substring): flags actual secret-looking material
+// like `api_key: "sk-…"` / `const TOKEN = "…"` without rejecting everyday words
+// such as "Design Engine tokens" or "author" in a README.
+const OUTPUT_SENSITIVE = /[A-Za-z0-9_]*(api[_-]?key|secret|token|password|passwd|stripe|paypal|billing)[A-Za-z0-9_]*\s*[:=]\s*["'`][^"'`\n]{6,}["'`]/i;
+const OUTPUT_DESTRUCTIVE = /drop\s+table|delete\s+from|truncate\s|rm\s+-rf|DROP\s+DATABASE/i;
+
+export function jobOutput(orgId, jobId) {
+  const job = db.prepare(`SELECT * FROM claw_jobs WHERE id = ? AND org_id = ?`).get(jobId, orgId);
+  if (!job) throw Object.assign(new Error('claw job not found'), { status: 404 });
+  const files = [];
+  if (job.workspace_dir && fs.existsSync(job.workspace_dir)) {
+    for (const name of fs.readdirSync(job.workspace_dir).sort()) {
+      if (SKIP_OUTPUT.has(name) || name.endsWith('.toml')) continue;
+      const full = path.join(job.workspace_dir, name);
+      if (!fs.statSync(full).isFile()) continue;
+      const content = fs.readFileSync(full, 'utf8');
+      const existing = db.prepare(`SELECT hash FROM builder_files WHERE project_id = ? AND path = ?`).get(job.project_id, name);
+      files.push({
+        path: name, size: content.length,
+        action: existing ? (existing.hash === hashContent(content) ? 'unchanged' : 'update') : 'create',
+        content: content.slice(0, 20000),
+      });
+    }
+  }
+  return { job: { id: job.id, project_id: job.project_id, status: job.status, prompt: job.prompt }, files };
+}
+
+export function applyJobToProject({ orgId, userId, jobId, files: selected = null }) {
+  const job = db.prepare(`SELECT * FROM claw_jobs WHERE id = ? AND org_id = ?`).get(jobId, orgId);
+  if (!job) throw Object.assign(new Error('claw job not found'), { status: 404 });
+  if (job.status !== 'completed') {
+    throw Object.assign(new Error(`claw job is ${job.status} — only completed jobs can be applied`), { status: 409 });
+  }
+  const project = db.prepare(`SELECT id, name FROM builder_projects WHERE id = ? AND org_id = ?`).get(job.project_id, orgId);
+  if (!project) throw Object.assign(new Error('the job NEXUS project no longer exists'), { status: 404 });
+
+  const out = jobOutput(orgId, jobId);
+  const wanted = selected && selected.length ? new Set(selected.map(String)) : null;
+  const targets = out.files.filter((f) => f.action !== 'unchanged' && (!wanted || wanted.has(f.path)));
+  if (!targets.length) throw Object.assign(new Error('nothing to apply — no changed files in this job output'), { status: 409 });
+  if (targets.length > OUTPUT_CAP_FILES) throw Object.assign(new Error(`refusing to apply ${targets.length} files (> ${OUTPUT_CAP_FILES})`), { status: 409 });
+
+  const existingRows = db.prepare(`SELECT path, hash FROM builder_files WHERE project_id = ?`).all(project.id);
+  const byPath = Object.fromEntries(existingRows.map((r) => [r.path, r]));
+  const ops = [];
+  for (const t of targets) {
+    if (t.size > OUTPUT_CAP_BYTES) throw Object.assign(new Error(`${t.path} exceeds the 128KB apply cap`), { status: 409 });
+    const content = fs.readFileSync(path.join(job.workspace_dir, t.path), 'utf8');
+    if (OUTPUT_DESTRUCTIVE.test(content)) throw Object.assign(new Error(`guardian: destructive pattern in ${t.path} — apply refused`), { status: 409 });
+    if (OUTPUT_SENSITIVE.test(content)) throw Object.assign(new Error(`guardian: sensitive surface (auth/payments/secrets) in ${t.path} — apply refused`), { status: 409 });
+    ops.push({ op: byPath[t.path] ? 'update' : 'create', path: t.path, content, ...(byPath[t.path] ? { baseHash: byPath[t.path].hash } : {}) });
+  }
+
+  const cp = createCheckpoint({ orgId, projectId: project.id, userId, label: `claw job ${jobId.slice(0, 8)} — ${targets.length} file(s) applied` });
+  applyOps(project.id, ops);
+
+  // Report the evidence suite over the merged tree (pure check run — no rows persisted).
+  const tree = db.prepare(`SELECT path, content FROM builder_files WHERE project_id = ?`).all(project.id)
+    .map((r) => ({ path: r.path, content: r.content }));
+  const evidence = CHECKS.map((c) => ({ category: c.category, check: c.name, mandatory: !!c.mandatory, pass: c.run(tree).pass, detail: c.run(tree).detail }));
+
+  audit(orgId, userId, 'claw.job.applied', 'claw_job', jobId, { projectId: project.id, files: targets.map((t) => t.path).join(','), checkpointId: cp.id }, '');
+  return { applied: targets.map((t) => ({ path: t.path, action: t.action })), checkpoint: { id: cp.id, label: cp.label, manifestHash: cp.manifest_hash }, evidence };
 }

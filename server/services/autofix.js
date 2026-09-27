@@ -109,20 +109,63 @@ function guessType(error) {
 }
 
 function extractFile(error) {
-  const m = String(error).match(/([\w./-]+\.(?:js|ts|jsx|tsx|html|css|json|sql|py))/);
-  return m ? m[1].replace(/^\.\//, '') : '';
+  const m = String(error).match(/([\w./-]+\.(?:js|ts|jsx|tsx|html|css|json|sql|py|md))/) || String(error).match(/\b(missing|not found):\s*([\w./-]+\.[a-z]{2,4})\b/i);
+  return m ? (m[2] || m[1]).replace(/^\.\//, '') : '';
 }
 
 // Auto-intake from a blocked NEXUS run's failing mandatory checks.
 export function intakeFromRun(orgId, projectId, runId) {
+  const run = db.prepare(`SELECT intent FROM builder_runs WHERE id = ? AND project_id = ?`).get(runId, projectId);
+  // An auto-fix follow-up verify run IS the re-check — intaking its failures would
+  // loop auto mode forever (fix → verify → intake the verify run → fix …). Manual
+  // /verify runs still intake normally.
+  if (!run || String(run.intent || '').trim().startsWith('/verify auto-fix follow-up')) return [];
   const rows = db.prepare(
     `SELECT check_name, detail FROM builder_evidence WHERE run_id = ? AND project_id = ? AND mandatory = 1 AND status = 'fail'`
   ).all(runId, projectId);
   const out = [];
   for (const r of rows) {
-    out.push(intakeIncident({ orgId, projectId, source: 'nexus-run', raw: { type: 'build', error: `mandatory check "${r.check_name}" failed: ${r.detail}`, severity: 'blocker' } }));
+    const intake = intakeIncident({ orgId, projectId, source: 'nexus-run', raw: { type: 'build', error: `mandatory check "${r.check_name}" failed: ${r.detail}`, severity: 'blocker' } });
+    out.push(intake);
+    // Auto mode: run the incident immediately instead of waiting for a human.
+    // runIncident is synchronous and bounded (guardian loop limit); failures
+    // escalate the incident, never the caller.
+    if (autoFixMode(orgId) === 'auto' && !intake.deduped) {
+      const actor = db.prepare(`SELECT id FROM users WHERE org_id = ? ORDER BY rowid LIMIT 1`).get(orgId)?.id || '';
+      try { runIncident({ orgId, userId: actor, incidentId: intake.incident.id }); }
+      catch (e) { appendEvent(intake.incident.id, 'orchestrator', { auto_run_error: String(e.message).slice(0, 200) }); }
+    }
   }
   return out;
+}
+
+// ---- AUTO-MODE VERIFY + UNBLOCK --------------------------------------------------
+// After a verified fix lands in auto mode, re-run the NEXUS evidence suite as a
+// /verify run against the current tree. If it passes, the blocked run is linked
+// to the verify run and marked resolved — the project is unblocked end-to-end
+// without a human in the loop. Lazy import keeps the module graph acyclic
+// (orchestrator lazy-imports this file for intake).
+function maybeAutoVerifyAndUnblock(orgId, userId, projectId) {
+  if (autoFixMode(orgId) !== 'auto') return;
+  const blocked = db.prepare(`SELECT * FROM builder_runs WHERE project_id = ? AND status = 'blocked' ORDER BY rowid DESC LIMIT 1`).get(projectId);
+  if (!blocked) return;
+  setImmediate(() => {
+    (async () => {
+      const m = await import('./nexus/orchestrator.js');
+      const verify = m.createRun({
+        orgId, projectId, userId,
+        intent: `/verify auto-fix follow-up for blocked run ${blocked.id.slice(0, 8)}`,
+        parentRunId: blocked.id,
+      });
+      const result = await m.executeRun(orgId, verify.id, userId);
+      if (result.status !== 'completed') return; // stays blocked; incidents already re-intakeable
+      db.prepare(`UPDATE builder_runs SET error = ? WHERE id = ?`)
+        .run(`${blocked.error || 'blocked'} — RESOLVED by auto-fix; verified green in follow-up run ${verify.id.slice(0, 8)}`, blocked.id);
+      const { appendAndPublish } = await import('./nexus/protocol.js');
+      appendAndPublish(blocked.id, 'run.unblocked', 'orchestrator', { byRunId: verify.id, verifyStatus: result.status });
+      audit(orgId, userId, 'builder.run.unblocked', 'builder_run', blocked.id, { byRunId: verify.id }, '');
+    })().catch((e) => console.error('[autofix auto-verify failed]', e.message));
+  });
 }
 
 // ---- TRIAGER --------------------------------------------------------------------
@@ -359,6 +402,7 @@ export function applyProposed({ orgId, userId, incident, proposed, files }) {
     setIncident(incident.id, { status: 'fixed', fixed_at: new Date().toISOString(), summary: proposed.why });
     appendEvent(incident.id, 'orchestrator', { fixed: true, files: proposed.patches.map((p) => p.path), checkpointId: cp.id });
     audit(orgId, userId, 'autofix.fixed', 'autofix_incident', incident.id, { files: proposed.patches.map((p) => p.path).join(',') }, '');
+    maybeAutoVerifyAndUnblock(orgId, userId, incident.project_id); // no-op unless org is in auto mode
     return getIncident(orgId, incident.id);
   }
   restoreCheckpoint({ orgId, projectId: incident.project_id, checkpointId: cp.id, userId });
@@ -453,5 +497,6 @@ export function applyClawResult({ orgId, userId, incidentId, jobId }) {
   setIncident(incidentId, { status: 'fixed', fixed_at: new Date().toISOString(), summary: `fixed by Claw Coder job ${jobId.slice(0, 8)} (${patches.map((p) => p.path).join(', ')})` });
   appendEvent(incidentId, 'orchestrator', { fixed: true, via: 'claw', files: patches.map((p) => p.path) });
   audit(orgId, userId, 'autofix.fixed_by_claw', 'autofix_incident', incidentId, { jobId, files: patches.map((p) => p.path).join(',') }, '');
+  maybeAutoVerifyAndUnblock(orgId, userId, incident.project_id); // no-op unless org is in auto mode
   return getIncident(orgId, incidentId);
 }

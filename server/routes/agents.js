@@ -2,7 +2,7 @@
 // streaming chat. All routes authenticated; enable/disable requires member.
 import { Router } from 'express';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { listAgents, getAgent, divisions, setAgentEnabled } from '../services/agentPacks.js';
+import { listAgents, getAgent, divisions, setAgentEnabled, suggestAgents } from '../services/agentPacks.js';
 import { chat, history, streamReply } from '../services/agentChat.js';
 
 export const agentsRouter = Router();
@@ -18,6 +18,15 @@ agentsRouter.get('/', (req, res) => {
 agentsRouter.get('/enabled', (req, res) => {
   const enabled = listAgents(req.user.orgId, {}).filter((a) => a.enabled);
   res.json({ agents: enabled });
+});
+
+// Contextual specialist offers for a surface (builder/scanner/...) + industry.
+agentsRouter.get('/suggest', (req, res) => {
+  res.json(suggestAgents(req.user.orgId, {
+    context: String(req.query.context || 'builder'),
+    industry: String(req.query.industry || ''),
+    limit: Number(req.query.limit) || 3,
+  }));
 });
 
 agentsRouter.get('/:id', (req, res) => {

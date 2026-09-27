@@ -168,3 +168,43 @@ export function setAgentEnabled(orgId, agentId, userId, enabled) {
   }
   return { agentId, enabled };
 }
+
+// --- contextual suggestions -------------------------------------------------------
+// Deterministic specialist matching for the "right agent at the right moment"
+// layer: score ENABLED directory agents against where the user is and what they
+// are working on, return the top few with a plain reason. Never invents agents —
+// the directory is the only source.
+
+const CONTEXT_KEYWORDS = {
+  builder: ['seo', 'ux', 'ui', 'design', 'brand', 'copy', 'content', 'frontend', 'web', 'conversion', 'landing', 'code', 'developer', 'marketing'],
+  scanner: ['lead', 'sales', 'outreach', 'market', 'research', 'crm', 'prospect', 'seo', 'local', 'growth', 'email', 'agency'],
+  claw: ['code', 'developer', 'debug', 'frontend', 'backend', 'refactor', 'test', 'engineer'],
+  autofix: ['qa', 'test', 'debug', 'code', 'quality', 'engineer', 'review'],
+};
+
+export function suggestAgents(orgId, { context = 'builder', industry = '', limit = 3 } = {}) {
+  const enabled = listAgents(orgId, {}).filter((a) => a.enabled);
+  if (!enabled.length) return { suggestions: [], hint: 'No agents enabled yet — enable specialists on the AI Agents page and they will show up here as you build.' };
+  const kws = CONTEXT_KEYWORDS[context] || CONTEXT_KEYWORDS.builder;
+  const ind = String(industry || '').toLowerCase().trim();
+  const scored = enabled.map((a) => {
+    const hay = `${a.name} ${a.description} ${(a.tags || []).join(' ')}`.toLowerCase();
+    let score = 0;
+    const hits = [];
+    for (const k of kws) {
+      if (hay.includes(k)) { score += 2; hits.push(k); }
+    }
+    if (ind && (hay.includes(ind) || (a.tags || []).some((t) => t.toLowerCase() === ind))) { score += 4; hits.push(ind); }
+    return { agent: a, score, hits: [...new Set(hits)].slice(0, 4) };
+  }).filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score || a.agent.name.localeCompare(b.agent.name))
+    .slice(0, Math.max(1, Math.min(6, limit)));
+  return {
+    suggestions: scored.map((s) => ({
+      id: s.agent.id, name: s.agent.name, emoji: s.agent.emoji, division: s.agent.division,
+      description: s.agent.description, score: s.score,
+      reason: s.hits.length ? `matches ${s.hits.slice(0, 3).join(', ')}` : '',
+    })),
+    hint: '',
+  };
+}

@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input';
 
 type ClawStatus = { configured: boolean; mode: string; binary: string | null; cargo: boolean; steps: string[] };
 type Job = { id: string; project_id: string; prompt: string; status: string; error: string; exit_code: number | null; created_at: string };
+type OutFile = { path: string; size: number; action: 'create' | 'update' | 'unchanged'; content: string };
+type ApplyResult = { applied: { path: string; action: string }[]; checkpoint: { id: string; label: string; manifestHash: string }; evidence: { category: string; check: string; mandatory: boolean; pass: boolean; detail: string }[] };
 
 export default function ClawPage() {
   const [status, setStatus] = useState<ClawStatus | null>(null);
@@ -19,6 +21,36 @@ export default function ClawPage() {
   const [lines, setLines] = useState<string[]>([]);
   const [msg, setMsg] = useState('');
   const esRef = useRef<EventSource | null>(null);
+  // Apply-to-project state
+  const [outFiles, setOutFiles] = useState<OutFile[]>([]);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [preview, setPreview] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
+
+  const loadOutput = async (jobId: string) => {
+    setApplyResult(null); setPreview(null);
+    try {
+      const r = await api<{ files: OutFile[] }>(`/claw/jobs/${jobId}/output`);
+      setOutFiles(r.files || []);
+      setPicked(new Set((r.files || []).filter((f) => f.action !== 'unchanged').map((f) => f.path)));
+    } catch { setOutFiles([]); setPicked(new Set()); }
+  };
+  useEffect(() => {
+    if (activeJob?.status === 'completed') loadOutput(activeJob.id);
+    else { setOutFiles([]); setPicked(new Set()); setApplyResult(null); }
+  }, [activeJob?.id, activeJob?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const togglePick = (p: string) => setPicked((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; });
+  const apply = async () => {
+    if (!activeJob || applying) return;
+    setApplying(true); setMsg('');
+    try {
+      const r = await api<ApplyResult>(`/claw/jobs/${activeJob.id}/apply`, { method: 'POST', body: JSON.stringify({ files: [...picked] }) });
+      setApplyResult(r);
+    } catch (e: any) { setMsg(e.message); }
+    finally { setApplying(false); }
+  };
 
   const loadStatus = () => api('/claw/status').then((r) => setStatus(r.claw)).catch((e) => setMsg(e.message));
   const loadJobs = () => api('/claw/jobs').then((r) => setJobs(r.jobs)).catch(() => {});
@@ -132,6 +164,53 @@ export default function ClawPage() {
           </CardContent>
         </Card>
       </div>
+
+      {activeJob?.status === 'completed' && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Apply to project</CardTitle>
+            <CardDescription>
+              Files Claw wrote in its workspace, diffed against your NEXUS project tree. Pick what to merge — everything applies as one immutable checkpoint you can roll back.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {outFiles.length === 0 && <p className="text-xs text-muted-foreground">No output files in this job's workspace.</p>}
+            {outFiles.map((f) => (
+              <div key={f.path} className="rounded-md border text-sm">
+                <div className="flex items-center gap-2 px-3 py-2">
+                  <input type="checkbox" checked={picked.has(f.path)} onChange={() => togglePick(f.path)} disabled={f.action === 'unchanged'} />
+                  <span className="font-mono text-xs flex-1">{f.path}</span>
+                  <span className="text-[10px] text-muted-foreground">{(f.size / 1024).toFixed(1)} KB</span>
+                  <Badge variant={f.action === 'create' ? 'default' : f.action === 'update' ? 'secondary' : 'outline'}>{f.action}</Badge>
+                  <Button size="sm" variant="ghost" onClick={() => setPreview(preview === f.path ? null : f.path)}>{preview === f.path ? 'Hide' : 'Preview'}</Button>
+                </div>
+                {preview === f.path && (
+                  <pre className="max-h-64 overflow-auto border-t bg-muted/40 p-3 text-[11px] whitespace-pre-wrap">{f.content.slice(0, 4000)}</pre>
+                )}
+              </div>
+            ))}
+            <div className="flex items-center gap-3">
+              <Button onClick={apply} disabled={applying || picked.size === 0}>
+                {applying ? 'Applying…' : `Apply ${picked.size} file(s) as checkpoint`}
+              </Button>
+              {applyResult && (
+                <span className="text-xs text-green-600 dark:text-green-400">
+                  Checkpoint <code>{applyResult.checkpoint.id.slice(0, 8)}</code> created — {applyResult.applied.length} file(s) merged.
+                  Evidence: {applyResult.evidence.filter((e) => e.pass).length}/{applyResult.evidence.length} checks pass
+                  {applyResult.evidence.some((e) => e.mandatory && !e.pass) ? ' — mandatory failures, review before deploying' : ''}.
+                </span>
+              )}
+            </div>
+            {applyResult && (
+              <div className="text-[11px] text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
+                {applyResult.evidence.map((e, i) => (
+                  <span key={i} className={e.pass ? '' : 'text-destructive'}>{e.pass ? '✓' : '✗'} {e.check}</span>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

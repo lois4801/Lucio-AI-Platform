@@ -62,21 +62,26 @@ export function generateFiles(brief) {
   const tokens = TOKEN_SETS[universe];
   const facts = factsFromBrief(brief);
   const name = brief.name || 'Untitled Project';
-  const tagline = brief.tagline || placeholder('one-line value proposition');
+  // Auto Data Engine content pack (when the industry is covered): real hero copy,
+  // taglines, services, FAQs, CTAs and SEO templates pre-loaded — generated sites
+  // ship with industry content instead of empty placeholders wherever the pack
+  // covers a slot. Explicit brief fields always win over the pack.
+  const pack = brief.contentPack || null;
+  const tagline = brief.tagline || (pack ? pickPackLine(pack.heroes, name) : '') || placeholder('one-line value proposition');
   const industry = brief.industry || 'General';
 
   const css = renderCss(tokens);
   const files = {};
   if (appType === 'website') {
-    files['index.html'] = renderSiteHtml({ name, tagline, industry, facts, tokens, sections: ['hero', 'about', 'services', 'gallery', 'contact'] });
+    files['index.html'] = renderSiteHtml({ name, tagline, industry, facts, tokens, sections: ['hero', 'about', 'services', ...(pack && Array.isArray(pack.faqs) && pack.faqs.length ? ['faq'] : []), 'gallery', 'contact'], pack });
     files['styles.css'] = css;
     files['app.js'] = renderAppJs({ name, kind: 'website', facts });
-    files['data.json'] = JSON.stringify({ name, industry, facts, generated: 'lucio-nexus', universe }, null, 2);
+    files['data.json'] = JSON.stringify({ name, industry, facts, generated: 'lucio-nexus', universe, content_pack: packMeta(pack) }, null, 2);
   } else if (appType === 'saas-landing') {
-    files['index.html'] = renderSiteHtml({ name, tagline, industry, facts, tokens, sections: ['hero', 'features', 'pricing', 'faq', 'contact'], saas: true });
+    files['index.html'] = renderSiteHtml({ name, tagline, industry, facts, tokens, sections: ['hero', 'features', 'pricing', 'faq', 'contact'], saas: true, pack });
     files['styles.css'] = css;
     files['app.js'] = renderAppJs({ name, kind: 'saas', facts });
-    files['data.json'] = JSON.stringify({ name, industry, facts, generated: 'lucio-nexus', universe, plans: ['Starter', 'Growth', 'Scale'] }, null, 2);
+    files['data.json'] = JSON.stringify({ name, industry, facts, generated: 'lucio-nexus', universe, plans: ['Starter', 'Growth', 'Scale'], content_pack: packMeta(pack) }, null, 2);
   } else if (appType === 'dashboard') {
     files['index.html'] = renderDashboardHtml({ name, tokens });
     files['styles.css'] = css;
@@ -100,17 +105,36 @@ export function generateFiles(brief) {
 function navLinks(sections) {
   return sections.map((s) => `<a href="#${s}">${s[0].toUpperCase() + s.slice(1)}</a>`).join('');
 }
-function renderSiteHtml({ name, tagline, industry, facts, tokens, sections, saas = false }) {
+// Deterministic pack line choice — same project name always gets the same variant.
+function pickPackLine(lines, seed) {
+  if (!Array.isArray(lines) || !lines.length) return '';
+  const n = [...String(seed)].reduce((a, c) => a + c.charCodeAt(0), 0);
+  return lines[n % lines.length];
+}
+function packMeta(pack) {
+  if (!pack) return undefined;
+  return { industry: pack.industry, family: pack.family, heroes: pack.heroes, taglines: pack.taglines, services: pack.services, faqs: pack.faqs, ctas: pack.ctas, seo: pack.seo };
+}
+function renderSiteHtml({ name, tagline, industry, facts, tokens, sections, saas = false, pack = null }) {
+  const packServices = pack && Array.isArray(pack.services) && pack.services.length
+    ? pack.services.slice(0, 6).map((s) => `<li><strong>${esc(s.name)}</strong> — ${esc(s.description)}</li>`).join('')
+    : null;
+  const packFaqs = pack && Array.isArray(pack.faqs) && pack.faqs.length
+    ? pack.faqs.slice(0, 5).map((f) => `<details><summary>${esc(f.q)}</summary><p>${esc(f.a)}</p></details>`).join('')
+    : null;
+  const seoDesc = pack && pack.seo && Array.isArray(pack.seo.meta_desc_templates) && pack.seo.meta_desc_templates.length
+    ? esc(pack.seo.meta_desc_templates[0]) : '';
+  const seoKeywords = pack && Array.isArray(pack.keywords) ? esc(pack.keywords.slice(0, 8).join(', ')) : '';
   const phone = facts.phone ? `<a href="tel:${esc(facts.phone)}">${esc(facts.phone)}</a>` : placeholder('phone number');
   const email = facts.email ? `<a href="mailto:${esc(facts.email)}">${esc(facts.email)}</a>` : placeholder('email address');
   const address = facts.address ? esc(facts.address) : placeholder('street address');
   const body = {
     hero: `<section id="hero" class="hero"><h1>${esc(name)}</h1><p class="tagline">${esc(tagline)}</p><a class="cta" href="#contact">${saas ? 'Start free trial' : 'Get in touch'}</a></section>`,
     about: `<section id="about"><h2>About</h2><p>${facts.about ? esc(facts.about) : placeholder('short, factual about text — verified facts only')}</p></section>`,
-    services: `<section id="services"><h2>Services</h2><ul class="cards"><li>${esc(industry)} service one — ${placeholder('service detail')}</li><li>${esc(industry)} service two — ${placeholder('service detail')}</li><li>${esc(industry)} service three — ${placeholder('service detail')}</li></ul></section>`,
+    services: `<section id="services"><h2>Services</h2><ul class="cards">${packServices || `<li>${esc(industry)} service one — ${placeholder('service detail')}</li><li>${esc(industry)} service two — ${placeholder('service detail')}</li><li>${esc(industry)} service three — ${placeholder('service detail')}</li>`}</ul></section>`,
     features: `<section id="features"><h2>Features</h2><ul class="cards"><li>Feature one — ${placeholder('feature detail')}</li><li>Feature two — ${placeholder('feature detail')}</li><li>Feature three — ${placeholder('feature detail')}</li></ul></section>`,
     pricing: `<section id="pricing"><h2>Pricing</h2><div class="cards" id="pricing-cards"></div></section>`,
-    faq: `<section id="faq"><h2>FAQ</h2><details><summary>${placeholder('question')}</summary><p>${placeholder('answer')}</p></details><details><summary>${placeholder('question')}</summary><p>${placeholder('answer')}</p></details></section>`,
+    faq: `<section id="faq"><h2>FAQ</h2>${packFaqs || `<details><summary>${placeholder('question')}</summary><p>${placeholder('answer')}</p></details><details><summary>${placeholder('question')}</summary><p>${placeholder('answer')}</p></details>`}</section>`,
     gallery: `<section id="gallery"><h2>Gallery</h2><div class="gallery" role="img" aria-label="Photo gallery placeholder"><div class="tile"></div><div class="tile"></div><div class="tile"></div></div></section>`,
     contact: `<section id="contact"><h2>Contact</h2><p>${phone} · ${email}</p><p>${address}</p><form id="contact-form"><label for="cf-name">Name</label><input id="cf-name" name="name" required /><label for="cf-email">Email</label><input id="cf-email" name="email" type="email" required /><label for="cf-msg">Message</label><textarea id="cf-msg" name="message" required></textarea><button type="submit">Send</button><p id="form-status" role="status"></p></form></section>`,
   };
@@ -120,6 +144,8 @@ function renderSiteHtml({ name, tagline, industry, facts, tokens, sections, saas
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${esc(name)}</title>
+${seoDesc ? `<meta name="description" content="${seoDesc}" />\n<meta property="og:description" content="${seoDesc}" />` : ''}
+${seoKeywords ? `<meta name="keywords" content="${seoKeywords}" />` : ''}
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>

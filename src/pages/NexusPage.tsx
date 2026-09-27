@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
+import AgentAssist from '@/components/AgentAssist';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -149,6 +150,7 @@ export default function NexusPage() {
 
       {active && (
         <>
+          <AgentAssist context="builder" industry={active.brief?.industry || ''} projectId={active.id} />
           <Card>
             <CardHeader><CardTitle>Build from a prompt</CardTitle>
               <CardDescription>One intent → plan → NEXUS team → files → evidence → checkpoint. Competition mode runs two independent candidates with the same checks.</CardDescription></CardHeader>
