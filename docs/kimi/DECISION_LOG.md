@@ -226,3 +226,4 @@
   the handoff states this. QA scores are carried verbatim into the handoff.
 - Phase 13: The communications timeline records only real events (wired into each surface at creation time — no backfill). Billing events are manual records mirrored to the timeline, not a payment processor; card payments remain exclusively behind the Stripe key gate.
 - Phase 14: App Studio schemas are data, never code — only whitelisted field types and three workflow actions execute. Workflow statuses are rule outcomes, never safety/compliance claims. System apps are org-visible; private apps and records are org-isolated.
+- Phase 15: Portability import re-keys colliding ids and re-scopes org_id instead of overwriting â€” the same-DB restore case collides by design, and that is the safe path. Trusted-header SSO is a labeled reverse-proxy mode with a double switch (env + org setting); it provisions viewers, never admins.

@@ -4,10 +4,10 @@ Canonical spec: Lucio_AI_Platform_Single_Master_Implementation_Manual_v28_MARKET
 Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 
 ## Current position
-- Phase: 0 PASS · 1 PASS · 2 PASS · 3 PASS + expansion · 4 PASS · 5 PASS · 6 PASS · 7 PASS · 8 PASS · 9 PASS · 10 PASS — Phase 11 next
+- Phase: 0 PASS · 1 PASS · 2 PASS · 3 PASS + expansion · 4 PASS · 5 PASS · 6 PASS · 7 PASS · 8 PASS · 9 PASS · 10 PASS · 11 PASS · 12 PASS · 13 PASS · 14 PASS · 15 PASS — Phase 16 next
 - Branch: main
 - Last passing checkpoint: see git log
-- Next action: Phase 11 — per manual v28 phase list. Build contract: docs/kimi/PHASE14_CONTRACT.md (Phase 14, completed)
+- Next action: Phase 16 — Benchmark Max + Evaluation, per manual v28 phase list. Build contract: docs/kimi/PHASE15_CONTRACT.md (Phase 15, completed)
 - Release posture: local development build, not production
 
 ## Phase summary
@@ -26,7 +26,12 @@ Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 | 8 Unified Website Editor + Versioning | DONE | Proposal→approval edit pipeline (content/image/style/motion/component/section-order/section-visibility) over the stored recipe; §59 locks with 423 + audited override; STYLE_LOCK default (§60); content overrides + image key picks + section order/visibility in scaffold; compare + honest restore (new artifact version); full rebuilds preserve editor state; /editor UI |
 | 9 Preview / HTML / PDF / QA | DONE | Four site audit suites (accessibility/factual/visual/performance, deterministic + explainable) inside every QA artifact; device preview chrome (390/768/1280) around the same raw source; builder device switcher + audits card |
 | 10 Publish / Export / Domain / Hosting | DONE | Production publication gate (owner self-approve / member pending), pinned deployments with rollback, custom domains with real DNS TXT verification (SSL never faked), Host-header routing for verified domains, self-contained single-file HTML export, ClientsPage production dialog |
-| 11–17 | PENDING | Phase 11 next |
+| 11 Publish-side sell + Stripe-gated payments | DONE | Publish live links, owner portal, deals/billing |
+| 12 Agent Router Website Automation | DONE | Fixed step registry, bounded squad agents, budget cap, failure taxonomy, handoff |
+| 13 Agency OS expansion | DONE | Communications timeline, billing events, owner portal |
+| 14 App Studio / Vertical SaaS | DONE | AppDefinition schema+workflow runtime, Lucio Safety + Contractor seeded |
+| 15 Enterprise hardening + portability | DONE | Export/validate/import bundles, trusted-header SSO, metrics, backup+restore test |
+| 16–17 | PENDING | Phase 16 next |
 | Sell architecture + map discovery (Pindrop parity) | DONE | Publish live links, owner portal with photo requests, deals/billing (manual default, Stripe-gated), leads inbox, enquiry-posting generated sites, pin-drop map discovery with street-view gating |
 
 ## Session-resume notes
@@ -37,4 +42,4 @@ Environment: Windows, Node v24.15.0, npm 11.12.1, Git 2.47.1, Python 3.12.14
 - Dev server: `npm run dev -- --port 7100` (log: lucio_dev.log); tests: `node scripts/test-phase3.js` (58) + `node scripts/test-phase4.js` (39).
 - ORPHANED VITE WATCH: dev.js's Vite child survives parent taskkill. Kill BOTH the :8787 PID and the :7100 PID, verify with netstat, before restart — a zombie Vite on [::1]:7100 served stale code during the Phase 4 E2E.
 - Sell architecture: dev.js Vite proxy now also forwards /live and /portal to :8787 — any preview server started before this change must be restarted or public links 404 through the dev port.
-- Test suites: test-sell.js (33) + test-google-places.js (38) + test-phase3.js (58) + test-phase4.js (39) + test-phase6.js (55) + test-assistant.js (34) + test-phase7.js (134) + test-phase8.js (65) + test-phase9.js (36) + test-phase10.js (38) + test-phase11.js (30) + test-phase12.js (30) + test-phase13.js (19) + test-phase14.js (24) = 633 assertions.
+- Test suites: test-sell.js (33) + test-google-places.js (38) + test-phase3.js (58) + test-phase4.js (39) + test-phase6.js (55) + test-assistant.js (34) + test-phase7.js (134) + test-phase8.js (65) + test-phase9.js (36) + test-phase10.js (38) + test-phase11.js (30) + test-phase12.js (30) + test-phase13.js (19) + test-phase14.js (24) + test-phase15.js (48) = 681 assertions.

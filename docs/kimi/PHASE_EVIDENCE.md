@@ -705,3 +705,41 @@ source; responsive, accessibility, factual, visual and performance QA pass.
   rejections (type/options/duplicate key/workflow field/slug 409), custom workflow
   fires, org isolation (system visible, private hidden, no records), audit rows.
 - Full regression: 633 assertions across 14 suites, 0 failures; tsc clean; build clean.
+
+## Phase 15 — Enterprise hardening + Portability (manual v28 Phase 15)
+
+### What shipped
+- **Ownership portability**: `server/services/portability.js` — exportBundle (all 23
+  org-owned tables, schema_version=1, generator marker, org identity, per-table counts),
+  validateBundle (per-check detail: schema version, generator, org identity, table
+  presence, row-array shapes, foreign-org-row detection), importBundle (validation-gated
+  400, per-table transactions, colliding ids re-keyed to fresh UUIDs, org_id re-scoped
+  to the importing org, audited `portability.import`). Import never overwrites: the
+  collision check caught a real same-DB restore and re-keyed instead of clobbering.
+- **Admin surface**: /api/admin — GET/POST export-bundle (attachment download), POST
+  validate-bundle (422 on invalid), POST import-bundle (201), GET metrics, org settings
+  GET/POST (admin+ only, key format validated, audited). Gateway page gained an
+  Enterprise & Portability panel (export/validate/import + live metrics + SSO status).
+- **Trusted-header SSO** (`server/services/enterprise.js`): config-gated double switch —
+  SSO_TRUSTED_HEADER env AND org setting sso_enabled. GET /api/auth/sso is honest:
+  when off it lists the exact enablement steps; when on, zero steps. POST
+  /api/auth/sso/login: 501 when disabled (header fully ignored — no accidental logins),
+  401 on missing/invalid header email, find-or-provision user as **viewer** (owner
+  promotes explicitly), audited `auth.sso_login`, httpOnly session cookie.
+- **Observability-lite**: requestCounter middleware (total/ok/4xx/5xx + top routes),
+  metricsSnapshot (uptime, counters, db bytes, 8 table counts, provider registry).
+- **Backup**: scripts/backup.js — timestamped snapshot of lucio.db(+wal/shm) and
+  files/ into data/backups/, then a real restore test: opens the snapshot read-only,
+  PRAGMA integrity_check, key-table counts. Verified: BACKUP OK + RESTORE TEST OK.
+- **org_settings table** + provider registry extended (llama.cpp local; OpenRouter /
+  Azure OpenAI / Bedrock external, all disabled — sovereign engine remains the only
+  enabled default).
+
+### Verification
+- scripts/test-phase15.js — 48 assertions, all green: metrics counters, extended seeds
+  (externals disabled, sovereign enabled), export/validate/tamper/foreign-row/import
+  flows, same-DB re-key + no-overwrite guarantee, org re-scope, audit row, settings
+  authz (owner 200 / viewer 403 / bad key 400), SSO honest status, 501/401 paths,
+  viewer provisioning, repeat-login reuse.
+- scripts/backup.js — BACKUP OK + RESTORE TEST OK against the dev database.
+- Full regression: 681 assertions across 15 suites, 0 failures; tsc clean; build clean.

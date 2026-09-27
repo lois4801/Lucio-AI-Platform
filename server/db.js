@@ -485,6 +485,14 @@ CREATE TABLE IF NOT EXISTS app_records (
   updated_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_app_records ON app_records(org_id, app_id);
+CREATE TABLE IF NOT EXISTS org_settings (
+  org_id TEXT NOT NULL,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL DEFAULT '',
+  updated_by TEXT,
+  updated_at TEXT,
+  PRIMARY KEY (org_id, key)
+);
 `);
 
 // Lightweight migrations: add columns to pre-existing tables when missing.
@@ -508,6 +516,10 @@ seedProviders.run('vllm-local', 'llm', 'vLLM self-hosted (OpenAI-compatible)', '
 seedProviders.run('gpt-external', 'llm', 'GPT adapter (external, opt-in)', '', 0, 0);
 seedProviders.run('claude-external', 'llm', 'Claude adapter (external, opt-in)', '', 0, 0);
 seedProviders.run('kimi-external', 'llm', 'Kimi adapter (external, opt-in)', '', 0, 0);
+seedProviders.run('llama-cpp-local', 'llm', 'llama.cpp (local binary)', '', 0, 1);
+seedProviders.run('openrouter-external', 'llm', 'OpenRouter (external, opt-in)', 'https://openrouter.ai/api/v1', 0, 0);
+seedProviders.run('azure-openai-external', 'llm', 'Azure OpenAI (external, opt-in)', '', 0, 0);
+seedProviders.run('bedrock-external', 'llm', 'AWS Bedrock (external, opt-in)', '', 0, 0);
 
 export function audit(orgId, actorId, action, entityType, entityId = null, detail = {}, ip = '') {
   db.prepare(

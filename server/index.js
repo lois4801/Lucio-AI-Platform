@@ -36,6 +36,8 @@ import { agentRunsRouter } from './routes/agentRuns.js';
 import { appStudioRouter } from './routes/appStudio.js';
 import { seedVerticalApps } from './services/appStudio.js';
 import { libraryRouter } from './routes/componentLibrary.js';
+import { adminRouter } from './routes/admin.js';
+import { requestCounter } from './services/enterprise.js';
 
 seedVerticalApps();
 
@@ -43,6 +45,7 @@ export function createApp() {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '35mb' }));
+  app.use(requestCounter);
   // Minimal cookie middleware (httpOnly session cookie only; no client-readable secrets)
   app.use((req, res, next) => {
     req.cookies = parseCookies(req.headers.cookie || '');
@@ -82,6 +85,7 @@ export function createApp() {
 app.use('/api/agent-runs', agentRunsRouter);
 app.use('/api/apps', appStudioRouter);
   app.use('/api/library', libraryRouter);
+  app.use('/api/admin', adminRouter);
   // Public surface (no auth): live client sites, enquiries, owner portal.
   // Mounted BEFORE the SPA fallback so /live and /portal are never swallowed.
   app.use(publicRouter);

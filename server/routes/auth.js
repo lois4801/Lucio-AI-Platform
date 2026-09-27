@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'node:crypto';
 import { db, audit } from '../db.js';
 import { hashPassword, verifyPassword, createSession, destroySession, requireAuth } from '../middleware/auth.js';
+import { ssoStatus, ssoLogin } from '../services/enterprise.js';
 
 export const authRouter = Router();
 
@@ -46,4 +47,25 @@ authRouter.post('/logout', requireAuth, (req, res) => {
 
 authRouter.get('/me', requireAuth, (req, res) => {
   res.json({ user: req.user });
+});
+
+// ---- Trusted-header SSO (Phase 15) ----------------------------------------------
+// Honest status: never pretends SSO is on. When disabled, says exactly how to enable.
+authRouter.get('/sso', requireAuth, (req, res) => {
+  res.json({ sso: ssoStatus(req.user.orgId) });
+});
+
+// Header-based login. The org is identified by the caller (the reverse proxy fronts
+// one org deployment); the trusted header is honored ONLY when SSO is enabled for
+// that org — otherwise this endpoint is inert (no accidental logins).
+authRouter.post('/sso/login', (req, res) => {
+  const orgId = req.body?.orgId;
+  if (!orgId) return res.status(400).json({ error: 'orgId is required' });
+  try {
+    const { token, user, provisioned } = ssoLogin(orgId, req.headers, req.ip);
+    res.cookie(COOKIE, token, { httpOnly: true, sameSite: 'lax', path: '/' });
+    res.json({ user, provisioned });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
 });
