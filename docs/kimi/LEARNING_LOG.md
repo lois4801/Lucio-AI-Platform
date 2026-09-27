@@ -55,3 +55,30 @@ start of every new session to evolve instead of rediscovering.
 - AgentAssist suggestions are keyword-scored; could evolve into per-page
   specialist presets (e.g., always offer SEO + copywriter after a build
   completes).
+
+
+## Session 2026-09-27 (later) — Agent desk felt dumb: one template, repeated
+- **Heard:** "the agents are not smart enough and don't really help me. It just
+  repeats its previous message." Screenshot: agent replied to "ok" with the
+  same workspace-dump + specialty boilerplate as every other message.
+- **Root cause:** `composeReply` in server/services/agentChat.js was a single
+  static template. Intent, history, and the agent's specialty domain were all
+  ignored; only the quoted message changed.
+- **Built:** intent-aware on-device composer — classify (ack / greet / negative
+  feedback / workspace status / how-to / create / follow-up / question /
+  fallback), remember the thread via prior messages, and answer in the shape
+  the intent needs. "write X" now produces a real specialty first draft
+  (image prompt, SEO tags, copy, design direction, shot list, channel plan,
+  code sketch), grounded in the actual NEXUS project name from context facts.
+  Phrasing rotates deterministically (seeded) so similar inputs never return
+  byte-identical text.
+- **Lesson:** any template that quotes the user's message back and then dumps
+  the same facts reads as "repeating itself" within two turns. Per-intent reply
+  shapes are the minimum bar for agents that feel alive; variety must be seeded
+  and testable (suite now asserts 5 intents → 5 structurally distinct replies).
+- **Lesson:** the chat contract tests (agent name attribution, project-name
+  grounding, context facts, no secret leaks) survived the rewrite untouched —
+  contracts pin behavior while engines change underneath.
+- **Open:** still deterministic on-device. A BYOK model provider would take the
+  drafts from structured to open-ended; the intent router + deliverable
+  scaffolding is the seam where a provider plugs in.
