@@ -681,6 +681,41 @@ CREATE TABLE IF NOT EXISTS _nexus_usage (
   purpose TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- Real-time agent directory: vendored agent packs (MIT) ingested at boot by
+-- server/services/agentPacks.js. Global catalog; orgs enable agents per org.
+CREATE TABLE IF NOT EXISTS agent_directory (
+  id TEXT PRIMARY KEY,
+  source_pack TEXT NOT NULL,
+  source_path TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  division TEXT NOT NULL DEFAULT '',
+  tags TEXT NOT NULL DEFAULT '[]',
+  difficulty TEXT NOT NULL DEFAULT '',
+  color TEXT NOT NULL DEFAULT '',
+  emoji TEXT NOT NULL DEFAULT '',
+  license TEXT NOT NULL DEFAULT 'MIT',
+  persona TEXT NOT NULL DEFAULT '',
+  UNIQUE(source_pack, source_path)
+);
+CREATE TABLE IF NOT EXISTS org_enabled_agents (
+  org_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  enabled_by TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (org_id, agent_id)
+);
+-- Per-org agent conversation history (context memory across sessions).
+CREATE TABLE IF NOT EXISTS agent_messages (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  context_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `);
 
 // Lightweight migrations: add columns to pre-existing tables when missing.

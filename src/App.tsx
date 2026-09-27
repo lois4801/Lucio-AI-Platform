@@ -20,6 +20,7 @@ import AgentRunsPage from '@/pages/AgentRunsPage';
 import AppStudioPage from '@/pages/AppStudioPage';
 import BenchmarksPage from '@/pages/BenchmarksPage';
 import NexusPage from '@/pages/NexusPage';
+import AgentsPage from '@/pages/AgentsPage';
 import { Button } from '@/components/ui/button';
 
 // A page crash must never leave the user staring at a blank screen — show the
@@ -74,6 +75,7 @@ export default function App() {
         <Route path="/studio" element={page(<AppStudioPage />)} />
         <Route path="/benchmarks" element={page(<BenchmarksPage />)} />
         <Route path="/nexus" element={page(<NexusPage />)} />
+        <Route path="/agent-desk" element={page(<AgentsPage />)} />
         <Route path="/editor" element={page(<EditorPage />)} />
         <Route path="/library" element={page(<ComponentLibraryPage />)} />
         <Route path="/scanner" element={page(<MarketScanPage />)} />

@@ -40,9 +40,13 @@ import { adminRouter } from './routes/admin.js';
 import { benchmarksRouter } from './routes/benchmarks.js';
 import { optimizeRouter } from './routes/optimize.js';
 import { nexusRouter } from './routes/nexus.js';
+import { agentsRouter } from './routes/agents.js';
 import { requestCounter } from './services/enterprise.js';
+import { ingestPacks } from './services/agentPacks.js';
 
 seedVerticalApps();
+const packIngest = ingestPacks();
+console.log(`[lucio-api] agent packs ingested: ${packIngest.total} agents (${packIngest.agency} agency-agents, ${packIngest['500']} 500-ai-agents-projects)`);
 
 export function createApp() {
   const app = express();
@@ -92,6 +96,7 @@ app.use('/api/apps', appStudioRouter);
   app.use('/api/benchmarks', benchmarksRouter);
   app.use('/api/optimize', optimizeRouter);
   app.use('/api/nexus', nexusRouter);
+  app.use('/api/agents', agentsRouter);
   // Public surface (no auth): live client sites, enquiries, owner portal.
   // Mounted BEFORE the SPA fallback so /live and /portal are never swallowed.
   app.use(publicRouter);

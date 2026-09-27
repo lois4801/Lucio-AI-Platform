@@ -871,3 +871,44 @@ source; responsive, accessibility, factual, visual and performance QA pass.
   definitions, winner select with restore point, cherry-pick merge 409s on unknown
   paths, main-run selection rejected 404), CRM launch grounding + write-back.
 - Full regression: 861 assertions across 20 suites, 0 failures; tsc clean; vite build clean.
+
+## Real-Time Agent Packs (500-AI-Agents-Projects + agency-agents)
+
+### What shipped
+- Vendored both MIT agent definition packs (vendor/agent-packs/, 343 files):
+  21 task agents (500 pack: metadata.yaml + README) and 264 persona agents
+  (agency pack: 18 divisions of frontmatter .md files). Python entrypoints,
+  .env.example files, and upstream tooling deliberately excluded (documented
+  in vendor/agent-packs/README.md); LICENSE files preserved verbatim;
+  THIRD_PARTY_NOTICES.md records attribution per pack.
+- New tables: agent_directory (global catalog, UNIQUE(source_pack, source_path),
+  per-agent license), org_enabled_agents (org-scoped enablement, PK org+agent),
+  agent_messages (per-user conversation history with context_json).
+- server/services/agentPacks.js: boot-time ingestion (upsert — re-runs are
+  idempotent, verified no dupes), minimal YAML/frontmatter parsers scoped to
+  the vendored shapes (no new dependency), directory search (q/pack/division)
+  with per-org enabled flags, division aggregation, audited enable/disable.
+- server/services/agentChat.js: real-time sovereign chat. Responses are composed
+  deterministically on-device from three real inputs — the vendored persona,
+  the org's LIVE workspace state (NEXUS project name/status/file counts/run
+  status, prospect facts, scan status, org-wide counts — real DB reads, never
+  fabricated), and the conversation history — and labeled as on-device sovereign
+  responses. Persisted per user; SSE stream emits meta/token/done events and
+  reassembles byte-exact (verified).
+- Routes /api/agents (auth-gated; enable/disable member-gated; viewer 403):
+  directory, enabled list, agent detail, messages, POST chat (round-trip),
+  GET chat (SSE stream, EventSource-friendly).
+- UI: /agent-desk "AI Agents" page — searchable/filterable directory cards,
+  division chips, enable toggle, sticky chat panel with token streaming via
+  EventSource, context-project picker so agents see the NEXUS project being
+  built. Nav entry added (Agent Runs page at /agents untouched).
+
+### Verification
+- scripts/test-agent-packs.js — 30/30: 285 agents ingested from both packs,
+  every agent name+MIT license, search/division/pack filters, auth required,
+  idempotent re-ingestion, enable/disable + org isolation (second org sees
+  nothing) + viewer 403, chat gating (409 disabled / 404 unknown / 400 empty /
+  400 over-long), reply attribution + grounding on real NEXUS project facts,
+  no secret leakage, history persistence, SSE content-type + meta + >5 tokens
+  + done-byte-exact + grounded stream.
+- Full regression: 891 assertions across 21 suites, 0 failures; tsc clean; build clean.

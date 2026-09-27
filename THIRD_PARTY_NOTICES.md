@@ -15,6 +15,26 @@
 - The MIT license statement of atoms-demo: "MIT." (README). No copyright holders
   are listed in the repository; attribution is recorded here per license practice.
 
+## Agent packs (real-time agent directory)
+
+- **500-AI-Agents-Projects** (github.com/ashishpatel26/500-AI-Agents-Projects,
+  MIT, Copyright (c) 2025 ashishpatel26): 21 agent definitions (metadata +
+  README) vendored at `vendor/agent-packs/500-ai-agents-projects/`. Original
+  LICENSE preserved verbatim in that directory. The Python entrypoint templates
+  (`agent.py`, `requirements.txt`) and `.env.example` files were deliberately
+  NOT vendored — the Lucio runtime executes agents through its own model
+  gateway (sovereign engine + provider registry), not a Python runtime, and
+  placeholder credential files are never vendored.
+- **agency-agents** (AgentLand contributors, MIT, Copyright (c) 2025): 264 agent
+  persona definitions across 18 divisions vendored at
+  `vendor/agent-packs/agency-agents/` (division `.md` files + `divisions.json` +
+  LICENSE). Original LICENSE preserved verbatim. Upstream `scripts/`,
+  `examples/`, `integrations/`, and `.github/` tooling were not vendored.
+
+Both packs feed the `agent_directory` table via boot-time ingestion
+(`server/services/agentPacks.js`); license attribution is stored per agent row
+and surfaced in the UI.
+
 ## Explicitly NOT used
 - **Atoms.dev platform code** (proprietary): no backend code, private prompts,
   brand assets, or trade dress were accessed or copied. Public help docs were used
