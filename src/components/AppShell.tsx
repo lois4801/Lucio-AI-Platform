@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import {
   LayoutDashboard, Hammer, FolderKanban, Radar, Search, Files, TerminalSquare, ScrollText,
-  Cpu, LogOut, ScanSearch, BriefcaseBusiness, Blocks, PencilRuler, Bot, AppWindow, Gauge, Rocket, BotMessageSquare, Code, Wrench, Database, Sparkles } from 'lucide-react';
+  Cpu, LogOut, ScanSearch, BriefcaseBusiness, Blocks, PencilRuler, Bot, AppWindow, Gauge, Rocket, BotMessageSquare, Code, Wrench, Database, Sparkles, Frame } from 'lucide-react';
 import AssistantPanel from '@/components/AssistantPanel';
 
 const NAV = [
@@ -15,6 +15,7 @@ const NAV = [
   { to: '/studio', label: 'App Studio', icon: AppWindow },
   { to: '/benchmarks', label: 'Benchmarks', icon: Gauge },
   { to: '/nexus', label: 'NEXUS Builder', icon: Rocket },
+  { to: '/canvas', label: 'Canvas', icon: Frame },
   { to: '/agent-desk', label: 'AI Agents', icon: BotMessageSquare },
   { to: '/claw', label: 'Claw Coder', icon: Code },
   { to: '/autofix', label: 'Auto-Fix', icon: Wrench },

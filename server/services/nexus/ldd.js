@@ -180,6 +180,12 @@ export function lddToBrief(ldd) {
     geo: clone(ldd.content?.geo) || null,
     contentPack: clone(ldd.content?.contentPackData) || null,
     universe: ldd.design?.universe || undefined,
+    // The document's section array is the render structure (Phase 4 canvas):
+    // order, duplicates and hidden filtering are LDD decisions.
+    sections: (() => {
+      const visible = (ldd.pages?.[0]?.sections || []).filter((s) => !s.hidden);
+      return visible.length ? visible.map((s) => s.type) : undefined;
+    })(),
     // The document's token set IS the render input (spec §11 propagation).
     designTokens: clone(ldd.design?.tokens) || undefined,
   };

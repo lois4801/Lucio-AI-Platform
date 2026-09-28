@@ -13,6 +13,7 @@ import { buildZip } from '../services/nexus/exportZip.js';
 import { gitStatus, syncToGitHub } from '../services/nexus/gitAdapter.js';
 import { getLdd, saveLdd, listLddMigrations, markLddStale, renderLdd, migrateProjectLdd } from '../services/nexus/ldd.js';
 import { resolveSectionComponents } from '../services/nexus/sectionComponents.js';
+import { projectLayers } from '../services/nexus/layerTree.js';
 import { deploy, listDeployments, rollbackDeployment, activeDeployment } from '../services/nexus/deploy.js';
 import { launchFromProspect } from '../services/nexus/prospectLaunch.js';
 
@@ -142,6 +143,13 @@ nexusRouter.get('/projects/:id/section-components', (req, res) => {
   const state = getLdd(req.user.orgId, req.params.id);
   if (!state) return res.status(404).json({ error: 'project not found' });
   res.json({ sections: resolveSectionComponents(state.ldd), tokens: state.ldd.design?.tokens || null, fingerprint: state.fingerprint });
+});
+// Layer tree (spec §5): the real element tree of the rendered page, parsed
+// from index.html, annotated with LDD section metadata (hidden/locked).
+nexusRouter.get('/projects/:id/layers', (req, res) => {
+  const p = getProject(req.user.orgId, req.params.id);
+  if (!p) return res.status(404).json({ error: 'project not found' });
+  res.json(projectLayers(req.user.orgId, p.id, fileContents(p.id)));
 });
 
 // CRM launch (Phase 10)

@@ -531,3 +531,9 @@ start of every new session to evolve instead of rediscovering.
 - Token propagation must be real, not decorative: renderer must consume the document's token set (brief.designTokens) — a token edit that doesn't change output is a lie. Test both directions: untouched round-trip byte-identical, edited token lands in CSS.
 - Registry families must cover every generated section type or resolution returns honest notes — never fabricate a component match for an unmappable section.
 - expandDesignTokens derives shadows from the ink color via hexAlpha — derivations keep token sets deterministic and drift-free across renders.
+
+## 2026-09-28 — Phase 4: canvas + layer tree
+- cheerio `.children()` returns element nodes only — index paths built from it match browser `element.children` exactly; safe to address iframe nodes by children-only index path.
+- Never put `sandbox="allow-scripts"` on a same-origin preview iframe you need to highlight: opaque origin blocks contentDocument. The server's strict CSP (connect-src 'none' + nosniff) already provides the isolation.
+- Rendering sections from an ordered LDD `sections` list with per-occurrence unique ids (`hero`, `hero-2`) makes duplicate-section canvas ops anchor-safe by construction — assert zero duplicate id attributes in tests.
+- Hidden LDD sections never reach the HTML, so the layer tree can't list them; expose them via `document.sections` separately or the canvas has no unhide path.

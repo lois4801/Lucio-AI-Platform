@@ -86,12 +86,18 @@ export function generateFiles(brief) {
   const css = renderCss(tokens);
   const files = {};
   if (appType === 'website') {
-    files['index.html'] = renderSiteHtml({ name, tagline, industry, facts, tokens, sections: ['hero', 'about', 'services', ...(pack && Array.isArray(pack.faqs) && pack.faqs.length ? ['faq'] : []), 'gallery', 'contact'], pack, geo });
+    // Canonical section order comes from the document when provided (Phase 4
+    // canvas): order, duplicates and hidden-filtering are LDD decisions.
+    const defaultSections = ['hero', 'about', 'services', ...(pack && Array.isArray(pack.faqs) && pack.faqs.length ? ['faq'] : []), 'gallery', 'contact'];
+    const sectionList = Array.isArray(brief.sections) && brief.sections.length ? brief.sections : defaultSections;
+    files['index.html'] = renderSiteHtml({ name, tagline, industry, facts, tokens, sections: sectionList, pack, geo });
     files['styles.css'] = css;
     files['app.js'] = renderAppJs({ name, kind: 'website', facts });
     files['data.json'] = JSON.stringify({ name, industry, facts, generated: 'lucio-nexus', universe, content_pack: packMeta(pack), geo }, null, 2);
   } else if (appType === 'saas-landing') {
-    files['index.html'] = renderSiteHtml({ name, tagline, industry, facts, tokens, sections: ['hero', 'features', 'pricing', 'faq', 'contact'], saas: true, pack, geo });
+    const defaultSections = ['hero', 'features', 'pricing', 'faq', 'contact'];
+    const sectionList = Array.isArray(brief.sections) && brief.sections.length ? brief.sections : defaultSections;
+    files['index.html'] = renderSiteHtml({ name, tagline, industry, facts, tokens, sections: sectionList, saas: true, pack, geo });
     files['styles.css'] = css;
     files['app.js'] = renderAppJs({ name, kind: 'saas', facts });
     files['data.json'] = JSON.stringify({ name, industry, facts, generated: 'lucio-nexus', universe, plans: ['Starter', 'Growth', 'Scale'], content_pack: packMeta(pack), geo }, null, 2);
@@ -115,8 +121,8 @@ export function generateFiles(brief) {
   return { files, meta: { appType, universe, tokenLabel: tokens.label, fileCount: Object.keys(files).length } };
 }
 
-function navLinks(sections) {
-  return sections.map((s) => `<a href="#${s}">${s[0].toUpperCase() + s.slice(1)}</a>`).join('');
+function navLinks(ids, sections) {
+  return sections.map((s, i) => `<a href="#${ids[i]}">${s[0].toUpperCase() + s.slice(1)}</a>`).join('');
 }
 // Deterministic pack line choice — same project name always gets the same variant.
 function pickPackLine(lines, seed) {
@@ -151,15 +157,19 @@ function renderSiteHtml({ name, tagline, industry, facts, tokens, sections, saas
   const email = facts.email ? `<a href="mailto:${esc(facts.email)}">${esc(facts.email)}</a>` : placeholder('email address');
   const address = facts.address ? esc(facts.address) : (geo && geo.displayName ? esc(geo.displayName) : placeholder('street address'));
   const mapBlock = geo ? osmMapEmbed(geo, name) : '';
+  // Unique ids per occurrence: the canvas can duplicate a section type, and
+  // anchors must never collide.
+  const counts = {};
+  const ids = sections.map((s) => { counts[s] = (counts[s] || 0) + 1; return counts[s] > 1 ? `${s}-${counts[s]}` : s; });
   const body = {
-    hero: `<section id="hero" class="hero"><h1>${esc(name)}</h1><p class="tagline">${esc(tagline)}</p><a class="cta" href="#contact">${saas ? 'Start free trial' : 'Get in touch'}</a></section>`,
-    about: `<section id="about"><h2>About</h2><p>${facts.about ? esc(facts.about) : placeholder('short, factual about text — verified facts only')}</p></section>`,
-    services: `<section id="services"><h2>Services</h2><ul class="cards">${packServices || `<li>${esc(industry)} service one — ${placeholder('service detail')}</li><li>${esc(industry)} service two — ${placeholder('service detail')}</li><li>${esc(industry)} service three — ${placeholder('service detail')}</li>`}</ul></section>`,
-    features: `<section id="features"><h2>Features</h2><ul class="cards"><li>Feature one — ${placeholder('feature detail')}</li><li>Feature two — ${placeholder('feature detail')}</li><li>Feature three — ${placeholder('feature detail')}</li></ul></section>`,
-    pricing: `<section id="pricing"><h2>Pricing</h2><div class="cards" id="pricing-cards"></div></section>`,
-    faq: `<section id="faq"><h2>FAQ</h2>${packFaqs || `<details><summary>${placeholder('question')}</summary><p>${placeholder('answer')}</p></details><details><summary>${placeholder('question')}</summary><p>${placeholder('answer')}</p></details>`}</section>`,
-    gallery: `<section id="gallery"><h2>Gallery</h2><div class="gallery" role="img" aria-label="Photo gallery placeholder"><div class="tile"></div><div class="tile"></div><div class="tile"></div></div></section>`,
-    contact: `<section id="contact"><h2>Contact</h2><p>${phone} · ${email}</p><p>${address}</p>${mapBlock}<form id="contact-form"><label for="cf-name">Name</label><input id="cf-name" name="name" required /><label for="cf-email">Email</label><input id="cf-email" name="email" type="email" required /><label for="cf-msg">Message</label><textarea id="cf-msg" name="message" required></textarea><button type="submit">Send</button><p id="form-status" role="status"></p></form></section>`,
+    hero: (id) => `<section id="${id}" class="hero"><h1>${esc(name)}</h1><p class="tagline">${esc(tagline)}</p><a class="cta" href="#contact">${saas ? 'Start free trial' : 'Get in touch'}</a></section>`,
+    about: (id) => `<section id="${id}"><h2>About</h2><p>${facts.about ? esc(facts.about) : placeholder('short, factual about text — verified facts only')}</p></section>`,
+    services: (id) => `<section id="${id}"><h2>Services</h2><ul class="cards">${packServices || `<li>${esc(industry)} service one — ${placeholder('service detail')}</li><li>${esc(industry)} service two — ${placeholder('service detail')}</li><li>${esc(industry)} service three — ${placeholder('service detail')}</li>`}</ul></section>`,
+    features: (id) => `<section id="${id}"><h2>Features</h2><ul class="cards"><li>Feature one — ${placeholder('feature detail')}</li><li>Feature two — ${placeholder('feature detail')}</li><li>Feature three — ${placeholder('feature detail')}</li></ul></section>`,
+    pricing: (id) => `<section id="${id}"><h2>Pricing</h2><div class="cards" id="pricing-cards"></div></section>`,
+    faq: (id) => `<section id="${id}"><h2>FAQ</h2>${packFaqs || `<details><summary>${placeholder('question')}</summary><p>${placeholder('answer')}</p></details><details><summary>${placeholder('question')}</summary><p>${placeholder('answer')}</p></details>`}</section>`,
+    gallery: (id) => `<section id="${id}"><h2>Gallery</h2><div class="gallery" role="img" aria-label="Photo gallery placeholder"><div class="tile"></div><div class="tile"></div><div class="tile"></div></div></section>`,
+    contact: (id) => `<section id="${id}"><h2>Contact</h2><p>${phone} · ${email}</p><p>${address}</p>${mapBlock}<form id="contact-form"><label for="cf-name">Name</label><input id="cf-name" name="name" required /><label for="cf-email">Email</label><input id="cf-email" name="email" type="email" required /><label for="cf-msg">Message</label><textarea id="cf-msg" name="message" required></textarea><button type="submit">Send</button><p id="form-status" role="status"></p></form></section>`,
   };
   return `<!doctype html>
 <html lang="en">
@@ -172,9 +182,9 @@ ${seoKeywords ? `<meta name="keywords" content="${seoKeywords}" />` : ''}
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-<nav class="nav" aria-label="Primary">${navLinks(sections)}</nav>
+<nav class="nav" aria-label="Primary">${navLinks(ids, sections)}</nav>
 <main>
-${sections.map((s) => body[s] || '').join('\n')}
+${sections.map((s, i) => (body[s] ? body[s](ids[i]) : '')).join('\n')}
 </main>
 <footer><p>© ${new Date().getFullYear()} ${esc(name)}. Built with Lucio.</p></footer>
 <script src="app.js"></script>

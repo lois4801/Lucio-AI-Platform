@@ -22,6 +22,7 @@ import AgentRunsPage from '@/pages/AgentRunsPage';
 import AppStudioPage from '@/pages/AppStudioPage';
 import BenchmarksPage from '@/pages/BenchmarksPage';
 import NexusPage from '@/pages/NexusPage';
+import CanvasPage from '@/pages/CanvasPage';
 import AgentsPage from '@/pages/AgentsPage';
 import ClawPage from '@/pages/ClawPage';
 import AutoFixPage from '@/pages/AutoFixPage';
@@ -80,6 +81,8 @@ export default function App() {
         <Route path="/studio" element={page(<AppStudioPage />)} />
         <Route path="/benchmarks" element={page(<BenchmarksPage />)} />
         <Route path="/nexus" element={page(<NexusPage />)} />
+        <Route path="/canvas" element={page(<CanvasPage />)} />
+        <Route path="/canvas/:projectId" element={page(<CanvasPage />)} />
         <Route path="/agent-desk" element={page(<AgentsPage />)} />
         <Route path="/claw" element={page(<ClawPage />)} />
         <Route path="/autofix" element={page(<AutoFixPage />)} />
