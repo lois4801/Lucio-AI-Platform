@@ -11,6 +11,7 @@ import { createProject, getProject, listProjects, updateProject, deleteProject, 
 import { createShare, getSharePublic, shareState, revokeShare, listShares, shareSnapshot, addComment, listComments } from '../services/nexus/share.js';
 import { buildZip } from '../services/nexus/exportZip.js';
 import { gitStatus, syncToGitHub, saveGitHubConnection, getGitHubConnection, deleteGitHubConnection, gitDiff, gitPull } from '../services/nexus/gitAdapter.js';
+import { scanDesignReference } from '../services/nexus/designScan.js';
 import { getLdd, saveLdd, listLddMigrations, markLddStale, renderLdd, migrateProjectLdd } from '../services/nexus/ldd.js';
 import { resolveSectionComponents } from '../services/nexus/sectionComponents.js';
 import { projectLayers } from '../services/nexus/layerTree.js';
@@ -414,4 +415,46 @@ nexusRouter.post('/competition/select', requireRole('member'), (req, res) => {
 nexusRouter.post('/competition/merge', requireRole('member'), (req, res) => {
   try { res.json(mergeCandidate(req.user.orgId, req.body?.projectId, req.body?.fromRunId, req.body?.files || [], req.user.id)); }
   catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+
+// ---- AI Design Scanner (Phase 11) ---------------------------------------------------------------
+// "Design reference scan": fetch an authorized public URL, extract real CSS
+// signals, propose LDD token overrides. Scanning never writes; applying is an
+// explicit user action that records provenance in the canonical document and
+// re-renders the project from the LDD.
+nexusRouter.post('/projects/:id/design/scan', async (req, res) => {
+  const p = getProject(req.user.orgId, req.params.id);
+  if (!p) return res.status(404).json({ error: 'project not found' });
+  try {
+    const proposal = await scanDesignReference(req.body?.url);
+    res.json({ proposal });
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+nexusRouter.post('/projects/:id/design/apply', requireRole('member'), (req, res) => {
+  const p = getProject(req.user.orgId, req.params.id);
+  if (!p) return res.status(404).json({ error: 'project not found' });
+  try {
+    const tokens = req.body?.tokens;
+    if (!tokens || typeof tokens !== 'object' || !tokens.palette || !tokens.fonts) {
+      return res.status(400).json({ error: 'tokens.palette and tokens.fonts required' });
+    }
+    const state = getLdd(req.user.orgId, p.id);
+    if (!state) return res.status(404).json({ error: 'project not found' });
+    const ldd = state.ldd;
+    ldd.design = ldd.design || {};
+    ldd.design.tokens = {
+      ...ldd.design.tokens,
+      palette: { ...ldd.design.tokens?.palette, ...tokens.palette },
+      fonts: { ...ldd.design.tokens?.fonts, ...tokens.fonts },
+      ...(tokens.radius ? { radius: tokens.radius } : {}),
+    };
+    ldd.meta = ldd.meta || {};
+    ldd.meta.designReferences = [
+      ...(ldd.meta.designReferences || []),
+      { sourceUrl: String(req.body?.url || ''), appliedAt: new Date().toISOString(), method: 'design-reference-scan' },
+    ].slice(-10);
+    const saved = saveLdd(req.user.orgId, p.id, ldd, req.user.id, 'design-scan');
+    const render = renderLdd({ orgId: req.user.orgId, projectId: p.id, userId: req.user.id, label: 'design-scan apply', via: 'design-scan' });
+    res.json({ ldd: saved.ldd, fingerprint: saved.fingerprint, checkpointId: render.checkpoint?.id || null, files: render.results?.length || 0 });
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });

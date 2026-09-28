@@ -568,3 +568,9 @@ start of every new session to evolve instead of rediscovering.
 - git blob sha `sha1("blob <byteLen>\0"+content)` lets diff compare a whole tree without downloading contents; verified against the real `git hash-object` vector for "hello\n" (ce01362…).
 - PUT /contents with a stale `sha` 422s — sync resolves the branch head and per-file current sha first so updates are true updates.
 - createCheckpoint snapshots the live manifest — for pull, applyOps first, checkpoint after, so the checkpoint captures pulled state exactly.
+
+## 2026-09-28 — Phase 11 (design reference scan)
+- "AI design scanner" done honestly: CSS-signal extraction (cheerio) + provenance beats fake vision claims. Users apply explicitly; scan never writes.
+- Palette role mapping must be role-specific (neutral dark=text, saturated=accent, grayish mid=muted) — raw frequency order misroles everything on real sites.
+- scanLdd-derived documents: getLdd derives on READ without persisting — apply must saveLdd explicitly or the mutation evaporates on the next read.
+- Cheerio .css() only reads inline styles — parse h1/h2 font-family from stylesheet text with a regex over CSS instead.

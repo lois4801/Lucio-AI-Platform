@@ -32,6 +32,9 @@ export default function NexusPage() {
   const [ghPat, setGhPat] = useState('');
   const [ghDiff, setGhDiff] = useState<{ added: string[]; removed: string[]; changed: string[]; identical: number; repo: string; branch: string } | null>(null);
   const [ghBusy, setGhBusy] = useState('');
+  const [scanUrl, setScanUrl] = useState('');
+  const [scanProposal, setScanProposal] = useState<any>(null);
+  const [scanBusy, setScanBusy] = useState(false);
   const [checkpoints, setCheckpoints] = useState<Cp[]>([]);
   const [evidence, setEvidence] = useState<EvRow[]>([]);
   const [competition, setCompetition] = useState(false);
@@ -63,6 +66,7 @@ export default function NexusPage() {
     setGh(conn.connection);
     if (conn.connection) { setGhRepo(conn.connection.repo); setGhBranch(conn.connection.branch); }
     setGhDiff(null);
+    setScanProposal(null); setScanUrl('');
   };
 
   const loadEvents = async (runId: string, status?: string) => {
@@ -207,6 +211,28 @@ export default function NexusPage() {
       }
     } catch (err: any) { setMsg(err.message); }
     finally { setGhBusy(''); }
+  };
+
+  // ---- design reference scan (Phase 11) --------------------------------------------------------
+  const runScan = async () => {
+    if (!active || scanBusy || !scanUrl.trim()) return;
+    setScanBusy(true); setMsg(''); setScanProposal(null);
+    try {
+      const r = await api(`/nexus/projects/${active.id}/design/scan`, { method: 'POST', body: JSON.stringify({ url: scanUrl.trim() }) });
+      setScanProposal(r.proposal);
+    } catch (err: any) { setMsg(err.message); }
+    finally { setScanBusy(false); }
+  };
+  const applyScan = async () => {
+    if (!active || !scanProposal || scanBusy) return;
+    setScanBusy(true); setMsg('');
+    try {
+      const r = await api(`/nexus/projects/${active.id}/design/apply`, { method: 'POST', body: JSON.stringify({ url: scanProposal.url, tokens: scanProposal.proposedTokens }) });
+      setMsg(`Design tokens applied from ${scanProposal.url} — re-rendered ${r.files} file(s), checkpoint ${r.checkpointId?.slice(0, 8)}.`);
+      setScanProposal(null);
+      await refreshFiles();
+    } catch (err: any) { setMsg(err.message); }
+    finally { setScanBusy(false); }
   };
 
   return (
@@ -373,6 +399,34 @@ export default function NexusPage() {
                     <Input placeholder="branch (default main)" value={ghBranch} onChange={(e) => setGhBranch(e.target.value)} />
                     <Input type="password" placeholder="GitHub PAT (fine-grained, contents:write)" value={ghPat} onChange={(e) => setGhPat(e.target.value)} />
                     <Button size="sm" disabled={!!ghBusy || !ghRepo.trim() || ghPat.length < 8} onClick={ghConnect}>{ghBusy === 'connect' ? 'Saving…' : 'Save connection'}</Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader><CardTitle>Design reference</CardTitle>
+                <CardDescription>Scan a public site's real CSS signals (colors, fonts, radii) and apply them as LDD design tokens — provenance is recorded in the document. No screenshots, no guessing.</CardDescription></CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <div className="flex gap-2">
+                  <Input placeholder="https://example.com" value={scanUrl} onChange={(e) => setScanUrl(e.target.value)} />
+                  <Button size="sm" variant="outline" disabled={scanBusy || !scanUrl.trim()} onClick={runScan}>{scanBusy && scanProposal === null ? 'Scanning…' : 'Scan'}</Button>
+                </div>
+                {scanProposal && (
+                  <div className="space-y-2 rounded-md border p-2 text-xs">
+                    <div className="font-semibold truncate">{scanProposal.url}</div>
+                    <div className="flex gap-2 items-center flex-wrap">
+                      {Object.entries(scanProposal.proposedTokens.palette).map(([k, v]: any) => (
+                        <span key={k} className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm border" style={{ background: v }} />{k}</span>
+                      ))}
+                    </div>
+                    <div>body: <span className="font-mono">{scanProposal.proposedTokens.fonts.body}</span></div>
+                    <div>display: <span className="font-mono">{scanProposal.proposedTokens.fonts.display}</span> · radius: <span className="font-mono">{scanProposal.proposedTokens.radius}</span></div>
+                    <div className="text-muted-foreground">{scanProposal.stats.colorsFound} colors · {scanProposal.stats.stylesheetsFetched} stylesheet(s) · {scanProposal.stats.cssBytes} CSS bytes</div>
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={applyScan} disabled={scanBusy}>{scanBusy ? 'Applying…' : 'Apply to project'}</Button>
+                      <Button size="sm" variant="outline" onClick={() => setScanProposal(null)}>Dismiss</Button>
+                    </div>
                   </div>
                 )}
               </CardContent>
