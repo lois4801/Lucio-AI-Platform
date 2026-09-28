@@ -496,3 +496,12 @@ start of every new session to evolve instead of rediscovering.
 - New provider-independent publishing: server/services/publishing/{local,kimix,kimixCli,service}.js. LocalStaticPublisher writes data/deployments/<org>/<slug>/ served unauthenticated at /sites/:slug. Verification gate: unauthenticated fetch, 200 + html marker required before status=published; failures carry structured diagnostics. deployments table keyed UNIQUE(org_id, subject_key); republish bumps version, URL stable.
 - kimix agent gateway intermittently times out (30s) on large bundles — bounded retry (3 tries, 4s backoff) in kimixProvider.
 - Acceptance: Lumiere https://2lb5lpsuj62gs.kimi.page, Meridian https://jdn7ufsccjzvg.kimi.page (both HTTP 200 unauth). 19-test hermetic suite scripts/test-publishing.js; full sweep 40 suites green.
+
+## 2026-09-27 — NEXUS AI provider gateway (normalized adapters)
+
+- Root cause pattern: when a provider "doesn't work", check the wire result FIRST (live 401 on a `ck_…` key that isn't even the provider's format) before touching architecture — the old code was already real; the credential was the only broken piece.
+- Proving a chain hermetically: stand up a real `node:http` server on 127.0.0.1 speaking the provider's actual protocol and repoint the manifest `baseUrl` before booting the app. That exercises Express routes → service → adapter → HTTP → model → response with zero mocks of our own code. 28/28 in scripts/test-ai-nexus.js.
+- Keep legacy export names when rewriting a service (`verifyKey` legacy shape + new `verifyProvider` structured); old suites keep passing while the UI moves to richer diagnostics.
+- Model dropdowns must never be hard-coded stale: persist discovered catalogs per tenant (`ai_models`) and merge discovered-over-manifest, tagging manifest entries so the UI can label them "(catalog)".
+- Verification UX: staged {ok, detail} rows (auth / discovery / selected model / inference + latency) beat a boolean. Probe the SELECTED model with 1 token first so stale model ids are caught; then check the selected id against the discovered catalog for model_unavailable.
+- Never put secrets in diagnostic strings — redact by replacing the key value in the detail before returning.

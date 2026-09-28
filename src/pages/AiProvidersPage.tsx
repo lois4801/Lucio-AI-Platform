@@ -7,16 +7,31 @@ import { Badge } from '@/components/ui/badge';
 import { Check, KeyRound, Loader2, MessageSquareText, ShieldCheck, Sparkles, Trash2, Users } from 'lucide-react';
 
 type CatalogEntry = { provider: string; label: string; api: string; baseUrl: string; models: string[]; envVar: string; configured: boolean };
+type ModelEntry = { id: string; label: string; source: string };
 type KeyRow = {
   provider: string; label: string; model: string; enabled: boolean;
   status: string; statusDetail: string; lastVerifiedAt: string | null; maskedKey?: string;
+  availableModels?: ModelEntry[];
 };
 type ProvidersResponse = { keys: KeyRow[]; catalog: CatalogEntry[] };
 type CouncilAnswer = { provider: string; label: string; model: string; ok: boolean; text: string; latencyMs: number; error?: string };
 type KeyDrafts = Record<string, { key: string; model: string }>;
+type StageResult = { ok: boolean; detail: string };
+type VerifyDiagnostics = {
+  provider: string; checkedModel: string; status: string; detail: string; latencyMs: number; verifiedAt: string;
+  discoveredCount?: number;
+  authentication?: StageResult; modelDiscovery?: StageResult; selectedModel?: StageResult; inference?: StageResult;
+};
+type DiscoveryResult = { provider: string; source: string; degraded: boolean; error?: string; models: ModelEntry[] };
 
 const STATUS_BADGE: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   ok: 'default', unverified: 'secondary', invalid: 'destructive', error: 'destructive', missing: 'outline',
+  healthy: 'default', authentication_failed: 'destructive', model_unavailable: 'destructive',
+  provider_unavailable: 'secondary', quota_billing_error: 'destructive', rate_limited: 'secondary',
+};
+const STATUS_LABEL: Record<string, string> = {
+  healthy: 'HEALTHY', authentication_failed: 'AUTHENTICATION FAILED', model_unavailable: 'MODEL UNAVAILABLE',
+  provider_unavailable: 'PROVIDER UNAVAILABLE', quota_billing_error: 'QUOTA / BILLING ERROR', rate_limited: 'RATE LIMITED',
 };
 
 export default function AiProvidersPage() {
@@ -24,6 +39,9 @@ export default function AiProvidersPage() {
   const [drafts, setDrafts] = useState<KeyDrafts>({});
   const [saving, setSaving] = useState('');
   const [verifying, setVerifying] = useState('');
+  const [refreshing, setRefreshing] = useState('');
+  const [verifyDiag, setVerifyDiag] = useState<Record<string, VerifyDiagnostics>>({});
+  const [discovery, setDiscovery] = useState<Record<string, DiscoveryResult>>({});
   const [error, setError] = useState('');
   const [prompt, setPrompt] = useState('');
   const [councilBusy, setCouncilBusy] = useState(false);
@@ -51,8 +69,21 @@ export default function AiProvidersPage() {
 
   const verify = async (provider: string) => {
     setError(''); setVerifying(provider);
-    try { await api(`/ai/providers/${provider}/verify`, { method: 'POST', body: '{}' }); await load(); }
+    try {
+      const r = await api<{ diagnostics?: VerifyDiagnostics }>(`/ai/providers/${provider}/verify`, { method: 'POST', body: '{}' });
+      if (r.diagnostics) setVerifyDiag((s) => ({ ...s, [provider]: r.diagnostics! }));
+      await load();
+    }
     catch (e: any) { setError(e.message); } finally { setVerifying(''); }
+  };
+
+  const refreshModels = async (provider: string) => {
+    setError(''); setRefreshing(provider);
+    try {
+      const r = await api<DiscoveryResult>(`/ai/providers/${provider}/discover`, { method: 'POST', body: '{}' });
+      setDiscovery((s) => ({ ...s, [provider]: r }));
+      await load();
+    } catch (e: any) { setError(e.message); } finally { setRefreshing(''); }
   };
 
   const toggle = async (k: KeyRow) => {
@@ -137,7 +168,9 @@ export default function AiProvidersPage() {
                     value={d.model || k?.model || c.models[0]}
                     onChange={(e) => setDrafts((s) => ({ ...s, [c.provider]: { ...d, model: e.target.value } }))}
                   >
-                    {c.models.map((m) => <option key={m} value={m}>{m}</option>)}
+                    {(k?.availableModels?.length ? k.availableModels : c.models.map((m) => ({ id: m, label: m, source: 'manifest' }))).map((m) => (
+                      <option key={m.id} value={m.id}>{m.label}{m.source === 'manifest' ? ' (catalog)' : ''}</option>
+                    ))}
                   </select>
                   <Button size="sm" disabled={saving === c.provider || !d.key.trim()} onClick={() => saveKey(c.provider)}>
                     {saving === c.provider ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 mr-1" />}
@@ -148,12 +181,29 @@ export default function AiProvidersPage() {
                       <Button size="sm" variant="secondary" disabled={verifying === c.provider} onClick={() => verify(c.provider)}>
                         {verifying === c.provider ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Verify'}
                       </Button>
+                      <Button size="sm" variant="outline" disabled={refreshing === c.provider} onClick={() => refreshModels(c.provider)} title="Fetch the live model catalog from this provider">
+                        {refreshing === c.provider ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Refresh models'}
+                      </Button>
                       <Button size="sm" variant="ghost" onClick={() => removeKey(c.provider)} aria-label={`Delete ${c.label} key`}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </>
                   )}
                 </div>
+                {k?.availableModels && (
+                  <p className="text-[11px] text-muted-foreground">
+                    {k.availableModels.filter((m) => m.source === 'discovered').length} discovered live
+                    · {k.availableModels.filter((m) => m.source === 'manifest').length} from catalog
+                  </p>
+                )}
+                {discovery[c.provider] && (
+                  <p className={`text-[11px] ${discovery[c.provider].degraded ? 'text-amber-600' : 'text-emerald-600'}`}>
+                    {discovery[c.provider].degraded
+                      ? `Live discovery unavailable${discovery[c.provider].error ? ` (${discovery[c.provider].error})` : ''} — showing catalog models`
+                      : `Live catalog fetched: ${discovery[c.provider].models.length} models`}
+                  </p>
+                )}
+                {verifyDiag[c.provider] && <DiagnosticsPanel d={verifyDiag[c.provider]} />}
               </CardContent>
             </Card>
           );
@@ -215,6 +265,36 @@ export default function AiProvidersPage() {
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function DiagnosticsPanel({ d }: { d: VerifyDiagnostics }) {
+  const rows: { name: string; s?: StageResult }[] = [
+    { name: 'Authentication', s: d.authentication },
+    { name: 'Model discovery', s: d.modelDiscovery },
+    { name: 'Selected model', s: d.selectedModel },
+    { name: 'Inference probe', s: d.inference },
+  ];
+  return (
+    <div className="rounded-md border bg-muted/30 p-2.5 space-y-1.5 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <Badge variant={STATUS_BADGE[d.status] || 'secondary'} className="text-[10px]">{STATUS_LABEL[d.status] || d.status}</Badge>
+        <span className="text-muted-foreground">{d.latencyMs} ms{d.discoveredCount != null ? ` · ${d.discoveredCount} models discovered` : ''}</span>
+      </div>
+      {rows.filter((r) => r.s).map((r) => (
+        <div key={r.name} className="flex items-start gap-2">
+          {r.s!.ok
+            ? <Check className="h-3.5 w-3.5 text-emerald-600 mt-0.5 shrink-0" />
+            : <span className="text-destructive font-bold shrink-0">✕</span>}
+          <div>
+            <p className="font-medium">{r.name}</p>
+            {r.s!.detail && <p className="text-muted-foreground break-all">{r.s!.detail}</p>}
+          </div>
+        </div>
+      ))}
+      {d.detail && <p className="text-muted-foreground break-all">{d.detail}</p>}
+      <p className="text-[10px] text-muted-foreground">checked {d.checkedModel} · {new Date(d.verifiedAt).toLocaleString()}</p>
     </div>
   );
 }

@@ -3,13 +3,27 @@
 import { Router } from 'express';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { upsertKey, listKeys, deleteKey, setKeyEnabled, hasAnyKey } from '../services/aiVault.js';
-import { aiChat, aiCouncil, verifyKey } from '../services/multiAi.js';
+import { aiChat, aiCouncil, verifyKey, discoverModels, modelsFor } from '../services/multiAi.js';
 import { chat as sovereignChat } from '../services/modelGateway.js';
 
 export const aiRouter = Router();
 aiRouter.use(requireAuth);
 
-aiRouter.get('/providers', (req, res) => res.json(listKeys(req.user.orgId)));
+aiRouter.get('/providers', (req, res) => {
+  const out = listKeys(req.user.orgId);
+  // Merge each key with its model catalog: provider-discovered entries (when a
+  // refresh has run) over the static manifest — no stale-only dropdowns.
+  out.keys = out.keys.map((k) => ({ ...k, availableModels: modelsFor(req.user.orgId, k.provider) }));
+  res.json(out);
+});
+
+// Dynamic model discovery (spec §CRITICAL): retrieves the provider's live
+// catalog and persists it for this tenant. Falls back to the static manifest
+// with degraded=true when the provider/discovery fails — never fakes success.
+aiRouter.post('/providers/:provider/discover', requireRole('member'), async (req, res) => {
+  try { res.json(await discoverModels(req.user.orgId, req.params.provider)); }
+  catch (e) { res.status(e.status || 400).json({ error: String(e.message || e) }); }
+});
 
 aiRouter.put('/providers/keys', requireRole('member'), (req, res) => {
   try {

@@ -484,6 +484,20 @@ CREATE TABLE IF NOT EXISTS deployments (
   UNIQUE(org_id, subject_key)
 );
 CREATE INDEX IF NOT EXISTS idx_deploy_org ON deployments(org_id, status);
+CREATE TABLE IF NOT EXISTS ai_models (
+  org_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  label TEXT NOT NULL DEFAULT '',
+  context INTEGER,
+  vision INTEGER NOT NULL DEFAULT 0,
+  tools INTEGER NOT NULL DEFAULT 0,
+  streaming INTEGER NOT NULL DEFAULT 1,
+  reasoning INTEGER NOT NULL DEFAULT 0,
+  source TEXT NOT NULL DEFAULT 'discovered',   -- 'discovered' | 'manifest'
+  last_verified_at TEXT,
+  PRIMARY KEY (org_id, provider, model_id)
+);
 CREATE TABLE IF NOT EXISTS client_reviews (
   id TEXT PRIMARY KEY,
   org_id TEXT NOT NULL,
