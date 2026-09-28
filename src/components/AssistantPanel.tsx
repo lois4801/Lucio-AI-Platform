@@ -39,7 +39,7 @@ export default function AssistantPanel() {
     setBusy(true);
     try {
       const r = await api<{ reply: string; agent: Agent; actions: { label: string; route: string }[] }>('/assistant/chat', {
-        method: 'POST', body: JSON.stringify({ message: text, route: location.pathname }),
+        method: 'POST', body: JSON.stringify({ message: text, route: location.pathname, history: msgs.slice(-12).map(m => ({ role: m.from === 'user' ? 'user' : 'assistant', content: m.text })) }),
       });
       setMsgs((m) => [...m, { from: 'agent', text: r.reply, agentName: r.agent.display_name }]);
     } catch (e: any) {

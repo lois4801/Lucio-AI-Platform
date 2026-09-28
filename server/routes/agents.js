@@ -1,3 +1,4 @@
+import { chatError } from '../services/assistant/liveChat.js';
 // Real-time agents API — directory (vendored MIT packs), org enablement, and
 // streaming chat. All routes authenticated; enable/disable requires member.
 import { Router } from 'express';
@@ -51,19 +52,21 @@ agentsRouter.get('/:id/messages', (req, res) => {
 });
 
 // Non-streaming chat round-trip (also used by tests).
-agentsRouter.post('/:id/chat', (req, res) => {
+agentsRouter.post('/:id/chat', async (req, res) => {
   try {
-    res.json(chat({ orgId: req.user.orgId, userId: req.user.id, agentId: req.params.id, message: req.body?.message, context: req.body?.context || {} }));
-  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+    res.json(await chat({ orgId: req.user.orgId, userId: req.user.id, agentId: req.params.id, message: req.body?.message, context: req.body?.context || {} }));
+  } catch (e) { const failure = chatError(e); res.status(e.status || failure.status).json({ ...failure, error: e.status ? e.message : failure.error }); }
 });
 
 // Real-time SSE stream (EventSource-friendly GET).
-agentsRouter.get('/:id/chat', (req, res) => {
+agentsRouter.get('/:id/chat', async (req, res) => {
   let result;
   try {
-    result = chat({ orgId: req.user.orgId, userId: req.user.id, agentId: req.params.id, message: req.query.message, context: { page: req.query.page, projectId: req.query.projectId, prospectId: req.query.prospectId, scanId: req.query.scanId } });
+    result = await chat({ orgId: req.user.orgId, userId: req.user.id, agentId: req.params.id, message: req.query.message, context: { page: req.query.page, projectId: req.query.projectId, prospectId: req.query.prospectId, scanId: req.query.scanId } });
   } catch (e) {
-    return res.status(e.status || 500).json({ error: e.message });
+    const failure = chatError(e);
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    return res.end(`event: error\ndata: ${JSON.stringify({ ...failure, error: e.status ? e.message : failure.error })}\n\n`);
   }
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache');

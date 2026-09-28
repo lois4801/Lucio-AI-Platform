@@ -1,13 +1,7 @@
-// Real-time agent chat — sovereign intent engine. Enabled directory agents
-// answer in natural language, streamed over SSE, grounded on three real
-// inputs: the vendored persona, the organization's live app context, and the
-// conversation history. Replies are composed deterministically on-device by an
-// intent classifier (acknowledge / greet / question / how-to / create /
-// follow-up / feedback / workspace status) so each message gets a shape that
-// fits it — short acknowledgements, answered questions, real specialty-grounded
-// first drafts for "write X" requests — instead of one repeated template.
-// External providers from provider_registry can be opted into later without
-// changing this contract.
+import { aiChat } from './multiAi.js';
+import { CHAT_BOUNDARY } from './assistant/liveChat.js';
+// Agent chat uses the tenant AI gateway, persisted history, and workspace context.
+// composeReply is retained only for explicit offline guidance and legacy tests.
 import crypto from 'node:crypto';
 import { db } from '../db.js';
 import { getAgent } from './agentPacks.js';
@@ -362,7 +356,7 @@ export function saveMessage(orgId, agentId, userId, role, content, context = {})
 }
 
 // Full round-trip: validate, ground, compose, persist both sides.
-export function chat({ orgId, userId, agentId, message, context = {} }) {
+export async function chat({ orgId, userId, agentId, message, context = {} }) {
   const agent = getAgent(agentId);
   if (!agent) throw Object.assign(new Error('agent not found in directory'), { status: 404 });
   const enabled = db.prepare(`SELECT 1 FROM org_enabled_agents WHERE org_id = ? AND agent_id = ?`).get(orgId, agentId);
@@ -373,10 +367,16 @@ export function chat({ orgId, userId, agentId, message, context = {} }) {
 
   const prior = history(orgId, agentId, userId);
   const contextFacts = appContext(orgId, context);
+  const result = await aiChat(orgId, { messages: [
+    { role: 'system', content: CHAT_BOUNDARY },
+    { role: 'system', content: `Specialist: ${agent.name}. Persona: ${agent.persona || agent.description || ''}. Workspace data: ${JSON.stringify(contextFacts)}.` },
+    ...prior.map(m => ({ role: m.role, content: m.content })),
+    { role: 'user', content: text },
+  ] });
+  const reply = result.text;
   saveMessage(orgId, agentId, userId, 'user', text, { page: context.page || '' });
-  const reply = composeReply({ agent, message: text, contextFacts, prior });
-  const replyId = saveMessage(orgId, agentId, userId, 'assistant', reply, { sovereign: true, provider: 'sovereign-engine' });
-  return { agent: { id: agent.id, name: agent.name, emoji: agent.emoji, division: agent.division }, reply, replyId, contextFacts, sovereign: true };
+  const replyId = saveMessage(orgId, agentId, userId, 'assistant', reply, { sovereign: false, provider: result.provider, model: result.model });
+  return { agent: { id: agent.id, name: agent.name, emoji: agent.emoji, division: agent.division }, reply, replyId, contextFacts, sovereign: false, provider: result.provider, model: result.model };
 }
 
 // Async word-by-word stream of a composed reply, for SSE endpoints.

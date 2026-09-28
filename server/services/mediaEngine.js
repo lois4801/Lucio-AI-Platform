@@ -61,7 +61,8 @@ export function mediaSet(industry, seed = '') {
 function pickHeroKey(base, seed) {
   const options = [base, ...(ARCHETYPE_ALTERNATES[base] || [])].filter((k) =>
     fs.existsSync(path.join(MEDIA_DIR, `${k}.jpg`)));
-  return hashPick(options, seed, 3);
+  // An empty image library must retain the archetype for the SVG fallback.
+  return options.length ? hashPick(options, seed, 3) : base;
 }
 
 function hashPick(arr, seed, offset) {

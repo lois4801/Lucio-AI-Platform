@@ -1,6 +1,7 @@
+import { liveAssistantChat, chatError } from '../services/assistant/liveChat.js';
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
-import { assistantContext, assistantChat, dismissTip, squadAgents, squadProvenance } from '../services/assistant/engine.js';
+import { assistantContext, dismissTip, squadAgents, squadProvenance } from '../services/assistant/engine.js';
 
 export const assistantRouter = Router();
 assistantRouter.use(requireAuth);
@@ -11,11 +12,10 @@ assistantRouter.get('/context', (req, res) => {
   res.json(assistantContext(req.user.orgId, req.user, route));
 });
 
-// Conversational assistance (sovereign engine — no external model required).
-assistantRouter.post('/chat', (req, res) => {
-  const { message, route } = req.body || {};
-  if (!message) return res.status(400).json({ error: 'message is required' });
-  res.json(assistantChat(req.user.orgId, req.user, { message, route }));
+// Conversational requests use the configured model gateway; guidance stays local.
+assistantRouter.post('/chat', async (req, res) => {
+  try { res.json(await liveAssistantChat(req.user.orgId, req.user, req.body || {})); }
+  catch (e) { const failure = chatError(e); res.status(failure.status).json(failure); }
 });
 
 assistantRouter.post('/dismiss', (req, res) => {
