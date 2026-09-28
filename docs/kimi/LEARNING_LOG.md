@@ -487,3 +487,6 @@ start of every new session to evolve instead of rediscovering.
 
 ## 2026-09-27 — Public showcase site for the platform
 - Published showcase/index.html via kimix: https://gyxvyru4nxmci.kimi.page (source kept in repo under showcase/). Kimix is STATIC-only — the full Lucio platform (Express + SQLite + agents) cannot run on it; it needs a Node host or a tunnel.
+
+## 2026-09-27 — Lucio Skill Library installed (8,115 skills, on-demand)
+- Extracted Lucio_Agents_v9_6 zip to C:\Users\USER\Desktop\LucioDigital\Lucio-Skill-Library. NOT indexed in Kimi (context budget) — installed 5 umbrella skills (lucio-build-agent, lucio-web-experience, lucio-growth-operations, lucio-platform-engineering, lucio-agency-roster) in daimon skills root that route to scripts/find-skill.mjs for on-demand lookup. New skills appear in Kimi sessions started AFTER install.
