@@ -484,3 +484,6 @@ start of every new session to evolve instead of rediscovering.
 - kimix CLI v0.0.2 authenticates on demand from the host session; `kimix website create/publish static <zip> --wait` prints parseable `Website:` / `URL:` lines. Installed at ~/.kimi-work/bin/kimix.exe.
 - server/services/publicPublisher.js: zips self-contained HTML with fflate, validates, creates (or re-publishes to the same website id — stable URL, new version). public_snapshots(org,kind,ref_id) records the mapping. KIMIX_BIN env overrides the binary for hermetic tests; test shims as .cjs run via process.execPath (cmd.exe quoting is unreliable — don't bother with .cmd shims).
 - Real publishes done: Lumiere template -> https://33g3ojidj2hkc.kimi.page, Studio Noir demo -> https://jadhiavtf52d6.kimi.page.
+
+## 2026-09-27 — Public showcase site for the platform
+- Published showcase/index.html via kimix: https://gyxvyru4nxmci.kimi.page (source kept in repo under showcase/). Kimix is STATIC-only — the full Lucio platform (Express + SQLite + agents) cannot run on it; it needs a Node host or a tunnel.
