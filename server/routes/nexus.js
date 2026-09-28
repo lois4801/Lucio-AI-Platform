@@ -18,6 +18,7 @@ import { projectLayers } from '../services/nexus/layerTree.js';
 import { generateReactProject } from '../services/nexus/reactCodegen.js';
 import { deploy, listDeployments, rollbackDeployment, activeDeployment } from '../services/nexus/deploy.js';
 import { launchFromProspect } from '../services/nexus/prospectLaunch.js';
+import { ensureSiteBackend, getSiteBackend, publicFormSubmit } from '../services/nexus/siteBackend.js';
 
 export const nexusRouter = Router();
 
@@ -34,6 +35,20 @@ const splatPath = (req, fallback = 'index.html') => {
   const joined = Array.isArray(s) ? s.join('/') : (s || '');
   return joined.replace(/\/+$/, '') || fallback;
 };
+
+// Phase 12: when a project has a form backend, served HTML gets the public
+// submit endpoint injected and the sandbox CSP allows same-origin fetch only.
+function serveSiteHtml(res, html, projectId) {
+  const be = db.prepare(`SELECT token FROM site_backends WHERE project_id = ?`).get(projectId);
+  let out = html;
+  if (be && /<\/head>/i.test(out)) {
+    out = out.replace(/<\/head>/i, `<script>window.LUCIO_FORM_ENDPOINT="/api/nexus/public/forms/${be.token}/submit";</script></head>`);
+  }
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline' 'self'; connect-src 'self'; img-src 'self' data:");
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(out);
+}
 
 // ---------- public surfaces (no auth): share pages + deployed apps ----------
 nexusRouter.get('/share/:slug', (req, res) => {
@@ -58,7 +73,8 @@ nexusRouter.get('/share/:slug/file/*splat', (req, res) => {
   const path = splatPath(req);
   const entry = snap.checkpoint.manifest.find((m) => m.path === path);
   if (!entry || snap.contents[path] === undefined) return res.status(404).json({ error: 'file not in shared snapshot' });
-  res.setHeader('Content-Type', entry.path.endsWith('.html') ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8');
+  if (entry.path.endsWith('.html')) return serveSiteHtml(res, snap.contents[path], share.project_id);
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline' 'self'; connect-src 'none'; img-src 'self' data:");
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.send(snap.contents[path]);
@@ -79,11 +95,23 @@ nexusRouter.get('/apps/b/:slug/*splat', (req, res) => {
   const path = splatPath(req);
   const content = meta.contents?.[path];
   if (content === undefined) return res.status(404).send('not found');
-  res.setHeader('Content-Type', path.endsWith('.html') ? 'text/html; charset=utf-8' : path.endsWith('.css') ? 'text/css' : path.endsWith('.js') ? 'text/javascript' : 'text/plain; charset=utf-8');
+  if (path.endsWith('.html')) {
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    return serveSiteHtml(res, content, dep.project_id);
+  }
+  res.setHeader('Content-Type', path.endsWith('.css') ? 'text/css' : path.endsWith('.js') ? 'text/javascript' : 'text/plain; charset=utf-8');
   res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline' 'self'; connect-src 'none'; img-src 'self' data:");
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.send(content);
+});
+
+// Phase 12 — public form submissions from generated sites. Deliberately before
+// the enabled/auth middleware: a live client's forms keep working regardless
+// of builder toggles or Lucio sessions. Token is the capability; rate-limited.
+nexusRouter.post('/public/forms/:token/submit', (req, res) => {
+  try { res.status(201).json(publicFormSubmit(req.params.token, req.body, req.ip || 'unknown')); }
+  catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
 // ---------- authenticated builder API ----------
@@ -264,10 +292,24 @@ nexusRouter.get('/projects/:id/preview/*splat', (req, res) => {
   if (!p) return res.status(404).json({ error: 'project not found' });
   const f = getFile(p.id, splatPath(req));
   if (!f) return res.status(404).send('file not found — build the project first');
-  res.setHeader('Content-Type', f.mime_type === 'text/html' ? 'text/html; charset=utf-8' : f.mime_type);
+  if (f.mime_type === 'text/html') return serveSiteHtml(res, f.content, p.id);
+  res.setHeader('Content-Type', f.mime_type);
   res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline' 'self'; connect-src 'none'; img-src 'self' data:");
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.send(f.content);
+});
+
+// ---- site form backend (Phase 12) ---------------------------------------------------------------
+nexusRouter.post('/projects/:id/backend', requireRole('member'), (req, res) => {
+  const p = getProject(req.user.orgId, req.params.id);
+  if (!p) return res.status(404).json({ error: 'project not found' });
+  try { res.status(201).json({ backend: ensureSiteBackend(req.user.orgId, p.id, p.name, req.user, req.ip || '') }); }
+  catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+nexusRouter.get('/projects/:id/backend', (req, res) => {
+  const p = getProject(req.user.orgId, req.params.id);
+  if (!p) return res.status(404).json({ error: 'project not found' });
+  res.json({ backend: getSiteBackend(req.user.orgId, p.id) });
 });
 
 // checkpoints

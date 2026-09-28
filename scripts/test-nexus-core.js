@@ -150,7 +150,7 @@ if (await bootApp()) {
   // ---- Phase 5: live preview --------------------------------------------------------------------------
   const preview = await A('GET', `/api/nexus/projects/${pid}/preview/index.html`, undefined, true);
   ok(preview.status === 200 && preview.text.includes('<html'), 'preview serves generated html');
-  ok(preview.headers.get('content-security-policy')?.includes("connect-src 'none'"), 'preview ships sandbox CSP (no network for generated apps)');
+  ok(preview.headers.get('content-security-policy')?.includes("connect-src 'self'") && !preview.headers.get('content-security-policy')?.includes("connect-src 'none'"), 'preview CSP: same-origin only (Phase 12 form backends) — no external network');
   ok(preview.headers.get('x-content-type-options') === 'nosniff', 'preview nosniff header');
 
   // cleanup path: delete works for owner

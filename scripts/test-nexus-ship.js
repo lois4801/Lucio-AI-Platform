@@ -67,7 +67,7 @@ if (await bootApp()) {
   ok(publicRead.status === 200 && publicRead.json?.files?.includes('index.html'), 'public share read: file list (no auth)');
   const publicFile = await makeClient()('GET', `/api/nexus/share/${slug}/file/index.html`, undefined, true);
   ok(publicFile.status === 200 && publicFile.buf.toString('utf8').includes('Flour'), 'public share serves snapshot file');
-  ok(publicFile.headers.get('content-security-policy')?.includes("connect-src 'none'"), 'share file served with sandbox CSP');
+  ok(publicFile.headers.get('content-security-policy')?.includes("connect-src 'self'") && !publicFile.headers.get('content-security-policy')?.includes("connect-src 'none'"), 'share HTML CSP: same-origin only (Phase 12 form backends)');
   const comment = await makeClient()('POST', `/api/nexus/share/${slug}/comments`, { author: 'Client Pat', body: 'Love the hero, can we warm up the palette?', targetRef: 'styles.css' });
   ok(comment.status === 201, 'client comment on share (201)');
   const revoked = await A('DELETE', `/api/nexus/shares/${slug}`);

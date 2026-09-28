@@ -173,7 +173,7 @@ function renderSiteHtml({ name, tagline, industry, facts, tokens, sections, saas
     pricing: (id) => `<section id="${id}"${reveal ? ` class="${reveal.trim()}"` : ''}><h2>Pricing</h2><div class="cards" id="pricing-cards"></div></section>`,
     faq: (id) => `<section id="${id}"${reveal ? ` class="${reveal.trim()}"` : ''}><h2>FAQ</h2>${packFaqs || `<details><summary>${placeholder('question')}</summary><p>${placeholder('answer')}</p></details><details><summary>${placeholder('question')}</summary><p>${placeholder('answer')}</p></details>`}</section>`,
     gallery: (id) => `<section id="${id}"${reveal ? ` class="${reveal.trim()}"` : ''}><h2>Gallery</h2><div class="gallery" role="img" aria-label="Photo gallery placeholder"><div class="tile"></div><div class="tile"></div><div class="tile"></div></div></section>`,
-    contact: (id) => `<section id="${id}"${reveal ? ` class="${reveal.trim()}"` : ''}><h2>Contact</h2><p>${phone} · ${email}</p><p>${address}</p>${mapBlock}<form id="contact-form"><label for="cf-name">Name</label><input id="cf-name" name="name" required /><label for="cf-email">Email</label><input id="cf-email" name="email" type="email" required /><label for="cf-msg">Message</label><textarea id="cf-msg" name="message" required></textarea><button type="submit">Send</button><p id="form-status" role="status"></p></form></section>`,
+    contact: (id) => `<section id="${id}"${reveal ? ` class="${reveal.trim()}"` : ''}><h2>Contact</h2><p>${phone} · ${email}</p><p>${address}</p>${mapBlock}<form id="contact-form"><label for="cf-name">Name</label><input id="cf-name" name="name" required /><label for="cf-email">Email</label><input id="cf-email" name="email" type="email" required /><label for="cf-msg">Message</label><textarea id="cf-msg" name="message" required></textarea><input name="website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px" /><button type="submit">Send</button><p id="form-status" role="status"></p></form></section>`,
   };
   return `<!doctype html>
 <html lang="en">
@@ -318,7 +318,7 @@ function renderAppJs({ name, kind, facts, motion = null }) {
     }, { rootMargin: '0px 0px -10% 0px' });
     reveals.forEach((el) => io.observe(el));
   }` : '';
-  const common = `// ${name} — client runtime (Lucio NEXUS generated). Untrusted-app rules: no eval, no external network.
+  const common = `// ${name} — client runtime (Lucio NEXUS generated). Untrusted-app rules: no eval, no external network (only window.LUCIO_FORM_ENDPOINT, same-origin, when present).
 document.addEventListener('DOMContentLoaded', () => {
   let data = {};
   try { data = JSON.parse(document.getElementById('nexus-data')?.textContent || '{}'); } catch (e) { console.error('data parse failed', e); }
@@ -333,7 +333,17 @@ ${revealJs}
     const nameOk = document.getElementById('cf-name').value.trim().length > 0;
     const emailOk = /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(document.getElementById('cf-email').value);
     const msgOk = document.getElementById('cf-msg').value.trim().length > 0;
-    status.textContent = nameOk && emailOk && msgOk ? 'Thanks — your message is queued (demo wiring).' : 'Please complete all fields with a valid email.';
+    if (!(nameOk && emailOk && msgOk)) { status.textContent = 'Please complete all fields with a valid email.'; return; }
+    if (window.LUCIO_FORM_ENDPOINT) {
+      status.textContent = 'Sending…';
+      const payload = { name: document.getElementById('cf-name').value.trim(), email: document.getElementById('cf-email').value.trim(), message: document.getElementById('cf-msg').value.trim(), website: (form.querySelector('[name=website]') || {}).value || '' };
+      fetch(window.LUCIO_FORM_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+        .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
+        .then(({ ok, j }) => { status.textContent = ok ? 'Thanks — your message has been sent.' : ('Could not send: ' + ((j && j.error) || 'please try again')); if (ok) form.reset(); })
+        .catch(() => { status.textContent = 'Could not send — please try again.'; });
+    } else {
+      status.textContent = 'Thanks — your message is queued (no form backend enabled yet).';
+    }
   });
   const pricing = document.getElementById('pricing-cards');
   if (pricing && data.plans) pricing.innerHTML = data.plans.map((p) => '<div class="card"><h3>' + p + '</h3><p>[EDIT: plan terms]</p></div>').join('');
@@ -437,7 +447,7 @@ ${geo ? `- Map: embed a live OpenStreetMap iframe (no API key): <iframe src="htt
 HARD REQUIREMENTS (an automated evidence suite rejects anything that violates these):
 1. index.html starts with <!doctype html>, has <html lang="en">, <meta name="viewport" …>, a <title>, and references styles.css and app.js.
 2. styles.css defines CSS custom properties --bg: #rrggbb and --text: #rrggbb whose contrast is >= 4.5:1 (WCAG AA), and styles the whole page (cinematic hero, animated buttons/transitions encouraged).
-3. app.js is plain valid JavaScript that runs standalone in a sandboxed browser (no network calls, no modules, no imports). It must add real interactivity (nav, forms with client validation, filters or galleries).
+3. app.js is plain valid JavaScript that runs standalone in a sandboxed browser (no eval, no modules, no imports, no network calls EXCEPT posting form data as JSON to window.LUCIO_FORM_ENDPOINT when that variable is present). It must add real interactivity (nav, forms with client validation, filters or galleries).
 4. NEVER use eval(, new Function(, or document.write( anywhere.
 5. Total size of all files together must stay under 100 KB. No external URLs for CSS/JS/fonts — everything self-contained except the OSM map iframe above.
 6. README.md: 5–10 lines — what the app is, how to open it, the API contract (static demo), and the data model.

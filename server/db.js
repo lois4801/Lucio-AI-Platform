@@ -817,6 +817,18 @@ CREATE TABLE IF NOT EXISTS builder_github_connections (
   created_by TEXT,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- Site form backend (Phase 12): a NEXUS project's public forms persist into an
+-- App Studio app_definition (schema derived from the generated HTML forms) via
+-- an unguessable token. The token is a capability: possession submits.
+CREATE TABLE IF NOT EXISTS site_backends (
+  project_id TEXT PRIMARY KEY REFERENCES builder_projects(id) ON DELETE CASCADE,
+  org_id TEXT NOT NULL,
+  app_id TEXT NOT NULL REFERENCES app_definitions(id) ON DELETE CASCADE,
+  token TEXT NOT NULL UNIQUE,
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_site_backends_token ON site_backends(token);
 -- Real-time agent directory: vendored agent packs (MIT) ingested at boot by
 -- server/services/agentPacks.js. Global catalog; orgs enable agents per org.
 CREATE TABLE IF NOT EXISTS agent_directory (

@@ -35,6 +35,7 @@ export default function NexusPage() {
   const [scanUrl, setScanUrl] = useState('');
   const [scanProposal, setScanProposal] = useState<any>(null);
   const [scanBusy, setScanBusy] = useState(false);
+  const [backend, setBackend] = useState<{ appId: string; token: string; endpoint: string; recordCount: number; fields: any[] } | null>(null);
   const [checkpoints, setCheckpoints] = useState<Cp[]>([]);
   const [evidence, setEvidence] = useState<EvRow[]>([]);
   const [competition, setCompetition] = useState(false);
@@ -67,6 +68,8 @@ export default function NexusPage() {
     if (conn.connection) { setGhRepo(conn.connection.repo); setGhBranch(conn.connection.branch); }
     setGhDiff(null);
     setScanProposal(null); setScanUrl('');
+    const be = await api(`/nexus/projects/${p.id}/backend`).catch(() => ({ backend: null }));
+    setBackend(be.backend);
   };
 
   const loadEvents = async (runId: string, status?: string) => {
@@ -213,7 +216,16 @@ export default function NexusPage() {
     finally { setGhBusy(''); }
   };
 
-  // ---- design reference scan (Phase 11) --------------------------------------------------------
+  // ---- site form backend (Phase 12) -------------------------------------------------------------
+  const enableBackend = async () => {
+    if (!active) return;
+    setMsg('');
+    try {
+      const r = await api(`/nexus/projects/${active.id}/backend`, { method: 'POST', body: JSON.stringify({}) });
+      setBackend(r.backend);
+      setMsg(`Form backend live — ${r.backend.fields.length} field(s) captured from the site's forms.`);
+    } catch (err: any) { setMsg(err.message); }
+  };
   const runScan = async () => {
     if (!active || scanBusy || !scanUrl.trim()) return;
     setScanBusy(true); setMsg(''); setScanProposal(null);
@@ -427,6 +439,30 @@ export default function NexusPage() {
                       <Button size="sm" onClick={applyScan} disabled={scanBusy}>{scanBusy ? 'Applying…' : 'Apply to project'}</Button>
                       <Button size="sm" variant="outline" onClick={() => setScanProposal(null)}>Dismiss</Button>
                     </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader><CardTitle>Site backend</CardTitle>
+                <CardDescription>Give the generated site's forms a real home: submissions validate against a schema derived from the site's own forms and land in App Studio records.</CardDescription></CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                {backend ? (
+                  <div className="space-y-2">
+                    <div className="flex gap-2 items-center flex-wrap">
+                      <Badge>live</Badge>
+                      <span className="text-xs text-muted-foreground">{backend.recordCount} submission(s)</span>
+                      <Button size="sm" variant="outline" onClick={enableBackend}>Refresh schema</Button>
+                      <a className="text-xs text-accent underline" href="/studio">Open in App Studio</a>
+                    </div>
+                    <div className="text-xs font-mono break-all">{backend.endpoint}</div>
+                    <div className="text-xs text-muted-foreground">{backend.fields.map((f) => `${f.key}${f.required ? '*' : ''}`).join(', ')}</div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">Build the project first, then enable — the schema is captured from the forms in index.html.</p>
+                    <Button size="sm" onClick={enableBackend}>Enable form backend</Button>
                   </div>
                 )}
               </CardContent>

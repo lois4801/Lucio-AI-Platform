@@ -574,3 +574,9 @@ start of every new session to evolve instead of rediscovering.
 - Palette role mapping must be role-specific (neutral dark=text, saturated=accent, grayish mid=muted) — raw frequency order misroles everything on real sites.
 - scanLdd-derived documents: getLdd derives on READ without persisting — apply must saveLdd explicitly or the mutation evaporates on the next read.
 - Cheerio .css() only reads inline styles — parse h1/h2 font-family from stylesheet text with a regex over CSS instead.
+
+## 2026-09-28 — Phase 12 (generated-app backends)
+- Generated-site forms: derive the validation schema from the site's OWN HTML forms — the site is the schema source, so validation can never drift from what visitors see.
+- Capability-token public endpoints must mount BEFORE the feature-flag + auth middleware, or live client forms die when a toggle flips.
+- CSP change connect-src 'none' -> 'self' is a CONTRACT change — grep the test suite for the old string and update assertions in the same commit, or the sweep goes red.
+- Rate-limit counters increment even on 422 validation failures (limit check runs first) — tests must budget for the failed attempts before the flood loop.
