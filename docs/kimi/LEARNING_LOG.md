@@ -537,3 +537,8 @@ start of every new session to evolve instead of rediscovering.
 - Never put `sandbox="allow-scripts"` on a same-origin preview iframe you need to highlight: opaque origin blocks contentDocument. The server's strict CSP (connect-src 'none' + nosniff) already provides the isolation.
 - Rendering sections from an ordered LDD `sections` list with per-occurrence unique ids (`hero`, `hero-2`) makes duplicate-section canvas ops anchor-safe by construction — assert zero duplicate id attributes in tests.
 - Hidden LDD sections never reach the HTML, so the layer tree can't list them; expose them via `document.sections` separately or the canvas has no unhide path.
+
+## 2026-09-28 — Phase 5: property inspector
+- Inspector honesty rule: only expose fields verified against the render pipeline; a field the apply step would drop is worse than no field (cut a fake "Hours" input during review).
+- validateLdd must cover every token the renderer dereferences (palette hexes, radius, fonts) — otherwise a bad document passes validation and only blows up at render time.
+- Dirty-check draft vs document so "Apply" is a no-op guard; color inputs + slider need a commit boundary or every drag frame becomes a checkpoint.

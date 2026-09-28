@@ -74,7 +74,19 @@ export function validateLdd(ldd) {
     if (!LDD_APP_TYPES.includes(ldd.project.appType)) errors.push(`project.appType must be one of: ${LDD_APP_TYPES.join(', ')}`);
   }
   if (!ldd.design || typeof ldd.design !== 'object' || !ldd.design.universe) errors.push('design.universe required');
-  if (!ldd.design || !ldd.design.tokens || typeof ldd.design.tokens !== 'object') errors.push('design.tokens required');
+  if (!ldd.design || !ldd.design.tokens || typeof ldd.design.tokens !== 'object' || Array.isArray(ldd.design.tokens)) errors.push('design.tokens required');
+  else {
+    // The renderer dereferences these directly (renderCss) — a document that
+    // passes validation must never crash or render blank at render time.
+    const pal = ldd.design.tokens.palette;
+    if (!pal || typeof pal !== 'object') errors.push('design.tokens.palette required');
+    else for (const k of ['bg', 'surface', 'text', 'accent', 'muted']) {
+      if (!/^#[0-9a-fA-F]{6}$/.test(String(pal[k] || ''))) errors.push(`design.tokens.palette.${k} must be a #rrggbb hex`);
+    }
+    if (!ldd.design.tokens.radius || typeof ldd.design.tokens.radius !== 'string') errors.push('design.tokens.radius required');
+    const fonts = ldd.design.tokens.fonts;
+    if (!fonts || typeof fonts !== 'object' || !fonts.body || !fonts.display) errors.push('design.tokens.fonts.body and .display required');
+  }
   if (!Array.isArray(ldd.pages) || !ldd.pages.length) errors.push('pages must be a non-empty array');
   else {
     for (const [i, page] of ldd.pages.entries()) {

@@ -7,7 +7,28 @@ import {
   Loader2, RefreshCw, Undo2, Redo2, ArrowUp, ArrowDown, Copy,
   Trash2, Eye, EyeOff, Lock, Unlock, AlertTriangle, Square, Type, AlignLeft, Link2,
   Image as ImageIcon, List, MousePointerClick, TextCursorInput, Rows3, ChevronRight, ChevronDown,
+  SlidersHorizontal,
 } from 'lucide-react';
+
+// Phase 5 — property inspector. Only fields the renderer ACTUALLY consumes
+// (verified against templates.js renderCss/renderSiteHtml and lddToBrief):
+// palette bg/surface/text/accent/muted, radius, fonts; content.tagline and
+// facts.about/phone/email/address; per-section hidden/locked. Every edit is a
+// document write + re-render, so the canvas, files and document stay one truth.
+type InspectorDraft = {
+  tagline: string;
+  about: string; phone: string; email: string; address: string;
+  palette: { bg: string; surface: string; text: string; accent: string; muted: string };
+  radius: string;
+  fontBody: string; fontDisplay: string;
+};
+const PALETTE_FIELDS: { key: keyof InspectorDraft['palette']; label: string }[] = [
+  { key: 'bg', label: 'Background' },
+  { key: 'surface', label: 'Surface' },
+  { key: 'text', label: 'Text' },
+  { key: 'accent', label: 'Accent' },
+  { key: 'muted', label: 'Muted' },
+];
 
 // Phase 4 — Visual canvas + layer tree (spec §4/§5). The layer tree is the
 // REAL element tree parsed from the rendered page; canvas operations mutate
@@ -54,6 +75,27 @@ export default function CanvasPage() {
   const [error, setError] = useState('');
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [frameTick, setFrameTick] = useState(0);
+  const [draft, setDraft] = useState<InspectorDraft | null>(null);
+
+  useEffect(() => {
+    if (!ldd) return;
+    const t = (ldd as any).design?.tokens || {};
+    const pal = t.palette || {};
+    const f = ((ldd as any).content?.facts || {}) as Record<string, string>;
+    setDraft({
+      tagline: String((ldd as any).content?.tagline || ''),
+      about: String(f.about || ''), phone: String(f.phone || ''),
+      email: String(f.email || ''), address: String(f.address || ''),
+      palette: {
+        bg: String(pal.bg || '#ffffff'), surface: String(pal.surface || '#ffffff'),
+        text: String(pal.text || '#111111'), accent: String(pal.accent || '#111111'),
+        muted: String(pal.muted || '#666666'),
+      },
+      radius: String(t.radius || '8px'),
+      fontBody: String(t.fonts?.body || 'system-ui, sans-serif'),
+      fontDisplay: String(t.fonts?.display || 'system-ui, sans-serif'),
+    });
+  }, [ldd]);
 
   useEffect(() => { api<{ projects: { id: string; name: string }[] }>('/nexus/projects').then((r) => setProjects(r.projects)).catch((e) => setError(e.message)); }, []);
   useEffect(() => { if (paramId) setProjectId(paramId); }, [paramId]);
@@ -168,6 +210,40 @@ export default function CanvasPage() {
     mutateSections((secs) => { const s = secs.find((x) => x.id === id); if (s) s.locked = !s.locked; });
   };
   const unhide = (id: string) => mutateSections((secs) => { const s = secs.find((x) => x.id === id); if (s) s.hidden = false; });
+
+  // ---- Phase 5 inspector: document-level writes -------------------------------
+  const mutateDoc = (fn: (doc: any) => void, recordHistory = true) => {
+    if (!ldd) return;
+    const doc: any = JSON.parse(JSON.stringify(ldd));
+    fn(doc);
+    return saveAndRender(doc, recordHistory);
+  };
+  const applyDraft = () => {
+    if (!draft) return;
+    mutateDoc((doc) => {
+      doc.content.tagline = draft.tagline;
+      doc.content.facts = { ...(doc.content.facts || {}), about: draft.about, phone: draft.phone, email: draft.email, address: draft.address };
+      doc.design.tokens.palette = { ...doc.design.tokens.palette, ...draft.palette };
+      doc.design.tokens.radius = draft.radius;
+      doc.design.tokens.fonts = { ...(doc.design.tokens.fonts || {}), body: draft.fontBody, display: draft.fontDisplay };
+    });
+  };
+  const draftDirty = (() => {
+    if (!ldd || !draft) return false;
+    const t = (ldd as any).design?.tokens || {};
+    const pal = t.palette || {};
+    const f = ((ldd as any).content?.facts || {}) as Record<string, string>;
+    return draft.tagline !== String((ldd as any).content?.tagline || '')
+      || draft.about !== String(f.about || '') || draft.phone !== String(f.phone || '')
+      || draft.email !== String(f.email || '') || draft.address !== String(f.address || '')
+      || draft.radius !== String(t.radius || '8px')
+      || draft.fontBody !== String(t.fonts?.body || '') || draft.fontDisplay !== String(t.fonts?.display || '')
+      || PALETTE_FIELDS.some(({ key }) => draft.palette[key] !== String(pal[key] || ''));
+  })();
+  const sectionProp = (fn: (s: any) => void) => {
+    const id = selected?.sectionId;
+    mutateSections((secs) => { const s = secs.find((x) => x.id === id); if (s) fn(s); });
+  };
 
   const undo = async () => {
     if (hIndex <= 0) return;
@@ -288,6 +364,88 @@ export default function CanvasPage() {
               src={`/api/nexus/projects/${projectId}/preview/index.html`}
               onLoad={() => highlight(selected?.path || null)}
             />
+          </div>
+
+          {/* Phase 5 inspector — every field here is consumed by the renderer */}
+          <div className="w-80 shrink-0 rounded-md border bg-card overflow-y-auto p-3 space-y-4">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1.5"><SlidersHorizontal className="h-3.5 w-3.5" /> Inspector</p>
+
+            {selected?.sectionId && selectedSection && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold">Section — {selected.sectionId}</p>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Type</span><span>{String((selectedSection as any).type)}</span>
+                </div>
+                <label className="flex items-center justify-between text-xs cursor-pointer">
+                  <span className="text-muted-foreground">Hidden</span>
+                  <input type="checkbox" checked={!!(selectedSection as any).hidden} onChange={(e) => sectionProp((s) => { s.hidden = e.target.checked; })} />
+                </label>
+                <label className="flex items-center justify-between text-xs cursor-pointer">
+                  <span className="text-muted-foreground">Locked</span>
+                  <input type="checkbox" checked={!!(selectedSection as any).locked} onChange={(e) => sectionProp((s) => { s.locked = e.target.checked; })} />
+                </label>
+              </div>
+            )}
+
+            {draft && (<>
+              <div className="space-y-2">
+                <p className="text-xs font-semibold">Design tokens</p>
+                {PALETTE_FIELDS.map(({ key, label }) => (
+                  <div key={key} className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-muted-foreground">{label}</span>
+                    <div className="flex items-center gap-1.5">
+                      <code className="text-[10px] text-muted-foreground">{draft.palette[key]}</code>
+                      <input type="color" value={draft.palette[key]} className="h-6 w-8 cursor-pointer rounded border bg-background p-0.5"
+                        onChange={(e) => setDraft({ ...draft, palette: { ...draft.palette, [key]: e.target.value } })} />
+                    </div>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <span className="text-xs text-muted-foreground">Corner radius</span>
+                  <div className="flex items-center gap-1.5">
+                    <input type="range" min={0} max={24} step={1} value={parseInt(draft.radius, 10) || 0}
+                      onChange={(e) => setDraft({ ...draft, radius: `${e.target.value}px` })} className="w-20" />
+                    <code className="text-[10px] text-muted-foreground w-8">{draft.radius}</code>
+                  </div>
+                </div>
+                <div className="space-y-1 pt-1">
+                  <label className="text-[11px] text-muted-foreground block">Body font stack</label>
+                  <input className="w-full rounded border bg-background px-2 py-1 text-xs" value={draft.fontBody}
+                    onChange={(e) => setDraft({ ...draft, fontBody: e.target.value })} />
+                  <label className="text-[11px] text-muted-foreground block">Display font stack</label>
+                  <input className="w-full rounded border bg-background px-2 py-1 text-xs" value={draft.fontDisplay}
+                    onChange={(e) => setDraft({ ...draft, fontDisplay: e.target.value })} />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-semibold">Content</p>
+                <label className="block space-y-1">
+                  <span className="text-[11px] text-muted-foreground">Tagline (hero)</span>
+                  <input className="w-full rounded border bg-background px-2 py-1 text-xs" value={draft.tagline}
+                    onChange={(e) => setDraft({ ...draft, tagline: e.target.value })} />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-[11px] text-muted-foreground">About text</span>
+                  <textarea rows={3} className="w-full rounded border bg-background px-2 py-1 text-xs" value={draft.about}
+                    onChange={(e) => setDraft({ ...draft, about: e.target.value })} />
+                </label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {([['phone', 'Phone'], ['email', 'Email'], ['address', 'Address']] as const).map(([k2, label]) => (
+                    <label key={k2} className="block space-y-1">
+                      <span className="text-[11px] text-muted-foreground">{label}</span>
+                      <input className="w-full rounded border bg-background px-2 py-1 text-xs" value={draft[k2]}
+                        onChange={(e) => setDraft({ ...draft, [k2]: e.target.value })} />
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <Button size="sm" className="w-full" disabled={busy || !draftDirty} onClick={applyDraft}>
+                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null} Apply & re-render
+              </Button>
+              <p className="text-[10px] text-muted-foreground">Writes go through the canonical document — styles.css and index.html re-render, custom files are preserved, and a checkpoint is created.</p>
+            </>)}
           </div>
         </div>
       )}
