@@ -14,6 +14,16 @@ import { reviewView, decideReview } from '../services/clientReview.js';
 
 export const publicRouter = Router();
 
+// Public runtime config for the SPA — no secrets. The frontend uses
+// publicBaseUrl when generating client-shareable links (live sites, owner
+// portals, reviews, template previews). Set PUBLIC_BASE_URL to your hosted
+// domain or tunnel (e.g. https://lucio.yourdomain.com) so links copied for
+// clients work from anywhere; while unset the app falls back to the origin
+// the user is currently on (localhost during development).
+publicRouter.get('/api/config', (req, res) => {
+  res.json({ app: 'Lucio AI Platform', publicBaseUrl: process.env.PUBLIC_BASE_URL || null });
+});
+
 // Simple in-memory rate limits for the unauthenticated endpoints.
 const hits = new Map();
 const rateOk = (key, limit, windowMs) => {

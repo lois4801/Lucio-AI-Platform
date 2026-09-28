@@ -23,6 +23,11 @@ const vite = await createViteServer({
       '/api': { target: `http://localhost:${PORT}`, changeOrigin: true },
       '/live': { target: `http://localhost:${PORT}`, changeOrigin: true },
       '/portal': { target: `http://localhost:${PORT}`, changeOrigin: true },
+      // Public client-facing pages served by the API (publicRouter) — without
+      // these, Vite's SPA fallback swallows them and clients see the app shell
+      // instead of the actual site/review content.
+      '/tpl': { target: `http://localhost:${PORT}`, changeOrigin: true },
+      '/review': { target: `http://localhost:${PORT}`, changeOrigin: true },
     },
   },
   clearScreen: false,

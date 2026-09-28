@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { publicUrl } from '@/lib/publicUrl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -108,6 +109,10 @@ export default function ClientsPage() {
   const copy = (text: string, label: string) => {
     navigator.clipboard?.writeText(text).then(() => setNotice(`${label} copied to clipboard`)).catch(() => setError('Clipboard unavailable — copy manually'));
   };
+  // Client-shareable links must use the PUBLIC base (PUBLIC_BASE_URL), never
+  // localhost — the client opens them on their own device.
+  const copyPublic = (path: string, label: string) =>
+    publicUrl(path).then((u) => copy(u, label)).catch(() => copy(`${window.location.origin}${path}`, label));
 
   // ---- Phase 10: production gate, rollback, domains, export ----
   const requestProd = (s: PublishedSite) =>
@@ -182,13 +187,13 @@ export default function ClientsPage() {
                   <TableCell>
                     <span className="flex items-center gap-1">
                       <Button size="sm" variant="ghost" onClick={() => window.open(`/live/${s.slug}`, '_blank')}><Globe className="h-3.5 w-3.5" /></Button>
-                      <Button size="sm" variant="ghost" title="Copy public link" onClick={() => copy(`${window.location.origin}/live/${s.slug}`, 'Public link')}><Copy className="h-3.5 w-3.5" /></Button>
+                      <Button size="sm" variant="ghost" title="Copy public link" onClick={() => copyPublic(`/live/${s.slug}`, 'Public link')}><Copy className="h-3.5 w-3.5" /></Button>
                     </span>
                   </TableCell>
                   <TableCell>
                     <span className="flex items-center gap-1">
                       <Button size="sm" variant="ghost" title="Open owner portal" onClick={() => window.open(`/portal/${s.owner_token}`, '_blank')}><ExternalLink className="h-3.5 w-3.5" /></Button>
-                      <Button size="sm" variant="ghost" title="Copy owner portal link" onClick={() => copy(`${window.location.origin}/portal/${s.owner_token}`, 'Owner portal link')}><Copy className="h-3.5 w-3.5" /></Button>
+                      <Button size="sm" variant="ghost" title="Copy owner portal link" onClick={() => copyPublic(`/portal/${s.owner_token}`, 'Owner portal link')}><Copy className="h-3.5 w-3.5" /></Button>
                     </span>
                   </TableCell>
                   <TableCell>
@@ -239,7 +244,7 @@ export default function ClientsPage() {
                   <TableCell>
                     <span className="flex items-center gap-1">
                       <Button size="sm" variant="ghost" title="Open review page" onClick={() => window.open(`/review/${rv.token}`, '_blank')}><ExternalLink className="h-3.5 w-3.5" /></Button>
-                      <Button size="sm" variant="ghost" title="Copy review link" onClick={() => copy(`${window.location.origin}/review/${rv.token}`, 'Review link')}><Copy className="h-3.5 w-3.5" /></Button>
+                      <Button size="sm" variant="ghost" title="Copy review link" onClick={() => copyPublic(`/review/${rv.token}`, 'Review link')}><Copy className="h-3.5 w-3.5" /></Button>
                     </span>
                   </TableCell>
                 </TableRow>

@@ -3,6 +3,7 @@ import { useRef } from 'react';
 import { zipSync } from 'fflate';
 import { useNavigate } from 'react-router';
 import { api, type Project } from '@/lib/api';
+import { publicUrl } from '@/lib/publicUrl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,7 +35,7 @@ export default function ProjectsPage() {
   const [copiedTpl, setCopiedTpl] = useState('');
   const copyTplLink = async (id: string) => {
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}/tpl/${id}`);
+      await navigator.clipboard.writeText(await publicUrl(`/tpl/${id}`));
       setCopiedTpl(id);
       setTimeout(() => setCopiedTpl((c) => (c === id ? '' : c)), 1500);
     } catch { /* clipboard unavailable — the Live button still works */ }

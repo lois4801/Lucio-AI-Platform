@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type Project, type Plan } from '@/lib/api';
+import { usePublicBase } from '@/lib/publicUrl';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -88,6 +89,7 @@ function normalizeDims(dimensions: StyleAudit['dimensions']): [string, number][]
 }
 
 export default function BuilderPage() {
+  const pubBase = usePublicBase();
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState('');
   const [goal, setGoal] = useState('');
@@ -298,8 +300,8 @@ export default function BuilderPage() {
           </div>
           {publishInfo && (
             <div className="text-sm border rounded-lg p-3 bg-muted/40 space-y-1">
-              <div>Live site: <a className="text-primary underline font-medium" href={`/live/${publishInfo.slug}`} target="_blank" rel="noreferrer">{window.location.origin}/live/{publishInfo.slug}</a></div>
-              <div>Owner portal (give this to the client): <a className="text-primary underline" href={`/portal/${publishInfo.token}`} target="_blank" rel="noreferrer">{window.location.origin}/portal/{publishInfo.token}</a></div>
+              <div>Live site: <a className="text-primary underline font-medium" href={`/live/${publishInfo.slug}`} target="_blank" rel="noreferrer">{pubBase}/live/{publishInfo.slug}</a></div>
+              <div>Owner portal (give this to the client): <a className="text-primary underline" href={`/portal/${publishInfo.token}`} target="_blank" rel="noreferrer">{pubBase}/portal/{publishInfo.token}</a></div>
               <div className="text-xs text-muted-foreground">Track the deal, payment status, change requests and leads under “Clients & Sites” in the sidebar.</div>
             </div>
           )}

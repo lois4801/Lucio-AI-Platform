@@ -475,3 +475,7 @@ start of every new session to evolve instead of rediscovering.
 ## 2026-09-27 — Root tsconfig has references only; `tsc --noEmit` checks nothing
 - `npx tsc --noEmit` at repo root passed while `src/pages/ProjectsPage.tsx` contained syntax errors, because root tsconfig.json only holds project references. Always run `npx tsc -p tsconfig.app.json --noEmit` (and `-p tsconfig.node.json`) for a real frontend check.
 - ProjectsPage.tsx shipped with escaped template-literal backticks (`\`\${...}\``) on two lines — Vite overlay: "Expecting Unicode escape sequence". Corruption pattern to grep for: `\`` in tsx files.
+
+## 2026-09-27 — Client links: Vite proxy swallowed /tpl and /review
+- In dev, scripts/dev.js proxies only /api, /live, /portal. /tpl/:id and /review/:token hit Vite's SPA fallback and returned the app shell instead of the actual site — the "Live" template buttons and review links were silently broken. Added /tpl and /review to the dev proxy. Vite proxy/config changes need a dev-server restart (no HMR).
+- Copied share links used window.location.origin = localhost for clients. Added GET /api/config (env PUBLIC_BASE_URL) + src/lib/publicUrl.ts (publicUrl / usePublicBase); all copy handlers in ClientsPage, ProjectsPage, BuilderPage now use the public base.
