@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { BriefcaseBusiness, Copy, ExternalLink, Flag, CreditCard, CheckCircle2, HandCoins, Globe, Rocket, RotateCcw, ShieldCheck, Download, Plus, X, ClipboardCheck, ArrowDownLeft, ArrowUpRight, Receipt } from 'lucide-react';
+import { BriefcaseBusiness, Copy, ExternalLink, Flag, CreditCard, CheckCircle2, HandCoins, Globe, Rocket, RotateCcw, ShieldCheck, Download, Plus, X, ClipboardCheck, ArrowDownLeft, ArrowUpRight, Receipt, CloudUpload, Loader2 } from 'lucide-react';
 
 type Deal = {
   id: string; business_name: string; stage: string; build_fee_cents: number; monthly_cents: number;
@@ -113,6 +113,19 @@ export default function ClientsPage() {
   // localhost — the client opens them on their own device.
   const copyPublic = (path: string, label: string) =>
     publicUrl(path).then((u) => copy(u, label)).catch(() => copy(`${window.location.origin}${path}`, label));
+  const [publishingSite, setPublishingSite] = useState('');
+  const publishSitePublic = async (slug: string, name: string) => {
+    setPublishingSite(slug);
+    try {
+      const r = await api<{ url: string }>('/public-publish/site', { method: 'POST', body: JSON.stringify({ slug }) });
+      await navigator.clipboard.writeText(r.url).catch(() => {});
+      setNotice(`“${name}” is public: ${r.url} — link copied`);
+    } catch (e: any) {
+      setError(`Publish failed: ${e.message}`);
+    } finally {
+      setPublishingSite('');
+    }
+  };
 
   // ---- Phase 10: production gate, rollback, domains, export ----
   const requestProd = (s: PublishedSite) =>
@@ -188,6 +201,7 @@ export default function ClientsPage() {
                     <span className="flex items-center gap-1">
                       <Button size="sm" variant="ghost" onClick={() => window.open(`/live/${s.slug}`, '_blank')}><Globe className="h-3.5 w-3.5" /></Button>
                       <Button size="sm" variant="ghost" title="Copy public link" onClick={() => copyPublic(`/live/${s.slug}`, 'Public link')}><Copy className="h-3.5 w-3.5" /></Button>
+                      <Button size="sm" variant="ghost" title="Publish to a public client-viewable URL (kimi.page)" disabled={publishingSite !== ''} onClick={() => publishSitePublic(s.slug, s.project_name)}>{publishingSite === s.slug ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CloudUpload className="h-3.5 w-3.5" />}</Button>
                     </span>
                   </TableCell>
                   <TableCell>

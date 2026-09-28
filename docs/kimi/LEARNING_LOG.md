@@ -479,3 +479,8 @@ start of every new session to evolve instead of rediscovering.
 ## 2026-09-27 — Client links: Vite proxy swallowed /tpl and /review
 - In dev, scripts/dev.js proxies only /api, /live, /portal. /tpl/:id and /review/:token hit Vite's SPA fallback and returned the app shell instead of the actual site — the "Live" template buttons and review links were silently broken. Added /tpl and /review to the dev proxy. Vite proxy/config changes need a dev-server restart (no HMR).
 - Copied share links used window.location.origin = localhost for clients. Added GET /api/config (env PUBLIC_BASE_URL) + src/lib/publicUrl.ts (publicUrl / usePublicBase); all copy handlers in ClientsPage, ProjectsPage, BuilderPage now use the public base.
+
+## 2026-09-27 — One-click public publishing via kimix CLI
+- kimix CLI v0.0.2 authenticates on demand from the host session; `kimix website create/publish static <zip> --wait` prints parseable `Website:` / `URL:` lines. Installed at ~/.kimi-work/bin/kimix.exe.
+- server/services/publicPublisher.js: zips self-contained HTML with fflate, validates, creates (or re-publishes to the same website id — stable URL, new version). public_snapshots(org,kind,ref_id) records the mapping. KIMIX_BIN env overrides the binary for hermetic tests; test shims as .cjs run via process.execPath (cmd.exe quoting is unreliable — don't bother with .cmd shims).
+- Real publishes done: Lumiere template -> https://33g3ojidj2hkc.kimi.page, Studio Noir demo -> https://jadhiavtf52d6.kimi.page.

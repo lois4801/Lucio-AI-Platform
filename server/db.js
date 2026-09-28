@@ -451,6 +451,19 @@ CREATE TABLE IF NOT EXISTS site_domains (
 CREATE INDEX IF NOT EXISTS idx_deploy_site ON site_deployments(published_site_id, status);
 CREATE INDEX IF NOT EXISTS idx_pubreq_site ON publish_requests(published_site_id, status);
 CREATE INDEX IF NOT EXISTS idx_domains_site ON site_domains(published_site_id);
+CREATE TABLE IF NOT EXISTS public_snapshots (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL REFERENCES organizations(id),
+  kind TEXT NOT NULL,                    -- 'template' | 'site'
+  ref_id TEXT NOT NULL,                  -- template id or published-site slug
+  website_id TEXT NOT NULL,              -- kimix website id — reused on re-publish
+  url TEXT NOT NULL,                     -- canonical https://<slug>.kimi.page
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(org_id, kind, ref_id)
+);
+CREATE INDEX IF NOT EXISTS idx_pubsnap_org ON public_snapshots(org_id, kind);
 CREATE TABLE IF NOT EXISTS client_reviews (
   id TEXT PRIMARY KEY,
   org_id TEXT NOT NULL,

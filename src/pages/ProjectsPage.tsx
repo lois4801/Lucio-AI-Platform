@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Hammer, Download, LayoutTemplate, Loader2, Sparkles, Brain, Upload, FolderOpen, Globe, Check, Link2 } from 'lucide-react';
+import { Plus, Trash2, Hammer, Download, LayoutTemplate, Loader2, Sparkles, Brain, Upload, FolderOpen, Globe, Check, Link2, CloudUpload } from 'lucide-react';
 
 type HostLearning = {
   host: string; attempts: number; successes: number;
@@ -33,6 +33,21 @@ export default function ProjectsPage() {
   const [importing, setImporting] = useState(false);
   const [usingTpl, setUsingTpl] = useState('');
   const [copiedTpl, setCopiedTpl] = useState('');
+  const [publishingTpl, setPublishingTpl] = useState('');
+  const [pubMsg, setPubMsg] = useState('');
+  const publishTpl = async (t: Template) => {
+    setPublishingTpl(t.id);
+    setPubMsg('');
+    try {
+      const r = await api<{ url: string }>('/public-publish/template', { method: 'POST', body: JSON.stringify({ templateId: t.id }) });
+      await navigator.clipboard.writeText(r.url).catch(() => {});
+      setPubMsg(`“${t.name}” is public: ${r.url} — link copied for your client`);
+    } catch (e: any) {
+      setPubMsg(`Publish failed: ${e.message}`);
+    } finally {
+      setPublishingTpl('');
+    }
+  };
   const copyTplLink = async (id: string) => {
     try {
       await navigator.clipboard.writeText(await publicUrl(`/tpl/${id}`));
@@ -204,6 +219,7 @@ export default function ProjectsPage() {
       {templates.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-lg font-semibold flex items-center gap-2"><LayoutTemplate className="h-5 w-5" /> My templates</h2>
+          {pubMsg && <p className="text-sm text-primary">{pubMsg}</p>}
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             {templates.map((t) => (
               <Card key={t.id}>
@@ -229,6 +245,9 @@ export default function ProjectsPage() {
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => copyTplLink(t.id)} title="Copy the live template link to share with a client" aria-label={`Copy live link for ${t.name}`}>
                           {copiedTpl === t.id ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Link2 className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => publishTpl(t)} disabled={publishingTpl !== ''} title="Publish to a public client-viewable URL (kimi.page) — link is copied" aria-label={`Publish ${t.name} publicly`}>
+                          {publishingTpl === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CloudUpload className="h-3.5 w-3.5" />}
                         </Button>
                       </>
                     )}
