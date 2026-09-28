@@ -992,6 +992,13 @@ CREATE TABLE IF NOT EXISTS osm_cache (
   if (!cols.includes('ldd_json')) db.exec('ALTER TABLE builder_projects ADD COLUMN ldd_json TEXT');
 }
 
+// Phase 7 (choices matrix): the Lucio creation options the operator picked for
+// a run — stored on the run row and applied by the orchestrator at plan time.
+{
+  const runCols = db.prepare('PRAGMA table_info(builder_runs)').all().map((c) => c.name);
+  if (!runCols.includes('creation_json')) db.exec('ALTER TABLE builder_runs ADD COLUMN creation_json TEXT');
+}
+
 // Seed provider registry: local-first, external disabled by default (manual §7, §14)
 const seedProviders = db.prepare(
   `INSERT OR IGNORE INTO provider_registry (id, kind, label, base_url, enabled, is_local) VALUES (?,?,?,?,?,?)`

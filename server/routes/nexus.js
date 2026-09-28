@@ -183,13 +183,13 @@ nexusRouter.post('/prospects/:id/launch', requireRole('member'), (req, res) => {
 // runs
 nexusRouter.post('/projects/:id/runs', requireRole('member'), async (req, res) => {
   try {
-    const { intent, budget, modelPolicy, competition } = req.body || {};
+    const { intent, budget, modelPolicy, competition, creation } = req.body || {};
     if (!intent) return res.status(400).json({ error: 'intent is required' });
     if (competition) {
       const runs = await runCompetition({ orgId: req.user.orgId, projectId: req.params.id, userId: req.user.id, intent, candidates: ['main-a', 'main-b'] });
       return res.status(201).json({ runs });
     }
-    const run = createRun({ orgId: req.user.orgId, projectId: req.params.id, userId: req.user.id, intent, budget, modelPolicy });
+    const run = createRun({ orgId: req.user.orgId, projectId: req.params.id, userId: req.user.id, intent, budget, modelPolicy, creation });
     // Synchronous execution keeps the deterministic local runtime observable; SSE
     // streams events live. Fire and return the run handle.
     const result = await executeRun(req.user.orgId, run.id, req.user.id);

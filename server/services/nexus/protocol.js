@@ -11,7 +11,7 @@ export const EVENT_TYPES = [
   'run.started', 'run.status', 'agent.started', 'agent.message', 'plan.created',
   'file.created', 'file.patched', 'file.deleted', 'test.result', 'preview.ready',
   'checkpoint.created', 'run.blocked', 'run.completed', 'run.failed',
-  'content.pack', 'run.unblocked', 'ai.authored', 'ai.fallback',
+  'content.pack', 'run.unblocked', 'ai.authored', 'ai.fallback', 'choices.applied',
 ];
 
 const ALLOWED_PAYLOAD_KEYS = {
@@ -33,6 +33,7 @@ const ALLOWED_PAYLOAD_KEYS = {
   'run.unblocked': ['byRunId', 'verifyStatus'],
   'ai.authored': ['provider', 'fileCount'],
   'ai.fallback': ['reason'],
+  'choices.applied': ['creationMode', 'styleId', 'motion'],
 };
 
 // Persist one event. Idempotent under re-delivery of the same id.

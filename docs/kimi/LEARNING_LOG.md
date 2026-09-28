@@ -547,3 +547,8 @@ start of every new session to evolve instead of rediscovering.
 - String-template codegen MUST be proven with a real npm install + build, not just file-graph assertions — the first real build caught missing type/hook imports in every emitted component.
 - Emit components with explicit typed imports (import type { Site }) rather than relying on globals; strict tsc in the emitted project is the cheapest codegen linter.
 - Keep the React target's duplicate-id scheme byte-identical to the static renderer's (-2 suffix) so canvas ops mean the same thing on both targets.
+
+## 2026-09-28 — Phase 7: choices matrix → pipeline
+- New orchestrator event types must be registered in protocol.js EVENT_TYPES + ALLOWED_PAYLOAD_KEYS or appendEvent throws 400 mid-run and fails the whole build.
+- When parameterizing a previously-hardcoded CSS block (150ms transition), check the evidence suite: 'reduced-motion respected' was satisfied by accident before. Moved the guarantee into the unconditional responsive baseline (global reduce reset) so any motion level passes.
+- Whitelist-and-drop for operator options: store nothing unvalidated on the run row; junk values (unknown mode, script payloads) must disappear entirely, not error the run.

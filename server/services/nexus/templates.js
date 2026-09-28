@@ -83,7 +83,7 @@ export function generateFiles(brief) {
     ? { lat: Number(brief.geo.lat), lng: Number(brief.geo.lng), displayName: String(brief.geo.displayName || '') }
     : null;
 
-  const css = renderCss(tokens);
+  const css = renderCss(tokens, brief.motion?.intensity || brief.motionIntensity);
   const files = {};
   if (appType === 'website') {
     // Canonical section order comes from the document when provided (Phase 4
@@ -232,9 +232,26 @@ export const RESPONSIVE_BASELINE_CSS = `@media (max-width: 720px) {
   .gallery { grid-template-columns: 1fr; }
   .cta, button { width: 100%; text-align: center; }
 }
+/* Unconditional accessibility floor: whatever the motion level, an explicit
+   reduced-motion preference always wins. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
 `;
 
-function renderCss(tokens) {
+// Motion level → transition energy (Lucio choices matrix, wired in Phase 7).
+// MINIMAL ships no motion block at all; the reduced-motion guard is unconditional.
+const MOTION_MS = { BALANCED: '150ms', CINEMATIC: '300ms', IMMERSIVE: '600ms', EXTREME: '600ms' };
+function motionBlock(intensity) {
+  const ms = MOTION_MS[String(intensity || '').toUpperCase()];
+  if (!ms) return '';
+  return `@media (prefers-reduced-motion: no-preference) {
+  .hero .cta { transition: transform ${ms} ease; }
+  .hero .cta:hover { transform: translateY(-2px); }
+}`;
+}
+
+function renderCss(tokens, motionIntensity) {
   const p = tokens.palette;
   return `:root {
   --bg: ${p.bg}; --surface: ${p.surface}; --text: ${p.text};
@@ -267,10 +284,7 @@ footer { color: var(--muted); text-align: center; padding: 2rem 1rem; }
 .map-credit a { color: var(--accent); }
 /* Responsive baseline (spec §7): mobile cannot be an afterthought. */
 ${RESPONSIVE_BASELINE_CSS}
-@media (prefers-reduced-motion: no-preference) {
-  .hero .cta { transition: transform 150ms ease; }
-  .hero .cta:hover { transform: translateY(-2px); }
-}
+${motionBlock(motionIntensity)}
 `;
 }
 function renderAppJs({ name, kind, facts }) {
@@ -404,6 +418,8 @@ HARD REQUIREMENTS (an automated evidence suite rejects anything that violates th
 DESIGN DIRECTION for this build (unmistakably distinct from every other generated site):
 - Mood: ${v.mood} · corner radius ${v.radius}px · signature motion: ${v.motion}
 - NEVER ship a recycled single-column layout — vary section order, spacing rhythm and decorative details.
+${brief.styleId || brief.motion ? `OPERATOR CHOICES for this build (apply exactly — they override the default direction):
+${brief.styleId ? `- Locked LD style ${brief.styleId}: use its palette, typography and corner radius as the CSS custom properties.` : ''}${brief.motion?.intensity ? `\n- Motion level ${String(brief.motion.intensity).toUpperCase()}: ${String(brief.motion.intensity).toUpperCase() === 'MINIMAL' ? 'no decorative transitions at all' : `transitions at ${MOTION_MS[String(brief.motion.intensity).toUpperCase()] || '150ms'} energy`} — and keep the prefers-reduced-motion kill switch regardless.` : ''}` : ''}
 
 LUXURY BAR — ship ALL of these sections with real content drawn from the brief above:
 fixed nav · cinematic full-screen hero · services grid · booking form (service + date + time + name + phone; on submit show an inline success message — NO network calls) · weekly availability strip · gallery with hover motion · 3 testimonial cards (quote + author as [EDIT: ...] placeholders — never invent reviews) · 3 pricing tiers (price "[EDIT: price]") · 3 team role cards ("[EDIT: name & short bio]") · FAQ accordion · contact form (standalone success message, NO network calls) · rich footer (hours, contact + social placeholders).

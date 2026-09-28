@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import CreationModePicker, { buildCreationPayload, defaultCreationOptions, type CreationOptions } from '@/components/CreationModePicker';
 
 type Project = { id: string; name: string; app_type: string; status: string; active_checkpoint_id: string | null; brief: any };
 type Run = { id: string; status: string; intent: string; candidate: string; error: string | null };
@@ -24,6 +25,7 @@ export default function NexusPage() {
   const [checkpoints, setCheckpoints] = useState<Cp[]>([]);
   const [evidence, setEvidence] = useState<EvRow[]>([]);
   const [competition, setCompetition] = useState(false);
+  const [creation, setCreation] = useState<CreationOptions>(defaultCreationOptions());
   const [comparison, setComparison] = useState<any[]>([]);
   const [shareUrl, setShareUrl] = useState('');
   const [deployUrl, setDeployUrl] = useState('');
@@ -74,7 +76,7 @@ export default function NexusPage() {
     if (!active || !intent.trim()) return;
     setMsg(''); setEvents([]); setEvidence([]);
     try {
-      const r = await api(`/nexus/projects/${active.id}/runs`, { method: 'POST', body: JSON.stringify({ intent, competition }) });
+      const r = await api(`/nexus/projects/${active.id}/runs`, { method: 'POST', body: JSON.stringify({ intent, competition, creation: buildCreationPayload(creation) }) });
       const newRuns = competition ? r.runs : [r.run];
       setRuns((prev) => [...newRuns, ...prev]);
       setRun(newRuns[0]);
@@ -167,16 +169,18 @@ export default function NexusPage() {
         <>
           <Card>
             <CardHeader><CardTitle>Build from a prompt</CardTitle>
-              <CardDescription>One intent → your AI writes the brief and the full site → deterministic evidence suite → immutable checkpoint. Competition mode asks your AI for two independent candidates and lets you pick the winner.</CardDescription></CardHeader>
-            <CardContent className="flex flex-wrap items-center gap-2">
-              <Input className="flex-1 min-w-64" placeholder="e.g. A SaaS landing page for a Kingston fitness studio called Iron Harbour with pricing" value={intent} onChange={(e) => setIntent(e.target.value)} />
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={competition} onChange={(e) => setCompetition(e.target.checked)} /> Competition (2 candidates)
-              </label>
-              <Button onClick={startRun} disabled={!intent.trim()}>Build</Button>
-              {run && ['building', 'testing', 'repairing', 'planning', 'checkpointing'].includes(run.status) && (
-                <Button variant="outline" onClick={async () => { await api(`/nexus/runs/${run.id}/cancel`, { method: 'POST' }); setMsg('Cancel requested'); }}>Cancel run</Button>
-              )}
+              <CardDescription>One intent → your AI writes the brief and the full site → deterministic evidence suite → immutable checkpoint. The choices matrix (creation mode, locked LD style, motion level) is applied as real generation parameters. Competition mode asks your AI for two independent candidates and lets you pick the winner.</CardDescription></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Input className="flex-1 min-w-64" placeholder="e.g. A SaaS landing page for a Kingston fitness studio called Iron Harbour with pricing" value={intent} onChange={(e) => setIntent(e.target.value)} />
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={competition} onChange={(e) => setCompetition(e.target.checked)} /> Competition (2 candidates)
+                </label>
+                {run && ['building', 'testing', 'repairing', 'planning', 'checkpointing'].includes(run.status) && (
+                  <Button variant="outline" onClick={async () => { await api(`/nexus/runs/${run.id}/cancel`, { method: 'POST' }); setMsg('Cancel requested'); }}>Cancel run</Button>
+                )}
+              </div>
+              <CreationModePicker value={creation} onChange={setCreation} busy={!!run && ['building', 'testing', 'repairing', 'planning', 'checkpointing'].includes(run.status)} disabled={!intent.trim()} generateLabel="Build" onGenerate={startRun} />
             </CardContent>
           </Card>
 

@@ -86,6 +86,7 @@ export function validateLdd(ldd) {
     if (!ldd.design.tokens.radius || typeof ldd.design.tokens.radius !== 'string') errors.push('design.tokens.radius required');
     const fonts = ldd.design.tokens.fonts;
     if (!fonts || typeof fonts !== 'object' || !fonts.body || !fonts.display) errors.push('design.tokens.fonts.body and .display required');
+    if (ldd.design.motion && !['MINIMAL', 'BALANCED', 'CINEMATIC', 'IMMERSIVE', 'EXTREME'].includes(String(ldd.design.motion.intensity || ''))) errors.push('design.motion.intensity must be MINIMAL|BALANCED|CINEMATIC|IMMERSIVE|EXTREME');
   }
   if (!Array.isArray(ldd.pages) || !ldd.pages.length) errors.push('pages must be a non-empty array');
   else {
@@ -144,6 +145,9 @@ export function briefToLdd(brief = {}, opts = {}) {
   const design = opts.universe && opts.tokens
     ? { universe: opts.universe, tokens: expandDesignTokens(opts.tokens) }
     : (() => { const d = resolveDesign({ ...brief, appType, name: brief.name || opts.name }); return { universe: d.universe, tokens: expandDesignTokens(d.tokens) }; })();
+  const motion = brief.motion && typeof brief.motion === 'object'
+    ? { intensity: String(brief.motion.intensity || 'BALANCED').toUpperCase(), ...(brief.motion.advanced && typeof brief.motion.advanced === 'object' ? { advanced: clone(brief.motion.advanced) } : {}) }
+    : null;
   return {
     schemaVersion: LDD_VERSION,
     project: {
@@ -154,6 +158,11 @@ export function briefToLdd(brief = {}, opts = {}) {
     design: {
       universe: design.universe,
       tokens: clone(design.tokens),
+      // Phase 7: the Lucio choices matrix is part of the canonical design
+      // decision — style lock, motion level, advanced cinematic overrides.
+      ...(brief.styleId ? { styleId: String(brief.styleId) } : {}),
+      ...(motion ? { motion } : {}),
+      ...(brief.creationMode ? { creationMode: String(brief.creationMode) } : {}),
     },
     content: {
       tagline: typeof brief.tagline === 'string' ? brief.tagline : '',
@@ -192,6 +201,9 @@ export function lddToBrief(ldd) {
     geo: clone(ldd.content?.geo) || null,
     contentPack: clone(ldd.content?.contentPackData) || null,
     universe: ldd.design?.universe || undefined,
+    styleId: ldd.design?.styleId || undefined,
+    creationMode: ldd.design?.creationMode || undefined,
+    motion: clone(ldd.design?.motion) || undefined,
     // The document's section array is the render structure (Phase 4 canvas):
     // order, duplicates and hidden filtering are LDD decisions.
     sections: (() => {

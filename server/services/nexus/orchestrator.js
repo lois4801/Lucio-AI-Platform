@@ -7,7 +7,8 @@ import { appendEvent, appendAndPublish, eventCount, listEvents } from './protoco
 import { applyOps, fileContents, createCheckpoint, snapshotContents, listCheckpoints, restoreCheckpoint } from './vfs.js';
 import { buildPlan, briefFromIntent, generateFiles, aiFilePrompt, generateFilesWithAi } from './templates.js';
 import { runEvidenceSuite, mandatoryFailures, evidenceSummary } from './evidence.js';
-import { briefToLdd, lddToBrief, saveLdd, getLdd } from './ldd.js';
+import { briefToLdd, lddToBrief, saveLdd, getLdd, expandDesignTokens } from './ldd.js';
+import { getStyle } from '../ldStyles.js';
 import { generate, getBudget, budgetUsed, AI_FIRST_POLICY } from './modelRouter.js';
 
 export const RUN_STATUSES = ['created', 'planning', 'building', 'testing', 'repairing', 'checkpointing', 'completed', 'blocked', 'failed', 'cancelled'];
@@ -71,14 +72,35 @@ export function deleteProject(orgId, id, userId) {
 }
 
 // ---- runs -------------------------------------------------------------------------------------
-export function createRun({ orgId, projectId, userId, intent, candidate = 'main', parentRunId = null, budget = {}, modelPolicy = 'sovereign-local' }) {
+// Phase 7 — Lucio choices matrix (CreationModePicker): whitelisted, stored on the
+// run row, applied at plan time. Unknown values are dropped, never trusted.
+const CREATION_MODE_IDS = ['CUSTOM_AI', 'COMPONENT_SYSTEM', 'HYBRID', 'CINEMATIC_UNIVERSE'];
+const MOTION_LEVEL_IDS = ['MINIMAL', 'BALANCED', 'CINEMATIC', 'IMMERSIVE', 'EXTREME'];
+export function normalizeCreation(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const out = {};
+  if (raw.creationMode && CREATION_MODE_IDS.includes(raw.creationMode)) out.creationMode = raw.creationMode;
+  if (raw.motionIntensity && MOTION_LEVEL_IDS.includes(raw.motionIntensity)) out.motionIntensity = raw.motionIntensity;
+  if (typeof raw.styleId === 'string' && raw.styleId && raw.styleId.length <= 40) out.styleId = raw.styleId;
+  if (raw.advanced && typeof raw.advanced === 'object') {
+    const adv = {};
+    for (const [k, v] of Object.entries(raw.advanced)) {
+      if (['on', 'off', ...MOTION_LEVEL_IDS].includes(v)) adv[String(k).slice(0, 40)] = v;
+    }
+    if (Object.keys(adv).length) out.advanced = adv;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+export function createRun({ orgId, projectId, userId, intent, candidate = 'main', parentRunId = null, budget = {}, modelPolicy = 'sovereign-local', creation = null }) {
   const p = getProject(orgId, projectId);
   if (!p) throw Object.assign(new Error('project not found'), { status: 404 });
   const id = crypto.randomUUID();
+  const creationJson = normalizeCreation(creation);
   db.prepare(
-    `INSERT INTO builder_runs (id, org_id, project_id, parent_run_id, intent, status, model_policy, budget_json, candidate, started_at)
-     VALUES (?,?,?,?,?,'created',?,?,?, datetime('now'))`
-  ).run(id, orgId, projectId, parentRunId, String(intent).slice(0, 800), modelPolicy, JSON.stringify(budget), candidate);
+    `INSERT INTO builder_runs (id, org_id, project_id, parent_run_id, intent, status, model_policy, budget_json, candidate, creation_json, started_at)
+     VALUES (?,?,?,?,?,'created',?,?,?,?, datetime('now'))`
+  ).run(id, orgId, projectId, parentRunId, String(intent).slice(0, 800), modelPolicy, JSON.stringify(budget), candidate, creationJson ? JSON.stringify(creationJson) : null);
   activeRuns.set(id, { cancelled: false });
   return getRun(orgId, id);
 }
@@ -154,6 +176,28 @@ export async function executeRun(orgId, runId, userId) {
       return { messages: [`Structured brief drafted by ${via}`], brief: null, planNote: gen.content };
     });
     const brief = { ...getProject(orgId, run.project_id).brief, ...briefFromIntent(r.intent, getProject(orgId, run.project_id).brief) };
+    // Phase 7 — apply the operator's Lucio choices matrix (stored on the run):
+    // style lock overrides the design universe tokens; motion level feeds the
+    // CSS motion block and the AI prompt; everything lands in the canonical LDD.
+    let styleOverride = null;
+    const creation = (() => { try { return r.creation_json ? JSON.parse(r.creation_json) : null; } catch { return null; } })();
+    if (creation) {
+      if (creation.motionIntensity || creation.advanced) brief.motion = { intensity: creation.motionIntensity || 'BALANCED', ...(creation.advanced ? { advanced: creation.advanced } : {}) };
+      if (creation.creationMode) brief.creationMode = creation.creationMode;
+      if (creation.styleId) {
+        const style = getStyle(creation.styleId);
+        if (style) {
+          styleOverride = style;
+          brief.styleId = style.id;
+          brief.designTokens = expandDesignTokens({
+            palette: { bg: style.palette.bg, surface: style.palette.panel, text: style.palette.ink, accent: style.palette.accent, muted: style.palette.muted },
+            fonts: { body: style.fontBody, display: style.fontHeading },
+            radius: `${style.radius}px`,
+          });
+        }
+      }
+      emit('choices.applied', 'product-manager', { creationMode: creation.creationMode || 'CUSTOM_AI', styleId: styleOverride ? styleOverride.id : (creation.styleId || null), motion: brief.motion?.intensity || null });
+    }
     // Wire the Auto Data Engine content pack for this industry (when covered) so
     // every generated site ships pre-loaded hero copy, services, FAQs, CTAs and
     // SEO tags. Additive only — a missing pack never blocks or changes the plan.
@@ -191,7 +235,7 @@ export async function executeRun(orgId, runId, userId) {
     // the build renders FROM the document — rendered files are a function of
     // the canonical state, not of a side-channel brief. Round-trip is
     // byte-proven (scripts/test-ldd.js), so output is unchanged.
-    const lddState = saveLdd(orgId, run.project_id, briefToLdd(briefWithPack, { userId, source: 'run' }), userId, 'run');
+    const lddState = saveLdd(orgId, run.project_id, briefToLdd(briefWithPack, { userId, source: 'run', ...(styleOverride ? { universe: styleOverride.id, tokens: brief.designTokens } : {}) }), userId, 'run');
     const renderBrief = { ...lddToBrief(lddState.ldd), intent: r.intent, location: briefWithPack.location };
     const plan = buildPlan(renderBrief);
     emit('plan.created', 'product-manager', { planId: `${runId}-plan-1`, steps: plan.steps.map((s) => s.task) });
