@@ -90,16 +90,16 @@ export function generateFiles(brief) {
     // canvas): order, duplicates and hidden-filtering are LDD decisions.
     const defaultSections = ['hero', 'about', 'services', ...(pack && Array.isArray(pack.faqs) && pack.faqs.length ? ['faq'] : []), 'gallery', 'contact'];
     const sectionList = Array.isArray(brief.sections) && brief.sections.length ? brief.sections : defaultSections;
-    files['index.html'] = renderSiteHtml({ name, tagline, industry, facts, tokens, sections: sectionList, pack, geo });
+    files['index.html'] = renderSiteHtml({ name, tagline, industry, facts, tokens, sections: sectionList, pack, geo, motion: brief.motion?.intensity || brief.motionIntensity });
     files['styles.css'] = css;
-    files['app.js'] = renderAppJs({ name, kind: 'website', facts });
+    files['app.js'] = renderAppJs({ name, kind: 'website', facts, motion: brief.motion?.intensity || brief.motionIntensity });
     files['data.json'] = JSON.stringify({ name, industry, facts, generated: 'lucio-nexus', universe, content_pack: packMeta(pack), geo }, null, 2);
   } else if (appType === 'saas-landing') {
     const defaultSections = ['hero', 'features', 'pricing', 'faq', 'contact'];
     const sectionList = Array.isArray(brief.sections) && brief.sections.length ? brief.sections : defaultSections;
-    files['index.html'] = renderSiteHtml({ name, tagline, industry, facts, tokens, sections: sectionList, saas: true, pack, geo });
+    files['index.html'] = renderSiteHtml({ name, tagline, industry, facts, tokens, sections: sectionList, saas: true, pack, geo, motion: brief.motion?.intensity || brief.motionIntensity });
     files['styles.css'] = css;
-    files['app.js'] = renderAppJs({ name, kind: 'saas', facts });
+    files['app.js'] = renderAppJs({ name, kind: 'saas', facts, motion: brief.motion?.intensity || brief.motionIntensity });
     files['data.json'] = JSON.stringify({ name, industry, facts, generated: 'lucio-nexus', universe, plans: ['Starter', 'Growth', 'Scale'], content_pack: packMeta(pack), geo }, null, 2);
   } else if (appType === 'dashboard') {
     files['index.html'] = renderDashboardHtml({ name, tokens });
@@ -143,7 +143,11 @@ function osmMapEmbed(geo, name) {
   const bigger = `https://www.openstreetmap.org/?mlat=${geo.lat.toFixed(6)}&amp;mlon=${geo.lng.toFixed(6)}#map=16/${geo.lat.toFixed(6)}/${geo.lng.toFixed(6)}`;
   return `<div class="map-wrap"><iframe title="Map — ${esc(name)}" src="https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&amp;layer=mapnik&amp;marker=${marker}" loading="lazy"></iframe></div><p class="map-credit"><a href="${bigger}" target="_blank" rel="noreferrer">View larger map</a> · live OpenStreetMap · no API key</p>`;
 }
-function renderSiteHtml({ name, tagline, industry, facts, tokens, sections, saas = false, pack = null, geo = null }) {
+function renderSiteHtml({ name, tagline, industry, facts, tokens, sections, saas = false, pack = null, geo = null, motion = null }) {
+  // Phase 8: motion level → scroll-reveal choreography. Reveal classes are only
+  // injected when motion is on; the hidden state is `.js`-scoped so no-JS and
+  // reduced-motion users always see full content.
+  const reveal = MOTION_MS[String(motion || '').toUpperCase()] ? ' reveal' : '';
   const packServices = pack && Array.isArray(pack.services) && pack.services.length
     ? pack.services.slice(0, 6).map((s) => `<li><strong>${esc(s.name)}</strong> — ${esc(s.description)}</li>`).join('')
     : null;
@@ -162,14 +166,14 @@ function renderSiteHtml({ name, tagline, industry, facts, tokens, sections, saas
   const counts = {};
   const ids = sections.map((s) => { counts[s] = (counts[s] || 0) + 1; return counts[s] > 1 ? `${s}-${counts[s]}` : s; });
   const body = {
-    hero: (id) => `<section id="${id}" class="hero"><h1>${esc(name)}</h1><p class="tagline">${esc(tagline)}</p><a class="cta" href="#contact">${saas ? 'Start free trial' : 'Get in touch'}</a></section>`,
-    about: (id) => `<section id="${id}"><h2>About</h2><p>${facts.about ? esc(facts.about) : placeholder('short, factual about text — verified facts only')}</p></section>`,
-    services: (id) => `<section id="${id}"><h2>Services</h2><ul class="cards">${packServices || `<li>${esc(industry)} service one — ${placeholder('service detail')}</li><li>${esc(industry)} service two — ${placeholder('service detail')}</li><li>${esc(industry)} service three — ${placeholder('service detail')}</li>`}</ul></section>`,
-    features: (id) => `<section id="${id}"><h2>Features</h2><ul class="cards"><li>Feature one — ${placeholder('feature detail')}</li><li>Feature two — ${placeholder('feature detail')}</li><li>Feature three — ${placeholder('feature detail')}</li></ul></section>`,
-    pricing: (id) => `<section id="${id}"><h2>Pricing</h2><div class="cards" id="pricing-cards"></div></section>`,
-    faq: (id) => `<section id="${id}"><h2>FAQ</h2>${packFaqs || `<details><summary>${placeholder('question')}</summary><p>${placeholder('answer')}</p></details><details><summary>${placeholder('question')}</summary><p>${placeholder('answer')}</p></details>`}</section>`,
-    gallery: (id) => `<section id="${id}"><h2>Gallery</h2><div class="gallery" role="img" aria-label="Photo gallery placeholder"><div class="tile"></div><div class="tile"></div><div class="tile"></div></div></section>`,
-    contact: (id) => `<section id="${id}"><h2>Contact</h2><p>${phone} · ${email}</p><p>${address}</p>${mapBlock}<form id="contact-form"><label for="cf-name">Name</label><input id="cf-name" name="name" required /><label for="cf-email">Email</label><input id="cf-email" name="email" type="email" required /><label for="cf-msg">Message</label><textarea id="cf-msg" name="message" required></textarea><button type="submit">Send</button><p id="form-status" role="status"></p></form></section>`,
+    hero: (id) => `<section id="${id}" class="hero${reveal}"><h1>${esc(name)}</h1><p class="tagline">${esc(tagline)}</p><a class="cta" href="#contact">${saas ? 'Start free trial' : 'Get in touch'}</a></section>`,
+    about: (id) => `<section id="${id}"${reveal ? ` class="${reveal.trim()}"` : ''}><h2>About</h2><p>${facts.about ? esc(facts.about) : placeholder('short, factual about text — verified facts only')}</p></section>`,
+    services: (id) => `<section id="${id}"${reveal ? ` class="${reveal.trim()}"` : ''}><h2>Services</h2><ul class="cards">${packServices || `<li>${esc(industry)} service one — ${placeholder('service detail')}</li><li>${esc(industry)} service two — ${placeholder('service detail')}</li><li>${esc(industry)} service three — ${placeholder('service detail')}</li>`}</ul></section>`,
+    features: (id) => `<section id="${id}"${reveal ? ` class="${reveal.trim()}"` : ''}><h2>Features</h2><ul class="cards"><li>Feature one — ${placeholder('feature detail')}</li><li>Feature two — ${placeholder('feature detail')}</li><li>Feature three — ${placeholder('feature detail')}</li></ul></section>`,
+    pricing: (id) => `<section id="${id}"${reveal ? ` class="${reveal.trim()}"` : ''}><h2>Pricing</h2><div class="cards" id="pricing-cards"></div></section>`,
+    faq: (id) => `<section id="${id}"${reveal ? ` class="${reveal.trim()}"` : ''}><h2>FAQ</h2>${packFaqs || `<details><summary>${placeholder('question')}</summary><p>${placeholder('answer')}</p></details><details><summary>${placeholder('question')}</summary><p>${placeholder('answer')}</p></details>`}</section>`,
+    gallery: (id) => `<section id="${id}"${reveal ? ` class="${reveal.trim()}"` : ''}><h2>Gallery</h2><div class="gallery" role="img" aria-label="Photo gallery placeholder"><div class="tile"></div><div class="tile"></div><div class="tile"></div></div></section>`,
+    contact: (id) => `<section id="${id}"${reveal ? ` class="${reveal.trim()}"` : ''}><h2>Contact</h2><p>${phone} · ${email}</p><p>${address}</p>${mapBlock}<form id="contact-form"><label for="cf-name">Name</label><input id="cf-name" name="name" required /><label for="cf-email">Email</label><input id="cf-email" name="email" type="email" required /><label for="cf-msg">Message</label><textarea id="cf-msg" name="message" required></textarea><button type="submit">Send</button><p id="form-status" role="status"></p></form></section>`,
   };
   return `<!doctype html>
 <html lang="en">
@@ -239,15 +243,25 @@ export const RESPONSIVE_BASELINE_CSS = `@media (max-width: 720px) {
 }
 `;
 
-// Motion level → transition energy (Lucio choices matrix, wired in Phase 7).
-// MINIMAL ships no motion block at all; the reduced-motion guard is unconditional.
+// Motion level → transition energy + scroll-reveal choreography (Phases 7–8).
+// MINIMAL ships no motion at all; the reduced-motion guard is unconditional
+// (the global reset lives in RESPONSIVE_BASELINE_CSS).
 const MOTION_MS = { BALANCED: '150ms', CINEMATIC: '300ms', IMMERSIVE: '600ms', EXTREME: '600ms' };
 function motionBlock(intensity) {
-  const ms = MOTION_MS[String(intensity || '').toUpperCase()];
+  const lvl = String(intensity || '').toUpperCase();
+  const ms = MOTION_MS[lvl];
   if (!ms) return '';
+  const dist = lvl === 'IMMERSIVE' || lvl === 'EXTREME' ? '40px' : '24px';
+  const stagger = lvl === 'BALANCED' ? '' : `
+  .js .reveal.in { transition-delay: calc(var(--reveal-i, 0) * 60ms); }`;
+  const polish = lvl === 'IMMERSIVE' || lvl === 'EXTREME' ? `
+  .js .reveal { will-change: opacity, transform; }` : '';
   return `@media (prefers-reduced-motion: no-preference) {
   .hero .cta { transition: transform ${ms} ease; }
   .hero .cta:hover { transform: translateY(-2px); }
+  .js .reveal:not(.in) { opacity: 0; transform: translateY(${dist}); }
+  .js .reveal { transition: opacity ${ms} cubic-bezier(0.22, 1, 0.36, 1), transform ${ms} cubic-bezier(0.22, 1, 0.36, 1); }
+  .js .reveal.in { opacity: 1; transform: none; }${stagger}${polish}
 }`;
 }
 
@@ -287,12 +301,28 @@ ${RESPONSIVE_BASELINE_CSS}
 ${motionBlock(motionIntensity)}
 `;
 }
-function renderAppJs({ name, kind, facts }) {
+function renderAppJs({ name, kind, facts, motion = null }) {
   // Sandbox-safe vanilla JS: no eval, no network, no storage of secrets.
+  // Phase 8: scroll-reveal choreography — the .js flag scopes the hidden state
+  // in CSS, reduced-motion/no-IntersectionObserver users get everything at once.
+  const revealJs = MOTION_MS[String(motion || '').toUpperCase()] ? `
+  document.documentElement.classList.add('js');
+  const revealReduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reveals = Array.prototype.slice.call(document.querySelectorAll('.reveal'));
+  reveals.forEach((el, i) => el.style.setProperty('--reveal-i', String(i % 6)));
+  if (revealReduce || !('IntersectionObserver' in window)) {
+    reveals.forEach((el) => el.classList.add('in'));
+  } else {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
+    }, { rootMargin: '0px 0px -10% 0px' });
+    reveals.forEach((el) => io.observe(el));
+  }` : '';
   const common = `// ${name} — client runtime (Lucio NEXUS generated). Untrusted-app rules: no eval, no external network.
 document.addEventListener('DOMContentLoaded', () => {
   let data = {};
   try { data = JSON.parse(document.getElementById('nexus-data')?.textContent || '{}'); } catch (e) { console.error('data parse failed', e); }
+${revealJs}
 `;
   if (kind === 'website' || kind === 'saas') {
     return `${common}

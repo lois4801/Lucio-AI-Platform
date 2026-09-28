@@ -552,3 +552,8 @@ start of every new session to evolve instead of rediscovering.
 - New orchestrator event types must be registered in protocol.js EVENT_TYPES + ALLOWED_PAYLOAD_KEYS or appendEvent throws 400 mid-run and fails the whole build.
 - When parameterizing a previously-hardcoded CSS block (150ms transition), check the evidence suite: 'reduced-motion respected' was satisfied by accident before. Moved the guarantee into the unconditional responsive baseline (global reduce reset) so any motion level passes.
 - Whitelist-and-drop for operator options: store nothing unvalidated on the run row; junk values (unknown mode, script payloads) must disappear entirely, not error the run.
+
+## 2026-09-28 — Phase 8: motion system
+- Scroll-reveal hidden states must be .js-scoped (add the js flag in JS, hide only under .js) — otherwise no-JS or blocked-script users get a blank page. Progressive enhancement beats CSS-only hides.
+- IntersectionObserver runtimes must have two immediate-reveal escapes: prefers-reduced-motion AND missing IO support.
+- Per-level motion testing (each intensity its own project run) catches level-mapping regressions better than one generic motion test.
