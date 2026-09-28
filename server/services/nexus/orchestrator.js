@@ -187,7 +187,13 @@ export async function executeRun(orgId, runId, userId) {
         }
       }
     } catch { /* maps are additive — never break a build on geocoding */ }
-    const plan = buildPlan(briefWithPack);
+    // Canonical document (spec §1/§16): the enriched brief becomes the LDD, and
+    // the build renders FROM the document — rendered files are a function of
+    // the canonical state, not of a side-channel brief. Round-trip is
+    // byte-proven (scripts/test-ldd.js), so output is unchanged.
+    const lddState = saveLdd(orgId, run.project_id, briefToLdd(briefWithPack, { userId, source: 'run' }), userId, 'run');
+    const renderBrief = { ...lddToBrief(lddState.ldd), intent: r.intent, location: briefWithPack.location };
+    const plan = buildPlan(renderBrief);
     emit('plan.created', 'product-manager', { planId: `${runId}-plan-1`, steps: plan.steps.map((s) => s.task) });
     if (contentPack) emit('content.pack', 'product-manager', { industry: contentPack.industry, family: contentPack.family, heroes: contentPack.heroes.length, services: contentPack.services.length, faqs: contentPack.faqs.length, seoTemplates: contentPack.seo?.title_templates?.length || 0 });
     if (!guard(plan.steps.length > 0, 'plan produced no steps', 'retry with a more specific intent')) return getRun(orgId, runId);
@@ -213,17 +219,17 @@ export async function executeRun(orgId, runId, userId) {
         // would masquerade as an AI attempt.
         const { hasAnyKey } = await import('../aiVault.js');
         if (!hasAnyKey(orgId)) {
-          const fb = generateFiles(briefWithPack);
+          const fb = generateFiles(renderBrief);
           files = fb.files; meta = fb.meta; via = 'deterministic templates';
           emit('ai.fallback', 'frontend-engineer', { reason: 'no AI providers configured — add ChatGPT/Claude/Kimi keys in AI Providers, or keep using templates' });
         } else {
           try {
-            const gen = await generate({ runId: r.id, prompt: aiFilePrompt(briefWithPack), purpose: 'implement', policy: AI_FIRST_POLICY, tokens: 16000 });
-            const ai = generateFilesWithAi(briefWithPack, gen.content);
+            const gen = await generate({ runId: r.id, prompt: aiFilePrompt(renderBrief), purpose: 'implement', policy: AI_FIRST_POLICY, tokens: 16000 });
+            const ai = generateFilesWithAi(renderBrief, gen.content);
             files = ai.files; meta = ai.meta; via = gen.provider === 'ai-gateway' ? (gen.label || gen.model || 'your AI') : gen.provider;
             emit('ai.authored', 'frontend-engineer', { provider: via, fileCount: meta.fileCount });
           } catch (e) {
-            const fb = generateFiles(briefWithPack);
+            const fb = generateFiles(renderBrief);
             files = fb.files; meta = fb.meta;
             via = 'deterministic templates';
             emit('ai.fallback', 'frontend-engineer', { reason: String(e.message || e).slice(0, 200) });

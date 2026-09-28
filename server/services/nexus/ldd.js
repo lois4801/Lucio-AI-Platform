@@ -11,7 +11,8 @@
 // (1.0 is the inaugural schema) — the machinery is real and tested.
 import crypto from 'node:crypto';
 import { db } from '../../db.js';
-import { resolveDesign } from './templates.js';
+import { resolveDesign, generateFiles } from './templates.js';
+import { applyOps, fileContents, createCheckpoint, snapshotContents } from './vfs.js';
 
 export const LDD_VERSION = '1.0';
 
@@ -172,7 +173,7 @@ export function saveLdd(orgId, projectId, ldd, userId = null, via = 'api') {
 // from their brief on read — clearly flagged derived:true, never silently
 // pretending the document was persisted.
 export function getLdd(orgId, projectId) {
-  const row = db.prepare(`SELECT ldd_json, brief_json FROM builder_projects WHERE id = ? AND org_id = ?`).get(projectId, orgId);
+  const row = db.prepare(`SELECT ldd_json, brief_json, name, app_type FROM builder_projects WHERE id = ? AND org_id = ?`).get(projectId, orgId);
   if (!row) return null;
   if (row.ldd_json) {
     const doc = JSON.parse(row.ldd_json);
@@ -180,11 +181,76 @@ export function getLdd(orgId, projectId) {
     return { ldd, derived: false, fingerprint: lddFingerprint(ldd), pendingMigrations: applied, errors };
   }
   const brief = JSON.parse(row.brief_json || '{}');
-  const derived = briefToLdd(brief, { source: 'legacy-derive' });
+  // The project row (name, app_type) is authoritative for legacy rows — the
+  // brief only carries enrichment fields.
+  const derived = briefToLdd({ ...brief, name: row.name, appType: row.app_type }, { source: 'legacy-derive' });
   return { ldd: derived, derived: true, fingerprint: lddFingerprint(derived), pendingMigrations: [], errors: [] };
 }
 
 export function listLddMigrations(orgId, projectId) {
   return db.prepare(`SELECT * FROM ldd_migrations WHERE org_id = ? AND project_id = ? ORDER BY created_at`).all(orgId, projectId)
     .map((r) => ({ ...r, applied: JSON.parse(r.applied || '[]') }));
+}
+
+// ---- Phase 2: the document is the write path -----------------------------------------------
+// Render-managed paths: the files the LDD render produces. Direct VFS edits to
+// these mark the document stale (files diverged from the canonical state) —
+// recorded openly instead of silently pretending canvas and code still agree.
+export const LDD_MANAGED_PATHS = ['index.html', 'styles.css', 'app.js', 'data.json', 'README.md'];
+
+export function markLddStale(orgId, projectId, paths) {
+  const state = getLdd(orgId, projectId);
+  if (!state) return null;
+  const touched = (paths || []).filter((p) => LDD_MANAGED_PATHS.includes(p));
+  if (!touched.length) return null;
+  const ldd = state.ldd;
+  ldd.meta = {
+    ...ldd.meta,
+    staleAt: new Date().toISOString(),
+    stalePaths: [...new Set([...(ldd.meta?.stalePaths || []), ...touched])],
+  };
+  db.prepare(`UPDATE builder_projects SET ldd_json = ? WHERE id = ? AND org_id = ?`)
+    .run(JSON.stringify(ldd), projectId, orgId);
+  return { staleAt: ldd.meta.staleAt, stalePaths: ldd.meta.stalePaths };
+}
+
+// Render the canonical document into the working tree. Render-produced files
+// are upserted; anything the render does NOT produce is custom code and is
+// PRESERVED untouched (spec §16 — never destroy unsupported custom code).
+// Every render ends in an immutable checkpoint + cleared staleness.
+export function renderLdd({ orgId, projectId, userId = null, label = 'ldd render', via = 'render' }) {
+  const owned = db.prepare(`SELECT id FROM builder_projects WHERE id = ? AND org_id = ?`).get(projectId, orgId);
+  if (!owned) throw Object.assign(new Error('project not found'), { status: 404 });
+  const state = getLdd(orgId, projectId);
+  if (!state) throw Object.assign(new Error('project not found'), { status: 404 });
+  const { files } = generateFiles(lddToBrief(state.ldd));
+  const currentPaths = new Set(fileContents(projectId).map((f) => f.path));
+  const ops = Object.entries(files).map(([path, content]) => ({ op: currentPaths.has(path) ? 'update' : 'create', path, content }));
+  const results = applyOps(projectId, ops);
+  const preserved = [...currentPaths].filter((p) => !(p in files));
+  const cp = createCheckpoint({ orgId, projectId, userId, label, namespace: 'main' });
+  snapshotContents(cp.id, fileContents(projectId));
+  // Clear the staleness marker — the tree now matches the document.
+  const ldd = state.ldd;
+  ldd.meta = { ...ldd.meta, staleAt: null, stalePaths: [] };
+  const saved = saveLdd(orgId, projectId, ldd, userId, via);
+  db.prepare(`UPDATE builder_projects SET active_checkpoint_id = ? WHERE id = ?`).run(cp.id, projectId);
+  return { results, preserved, checkpoint: cp, fingerprint: saved.fingerprint, filesWritten: Object.keys(files).length };
+}
+
+// Migration job (spec §1 "future migrations", §35 Phase 2): backfill a legacy
+// project (no ldd_json) by deriving the document from its brief, snapshotting a
+// restore-point checkpoint FIRST, persisting the document, then re-rendering
+// the tree from it. Custom files survive; the pre-migration state is one
+// restore call away.
+export function migrateProjectLdd({ orgId, projectId, userId = null }) {
+  const owned = db.prepare(`SELECT id FROM builder_projects WHERE id = ? AND org_id = ?`).get(projectId, orgId);
+  if (!owned) throw Object.assign(new Error('project not found'), { status: 404 });
+  const state = getLdd(orgId, projectId);
+  const wasDerived = state.derived;
+  const restorePoint = createCheckpoint({ orgId, projectId, userId, label: 'pre-LDD-migration restore point', namespace: 'main' });
+  snapshotContents(restorePoint.id, fileContents(projectId));
+  const saved = saveLdd(orgId, projectId, state.ldd, userId, 'migrate');
+  const render = renderLdd({ orgId, projectId, userId, label: 'LDD migration render', via: 'migrate' });
+  return { wasDerived, fingerprint: saved.fingerprint, restorePointId: restorePoint.id, ...render };
 }

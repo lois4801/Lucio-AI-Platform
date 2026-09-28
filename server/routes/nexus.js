@@ -11,7 +11,7 @@ import { createProject, getProject, listProjects, updateProject, deleteProject, 
 import { createShare, getSharePublic, shareState, revokeShare, listShares, shareSnapshot, addComment, listComments } from '../services/nexus/share.js';
 import { buildZip } from '../services/nexus/exportZip.js';
 import { gitStatus, syncToGitHub } from '../services/nexus/gitAdapter.js';
-import { getLdd, saveLdd, listLddMigrations } from '../services/nexus/ldd.js';
+import { getLdd, saveLdd, listLddMigrations, markLddStale, renderLdd, migrateProjectLdd } from '../services/nexus/ldd.js';
 import { deploy, listDeployments, rollbackDeployment, activeDeployment } from '../services/nexus/deploy.js';
 import { launchFromProspect } from '../services/nexus/prospectLaunch.js';
 
@@ -116,8 +116,24 @@ nexusRouter.get('/projects/:id/ldd', (req, res) => {
 nexusRouter.put('/projects/:id/ldd', requireRole('member'), (req, res) => {
   try {
     const out = saveLdd(req.user.orgId, req.params.id, req.body?.ldd, req.user.id, 'api');
-    res.json({ ldd: out.ldd, fingerprint: out.fingerprint, appliedMigrations: out.appliedMigrations });
+    // Optional immediate re-render: the document write becomes the build.
+    // Custom (non-rendered) files are preserved; result is checkpointed.
+    let render = null;
+    if (req.body?.render === true) {
+      render = renderLdd({ orgId: req.user.orgId, projectId: req.params.id, userId: req.user.id, label: 'ldd write render', via: 'render' });
+    }
+    res.json({ ldd: out.ldd, fingerprint: out.fingerprint, appliedMigrations: out.appliedMigrations, ...(render ? { render: { filesWritten: render.filesWritten, preserved: render.preserved, checkpointId: render.checkpoint.id } } : {}) });
   } catch (e) { res.status(e.status || 400).json({ error: String(e.message || e) }); }
+});
+nexusRouter.post('/projects/:id/ldd/render', requireRole('member'), (req, res) => {
+  try {
+    const render = renderLdd({ orgId: req.user.orgId, projectId: req.params.id, userId: req.user.id, label: req.body?.label || 'ldd render', via: 'render' });
+    res.json({ filesWritten: render.filesWritten, preserved: render.preserved, checkpointId: render.checkpoint.id, fingerprint: render.fingerprint });
+  } catch (e) { res.status(e.status || 400).json({ error: String(e.message || e) }); }
+});
+nexusRouter.post('/projects/:id/ldd/migrate', requireRole('member'), (req, res) => {
+  try { res.json(migrateProjectLdd({ orgId: req.user.orgId, projectId: req.params.id, userId: req.user.id })); }
+  catch (e) { res.status(e.status || 400).json({ error: String(e.message || e) }); }
 });
 
 // CRM launch (Phase 10)
@@ -194,7 +210,14 @@ nexusRouter.get('/projects/:id/files/*splat', (req, res) => {
 nexusRouter.patch('/projects/:id/files', requireRole('member'), (req, res) => {
   const p = getProject(req.user.orgId, req.params.id);
   if (!p) return res.status(404).json({ error: 'project not found' });
-  try { res.json({ results: applyOps(p.id, req.body?.ops || []) }); }
+  try {
+    const results = applyOps(p.id, req.body?.ops || []);
+    // Honest divergence tracking (spec §16): direct file edits to LDD-managed
+    // paths mark the canonical document stale instead of silently drifting.
+    const touched = (req.body?.ops || []).map((o) => o?.path).filter(Boolean);
+    const stale = markLddStale(req.user.orgId, p.id, touched);
+    res.json({ results, ...(stale ? { lddStale: stale } : {}) });
+  }
   catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 

@@ -518,3 +518,10 @@ start of every new session to evolve instead of rediscovering.
 - Evidence-gate lesson: adding a mandatory check broke the AI-authored path (its CSS legitimately lacked media queries). Fix at both layers: prompt requirement AND a deterministic platform guarantee (append shared RESPONSIVE_BASELINE_CSS only when the model omitted mobile rules — guarded <720/460px so it never overrides desktop design).
 - Tenant isolation caught a real bug: saveLdd recorded migration rows before verifying project ownership. Always ownership-check before any insert, even when an UPDATE already filtered by org_id.
 - libuv prints a benign "Assertion failed: UV_HANDLE_CLOSING" on quick test exit when better-sqlite3 handles are still open — cosmetic; suites still exit 0. Distinguish it from real failures by checking the RESULT line, not the last line.
+
+## 2026-09-28 — Phase 2 (LDD becomes the write path)
+
+- Canonical-IR lesson: flipping the arrow means EVERY write path must respect it — runs persist the doc and render FROM it; doc writes can re-render; direct file edits declare staleness on the doc instead of drifting silently. Honest divergence beats fake sync (spec §16).
+- Spec §16 custom-code rule implemented literally: render upserts only render-managed paths; anything else is preserved and reported. Never destroy owner code.
+- Migration-job pattern: restore-point checkpoint FIRST, then mutate, and prove restore works in the same test. Byte-exact snapshot machinery made this one assertion.
+- Legacy-derive bug: project name/appType live on the row, not in brief_json — derivation must merge row fields or migrated projects render "Untitled Project". Always derive from the full authoritative record, not the most convenient one.
