@@ -12,7 +12,7 @@ import CreationModePicker, {
   type CreationMode, type CreationOptions,
 } from '@/components/CreationModePicker';
 import KeylessLocationMap from '@/components/KeylessLocationMap';
-import { CheckCircle2, XCircle, Hammer, ShieldCheck, Save, RotateCcw, Globe, ScrollText, Clapperboard, FileDown } from 'lucide-react';
+import { CheckCircle2, XCircle, Hammer, ShieldCheck, Save, RotateCcw, Globe, ScrollText, Clapperboard, FileDown, Rocket } from 'lucide-react';
 
 const SAMPLE_GOALS = [
   'Build a warm cozy website for a cafe called Bluebird Coffee in Toronto with a menu, gallery and online booking',
@@ -217,6 +217,29 @@ export default function BuilderPage() {
 
   // Publish a live public link for the built site (Pindrop-style sell flow).
   const [publishInfo, setPublishInfo] = useState<{ slug: string; token: string } | null>(null);
+  const [deployInfo, setDeployInfo] = useState<{ id: string; absoluteUrl: string; status: string; provider: string; version: number; diagnostics?: string } | null>(null);
+  const deployPublic = async () => {
+    if (!publishInfo) return;
+    setError(''); setBusy('deploy');
+    try {
+      const r = await api<{ deployment: { id: string; absoluteUrl: string; status: string; provider: string; version: number; diagnostics?: string } }>('/publish', { method: 'POST', body: JSON.stringify({ kind: 'site', id: publishInfo.slug }) });
+      setDeployInfo(r.deployment);
+      if (r.deployment.status === 'published') setNotice(`Public deployment verified: ${r.deployment.absoluteUrl}`);
+    } catch (e: any) {
+      setError(`Deploy failed: ${e.message}`);
+    } finally { setBusy(''); }
+  };
+  const unpublishPublic = async () => {
+    if (!deployInfo) return;
+    setError(''); setBusy('deploy');
+    try {
+      const r = await api<{ deployment: { id: string; absoluteUrl: string; status: string } }>(`/publish/${deployInfo.id}/unpublish`, { method: 'POST', body: JSON.stringify({}) });
+      setDeployInfo((d) => d ? { ...d, status: r.deployment.status } : d);
+      setNotice('Public deployment unpublished — the link no longer serves the site.');
+    } catch (e: any) {
+      setError(`Unpublish failed: ${e.message}`);
+    } finally { setBusy(''); }
+  };
   const publish = async () => {
     setError(''); setBusy('publish');
     try {
@@ -303,6 +326,31 @@ export default function BuilderPage() {
               <div>Live site: <a className="text-primary underline font-medium" href={`/live/${publishInfo.slug}`} target="_blank" rel="noreferrer">{pubBase}/live/{publishInfo.slug}</a></div>
               <div>Owner portal (give this to the client): <a className="text-primary underline" href={`/portal/${publishInfo.token}`} target="_blank" rel="noreferrer">{pubBase}/portal/{publishInfo.token}</a></div>
               <div className="text-xs text-muted-foreground">Track the deal, payment status, change requests and leads under “Clients & Sites” in the sidebar.</div>
+            </div>
+          )}
+          {publishInfo && (
+            <div className="text-sm border rounded-lg p-3 space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-medium">Public deployment</span>
+                <Button size="sm" variant="outline" onClick={deployPublic} disabled={!!busy}>
+                  <Rocket className="h-3.5 w-3.5 mr-1" /> {busy === 'deploy' ? 'Deploying…' : deployInfo ? 'Republish' : 'Publish to public URL'}
+                </Button>
+                {deployInfo && deployInfo.status === 'published' && (
+                  <>
+                    <Button size="sm" variant="ghost" onClick={() => window.open(deployInfo.absoluteUrl, '_blank')}><Globe className="h-3.5 w-3.5 mr-1" />Open Website</Button>
+                    <Button size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(deployInfo.absoluteUrl).then(() => setNotice('Public link copied'))}><Save className="h-3.5 w-3.5 mr-1" />Copy Public Link</Button>
+                    <Button size="sm" variant="ghost" className="text-destructive" onClick={unpublishPublic} disabled={!!busy}>Unpublish</Button>
+                  </>
+                )}
+              </div>
+              {deployInfo && (
+                <div className="text-xs space-y-1">
+                  <div>Status: <b>{deployInfo.status}</b>{deployInfo.status === 'published' ? ` · ${deployInfo.provider} · v${deployInfo.version}` : ''}</div>
+                  {deployInfo.status === 'published' && <div>Verified public URL: <a className="text-primary underline" href={deployInfo.absoluteUrl} target="_blank" rel="noreferrer">{deployInfo.absoluteUrl}</a></div>}
+                  {deployInfo.status === 'failed' && <pre className="whitespace-pre-wrap text-destructive bg-muted/50 rounded p-2">{deployInfo.diagnostics || 'Publication failed.'}</pre>}
+                </div>
+              )}
+              <div className="text-xs text-muted-foreground">Preview (the live link above) is internal; publishing creates a real external deployment verified by an unauthenticated request before it is marked published.</div>
             </div>
           )}
           {error && <p className="text-sm text-destructive">{error}</p>}

@@ -13,7 +13,16 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
     headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
     ...options,
   });
+  const contentType = res.headers.get('content-type') || '';
   const text = await res.text();
+  // Diagnostic-first parsing (publishing repair runbook §5): never blind-parse
+  // JSON. An HTML body (SPA fallback, 404 page, login redirect, provider error)
+  // must produce a readable diagnostic, not "Unexpected token '<'".
+  if (!contentType.includes('application/json')) {
+    throw new ApiError(res.status,
+      `Expected JSON but received ${contentType || 'an unknown content type'} (HTTP ${res.status}) at ${res.url}. ` +
+      `Body: ${text.slice(0, 240)}`);
+  }
   const data = text ? JSON.parse(text) : {};
   if (!res.ok) throw new ApiError(res.status, data.error || `Request failed (${res.status})`);
   return data as T;

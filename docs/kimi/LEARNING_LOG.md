@@ -490,3 +490,9 @@ start of every new session to evolve instead of rediscovering.
 
 ## 2026-09-27 — Lucio Skill Library installed (8,115 skills, on-demand)
 - Extracted Lucio_Agents_v9_6 zip to C:\Users\USER\Desktop\LucioDigital\Lucio-Skill-Library. NOT indexed in Kimi (context budget) — installed 5 umbrella skills (lucio-build-agent, lucio-web-experience, lucio-growth-operations, lucio-platform-engineering, lucio-agency-roster) in daimon skills root that route to scripts/find-skill.mjs for on-demand lookup. New skills appear in Kimi sessions started AFTER install.
+
+## 2026-09-27 — P0 publishing repair per REV1 runbook
+- Root cause of "Unexpected token '<'": api() blind JSON.parse (no status/content-type check) + dev proxy gaps (/tpl, /review, /sites swallowed by SPA fallback) + stale dev servers lacking new routes. Fixed api.ts diagnostics, added JSON 404 for unmatched /api AFTER publicRouter (order matters — public /api/live, /api/portal routes break otherwise).
+- New provider-independent publishing: server/services/publishing/{local,kimix,kimixCli,service}.js. LocalStaticPublisher writes data/deployments/<org>/<slug>/ served unauthenticated at /sites/:slug. Verification gate: unauthenticated fetch, 200 + html marker required before status=published; failures carry structured diagnostics. deployments table keyed UNIQUE(org_id, subject_key); republish bumps version, URL stable.
+- kimix agent gateway intermittently times out (30s) on large bundles — bounded retry (3 tries, 4s backoff) in kimixProvider.
+- Acceptance: Lumiere https://2lb5lpsuj62gs.kimi.page, Meridian https://jdn7ufsccjzvg.kimi.page (both HTTP 200 unauth). 19-test hermetic suite scripts/test-publishing.js; full sweep 40 suites green.

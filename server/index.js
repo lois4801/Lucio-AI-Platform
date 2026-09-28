@@ -47,6 +47,7 @@ import { autofixRouter } from './routes/autofix.js';
 import { autoDataRouter } from './routes/autoData.js';
 import { importsRouter } from './routes/imports.js';
 import { publicPublishRouter } from './routes/publicPublish.js';
+import { publishingRouter } from './routes/publishing.js';
 import { aiRouter } from './routes/aiProviders.js';
 import { ensureCatalog } from './services/autoData.js';
 import { requestCounter } from './services/enterprise.js';
@@ -116,10 +117,16 @@ app.use('/api/apps', appStudioRouter);
   app.use('/api/geo', geoRouter);
   app.use('/api/imports', importsRouter);
   app.use('/api/public-publish', publicPublishRouter);
+  app.use('/api/publish', publishingRouter);
   app.use('/api/ai', aiRouter);
   // Public surface (no auth): live client sites, enquiries, owner portal.
   // Mounted BEFORE the SPA fallback so /live and /portal are never swallowed.
   app.use(publicRouter);
+  // API 404s must be JSON (publishing repair runbook §6) and come AFTER the
+  // public router (which legitimately serves /api/live/*, /api/portal/*,
+  // /api/config). An unmatched /api route can never fall through to an HTML
+  // page — blind HTML responses are what produced "Unexpected token '<'".
+  app.use('/api', (req, res) => res.status(404).json({ error: `unknown API route: ${req.method} ${req.path}` }));
 
   // Production: serve the built frontend
   const dist = path.resolve(__dirname, '../dist');

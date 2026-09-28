@@ -39,9 +39,14 @@ export default function ProjectsPage() {
     setPublishingTpl(t.id);
     setPubMsg('');
     try {
-      const r = await api<{ url: string }>('/public-publish/template', { method: 'POST', body: JSON.stringify({ templateId: t.id }) });
-      await navigator.clipboard.writeText(r.url).catch(() => {});
-      setPubMsg(`“${t.name}” is public: ${r.url} — link copied for your client`);
+      const r = await api<{ deployment: { absoluteUrl: string; status: string; diagnostics?: string } }>('/publish', { method: 'POST', body: JSON.stringify({ kind: 'template', id: t.id }) });
+      const d = r.deployment;
+      if (d.status === 'published') {
+        await navigator.clipboard.writeText(d.absoluteUrl).catch(() => {});
+        setPubMsg(`“${t.name}” is public and verified: ${d.absoluteUrl} — link copied for your client`);
+      } else {
+        setPubMsg(`Publish failed for “${t.name}”: ${d.diagnostics || d.status}`);
+      }
     } catch (e: any) {
       setPubMsg(`Publish failed: ${e.message}`);
     } finally {

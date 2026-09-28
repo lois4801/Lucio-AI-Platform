@@ -464,6 +464,26 @@ CREATE TABLE IF NOT EXISTS public_snapshots (
   UNIQUE(org_id, kind, ref_id)
 );
 CREATE INDEX IF NOT EXISTS idx_pubsnap_org ON public_snapshots(org_id, kind);
+CREATE TABLE IF NOT EXISTS deployments (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL REFERENCES organizations(id),
+  subject_kind TEXT NOT NULL,             -- 'template' | 'site'
+  subject_id TEXT NOT NULL,
+  subject_key TEXT NOT NULL,              -- '<kind>:<refId>' — one live deployment per subject
+  slug TEXT NOT NULL,                     -- local public route slug under /sites/
+  provider TEXT NOT NULL DEFAULT 'local', -- 'local' | 'kimix'
+  provider_deployment_id TEXT NOT NULL DEFAULT '',
+  public_url TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'building', -- building|deploying|verifying|published|failed|unpublished
+  version INTEGER NOT NULL DEFAULT 0,
+  diagnostics TEXT NOT NULL DEFAULT '',   -- sanitized last failure (runbook §13)
+  published_at TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(org_id, subject_key)
+);
+CREATE INDEX IF NOT EXISTS idx_deploy_org ON deployments(org_id, status);
 CREATE TABLE IF NOT EXISTS client_reviews (
   id TEXT PRIMARY KEY,
   org_id TEXT NOT NULL,

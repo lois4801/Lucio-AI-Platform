@@ -117,9 +117,14 @@ export default function ClientsPage() {
   const publishSitePublic = async (slug: string, name: string) => {
     setPublishingSite(slug);
     try {
-      const r = await api<{ url: string }>('/public-publish/site', { method: 'POST', body: JSON.stringify({ slug }) });
-      await navigator.clipboard.writeText(r.url).catch(() => {});
-      setNotice(`“${name}” is public: ${r.url} — link copied`);
+      const r = await api<{ deployment: { absoluteUrl: string; status: string; diagnostics?: string } }>('/publish', { method: 'POST', body: JSON.stringify({ kind: 'site', id: slug }) });
+      const d = r.deployment;
+      if (d.status === 'published') {
+        await navigator.clipboard.writeText(d.absoluteUrl).catch(() => {});
+        setNotice(`“${name}” is public and verified: ${d.absoluteUrl} — link copied`);
+      } else {
+        setError(`Publish failed for “${name}”: ${d.diagnostics || d.status}`);
+      }
     } catch (e: any) {
       setError(`Publish failed: ${e.message}`);
     } finally {

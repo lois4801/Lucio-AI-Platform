@@ -28,6 +28,7 @@ const vite = await createViteServer({
       // instead of the actual site/review content.
       '/tpl': { target: `http://localhost:${PORT}`, changeOrigin: true },
       '/review': { target: `http://localhost:${PORT}`, changeOrigin: true },
+      '/sites': { target: `http://localhost:${PORT}`, changeOrigin: true },
     },
   },
   clearScreen: false,

@@ -3,43 +3,18 @@
 // host's `kimix` CLI (authenticates on demand via the Kimi Work session).
 // Re-publishing the same template/site uploads a NEW VERSION to the same
 // kimix website, so the public link is stable while content updates.
+// NOTE: the canonical deployment path is /api/publish (services/publishing/*);
+// this module backs the legacy /api/public-publish endpoints and shares the
+// kimix CLI core with the KimixProvider adapter.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
-import { zipSync, strToU8 } from 'fflate';
 import { db, audit } from '../db.js';
 import { getPublishedBySlug, getPublicArtifact } from './publish.js';
+import { runKimix, pick, buildBundleZip } from './publishing/kimixCli.js';
 
-// KIMIX_BIN is overridable so hermetic tests can substitute a fake CLI.
-const KIMIX = process.env.KIMIX_BIN || 'kimix';
 const MAX_HTML = 48 * 1024 * 1024; // stay under the 64 MiB bundle cap
-
-function runKimix(args, timeoutMs = 240_000) {
-  return new Promise((resolve, reject) => {
-    const opts = { timeout: timeoutMs, windowsHide: true, maxBuffer: 8 * 1024 * 1024 };
-    let cmd = KIMIX;
-    let argv = ['website', ...args];
-    if (/\.(cjs|mjs|js)$/i.test(KIMIX)) {
-      // Hermetic-test shims: run the fake CLI directly with node.
-      cmd = process.execPath;
-      argv = [KIMIX, 'website', ...args];
-    } else if (/\.(cmd|bat)$/i.test(KIMIX)) {
-      // Hermetic-test shims on Windows: batch files need a shell to execute.
-      cmd = process.env.ComSpec || 'cmd.exe';
-      const line = [`"${KIMIX}"`, ...args.map((a) => `"${a}"`)].join(' ');
-      argv = ['/d', '/s', '/c', line];
-      opts.windowsVerbatimArguments = true;
-    }
-    execFile(cmd, argv, opts, (err, stdout, stderr) => {
-      if (err) return reject(new Error(`kimix ${args[0]} failed: ${String(stderr || err.message).slice(0, 500)}`));
-      resolve(stdout);
-    });
-  });
-}
-
-const pick = (out, re) => (out.match(re) || [])[1] || '';
 
 // The published copy is static — its enquiry forms can't POST to itself.
 // When the app has a public address, rewrite relative /api/ targets so the
@@ -56,10 +31,8 @@ async function publishHtml(orgId, kind, refId, title, html, user, ip = '') {
   if (!html || html.length < 100) throw Object.assign(new Error('nothing to publish — no HTML snapshot'), { status: 404 });
   if (html.length > MAX_HTML) throw Object.assign(new Error('snapshot too large for a public bundle'), { status: 413 });
   html = absolutizeApiUrls(html);
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lucio-pub-'));
-  const zipPath = path.join(dir, 'site.zip');
+  const { zipPath, cleanup } = buildBundleZip(html);
   try {
-    fs.writeFileSync(zipPath, zipSync({ 'index.html': strToU8(html) }, { level: 6 }));
     await runKimix(['validate', 'static', zipPath]);
     const existing = db.prepare(`SELECT website_id FROM public_snapshots WHERE org_id = ? AND kind = ? AND ref_id = ?`).get(orgId, kind, refId);
     const out = existing
@@ -76,7 +49,7 @@ async function publishHtml(orgId, kind, refId, title, html, user, ip = '') {
     audit(orgId, user?.id || null, 'public.publish', `public_${kind}`, String(refId), { url, republished: Boolean(existing) }, ip);
     return { url, websiteId, republished: Boolean(existing) };
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    cleanup();
   }
 }
 

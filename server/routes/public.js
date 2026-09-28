@@ -11,6 +11,7 @@ import {
   ownerView, ownerCreateRequest, getPublicArtifact, getSiteByVerifiedDomain,
 } from '../services/publish.js';
 import { reviewView, decideReview } from '../services/clientReview.js';
+import { localProvider } from '../services/publishing/local.js';
 
 export const publicRouter = Router();
 
@@ -75,6 +76,29 @@ publicRouter.get('/tpl/:id', (req, res) => {
   try { html = fs.readFileSync(t.html_path, 'utf8'); } catch { return res.status(404).send('Template snapshot missing.'); }
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(html);
+});
+
+// Deployment serving — Lucio-controlled public static hosting (runbook §9).
+// /sites/<slug> is UNAUTHENTICATED by design: anyone with the link views the
+// deployed copy, independent of editor sessions. Files are read from disk
+// (data/deployments/...), so publishing persists across restarts.
+publicRouter.get('/sites/:slug', (req, res) => {
+  const d = db.prepare(`SELECT org_id, status FROM deployments WHERE slug = ?`).get(String(req.params.slug || ''));
+  if (!d) return res.status(404).send('Site not found.');
+  const f = localProvider.readFile(d.org_id, req.params.slug, 'index.html');
+  if (!f) return res.status(404).send(d.status === 'unpublished' ? 'This site has been unpublished.' : 'Deployment not found.');
+  res.setHeader('Content-Type', f.contentType);
+  res.setHeader('Cache-Control', 'public, max-age=60');
+  res.send(f.content);
+});
+publicRouter.get('/sites/:slug/*splat', (req, res) => {
+  const d = db.prepare(`SELECT org_id, status FROM deployments WHERE slug = ?`).get(String(req.params.slug || ''));
+  if (!d) return res.status(404).send('Site not found.');
+  const f = localProvider.readFile(d.org_id, req.params.slug, req.params.splat || '');
+  if (!f) return res.status(404).send('Not found.');
+  res.setHeader('Content-Type', f.contentType);
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.send(f.content);
 });
 
 publicRouter.post('/api/live/:slug/enquire', (req, res) => {
