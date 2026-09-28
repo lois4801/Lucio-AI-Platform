@@ -7,7 +7,7 @@ import {
   Loader2, RefreshCw, Undo2, Redo2, ArrowUp, ArrowDown, Copy,
   Trash2, Eye, EyeOff, Lock, Unlock, AlertTriangle, Square, Type, AlignLeft, Link2,
   Image as ImageIcon, List, MousePointerClick, TextCursorInput, Rows3, ChevronRight, ChevronDown,
-  SlidersHorizontal,
+  SlidersHorizontal, Download,
 } from 'lucide-react';
 
 // Phase 5 — property inspector. Only fields the renderer ACTUALLY consumes
@@ -303,6 +303,11 @@ export default function CanvasPage() {
           <Button size="sm" variant="outline" onClick={load}><RefreshCw className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} /></Button>
           <Button size="sm" variant="outline" disabled={hIndex <= 0 || busy} onClick={undo}><Undo2 className="h-4 w-4" /></Button>
           <Button size="sm" variant="outline" disabled={hIndex >= history.length - 1 || busy} onClick={redo}><Redo2 className="h-4 w-4" /></Button>
+          {projectId && (
+            <a href={`/api/nexus/projects/${projectId}/export/react`} download>
+              <Button size="sm" variant="outline"><Download className="h-4 w-4 mr-1" />Export React</Button>
+            </a>
+          )}
         </div>
       </div>
 

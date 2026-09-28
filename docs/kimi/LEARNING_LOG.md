@@ -542,3 +542,8 @@ start of every new session to evolve instead of rediscovering.
 - Inspector honesty rule: only expose fields verified against the render pipeline; a field the apply step would drop is worse than no field (cut a fake "Hours" input during review).
 - validateLdd must cover every token the renderer dereferences (palette hexes, radius, fonts) — otherwise a bad document passes validation and only blows up at render time.
 - Dirty-check draft vs document so "Apply" is a no-op guard; color inputs + slider need a commit boundary or every drag frame becomes a checkpoint.
+
+## 2026-09-28 — Phase 6: React codegen target
+- String-template codegen MUST be proven with a real npm install + build, not just file-graph assertions — the first real build caught missing type/hook imports in every emitted component.
+- Emit components with explicit typed imports (import type { Site }) rather than relying on globals; strict tsc in the emitted project is the cheapest codegen linter.
+- Keep the React target's duplicate-id scheme byte-identical to the static renderer's (-2 suffix) so canvas ops mean the same thing on both targets.

@@ -14,6 +14,7 @@ import { gitStatus, syncToGitHub } from '../services/nexus/gitAdapter.js';
 import { getLdd, saveLdd, listLddMigrations, markLddStale, renderLdd, migrateProjectLdd } from '../services/nexus/ldd.js';
 import { resolveSectionComponents } from '../services/nexus/sectionComponents.js';
 import { projectLayers } from '../services/nexus/layerTree.js';
+import { generateReactProject } from '../services/nexus/reactCodegen.js';
 import { deploy, listDeployments, rollbackDeployment, activeDeployment } from '../services/nexus/deploy.js';
 import { launchFromProspect } from '../services/nexus/prospectLaunch.js';
 
@@ -150,6 +151,25 @@ nexusRouter.get('/projects/:id/layers', (req, res) => {
   const p = getProject(req.user.orgId, req.params.id);
   if (!p) return res.status(404).json({ error: 'project not found' });
   res.json(projectLayers(req.user.orgId, p.id, fileContents(p.id)));
+});
+
+// React codegen target (spec §6 Phase 6): a buildable Vite+React+TS+Tailwind
+// project emitted from the canonical document. Canvas decisions (hidden/
+// order/duplicates) carry over — the export reads the same LDD the renderer does.
+nexusRouter.get('/projects/:id/export/react', (req, res) => {
+  const state = getLdd(req.user.orgId, req.params.id);
+  if (!state) return res.status(404).json({ error: 'project not found' });
+  try {
+    const { files, meta } = generateReactProject(state.ldd);
+    const safe = String(state.ldd.project?.name || 'project').replace(/[^\w-]+/g, '-').toLowerCase();
+    const zip = buildZip(files);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${safe}-react-${state.fingerprint || 'export'}.zip"`);
+    res.setHeader('X-Lucio-Export', JSON.stringify({ target: 'react', ...meta }));
+    res.send(zip);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
 });
 
 // CRM launch (Phase 10)
