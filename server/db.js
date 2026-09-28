@@ -806,6 +806,17 @@ CREATE TABLE IF NOT EXISTS ldd_migrations (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_ldd_migrations ON ldd_migrations(org_id, project_id);
+-- GitHub connection (Phase 10): org-scoped repo/branch + PAT encrypted with the
+-- AI vault's AES-256-GCM. BYOK request header still wins; env GITHUB_TOKEN is
+-- the fallback. Plaintext exists only in memory for the duration of a call.
+CREATE TABLE IF NOT EXISTS builder_github_connections (
+  org_id TEXT PRIMARY KEY,
+  repo TEXT NOT NULL,
+  branch TEXT NOT NULL DEFAULT 'main',
+  pat_enc TEXT NOT NULL,
+  created_by TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 -- Real-time agent directory: vendored agent packs (MIT) ingested at boot by
 -- server/services/agentPacks.js. Global catalog; orgs enable agents per org.
 CREATE TABLE IF NOT EXISTS agent_directory (

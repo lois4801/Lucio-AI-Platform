@@ -562,3 +562,9 @@ start of every new session to evolve instead of rediscovering.
 - A mandatory duplicate-id check is only honest once the renderer guarantees unique ids by construction — otherwise it fails every template build and gets demoted to noise.
 - Evidence checks that gate must be tested both ways: clean tree passes, deliberately-broken tree fails with the offending detail in the message.
 - test-autodata showed a rare flaky failure (live-source timing); reruns clean. Judge sweep results by rerunning before assuming a regression.
+
+## 2026-09-28 — Phase 10 (code editor + GitHub loop)
+- Mocking globalThis.fetch in a hermetic test ALSO intercepts the test client's own HTTP calls — always delegate `(url, opts)` through to the real fetch for non-mocked hosts, or every API call silently becomes a bodyless GET.
+- git blob sha `sha1("blob <byteLen>\0"+content)` lets diff compare a whole tree without downloading contents; verified against the real `git hash-object` vector for "hello\n" (ce01362…).
+- PUT /contents with a stale `sha` 422s — sync resolves the branch head and per-file current sha first so updates are true updates.
+- createCheckpoint snapshots the live manifest — for pull, applyOps first, checkpoint after, so the checkpoint captures pulled state exactly.

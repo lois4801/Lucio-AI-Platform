@@ -10,7 +10,7 @@ import { runEvidenceSuite, listEvidence } from '../services/nexus/evidence.js';
 import { createProject, getProject, listProjects, updateProject, deleteProject, createRun, getRun, listRuns, cancelRun, executeRun, isBuilderEnabled, runCompetition, comparison, selectWinner, mergeCandidate } from '../services/nexus/orchestrator.js';
 import { createShare, getSharePublic, shareState, revokeShare, listShares, shareSnapshot, addComment, listComments } from '../services/nexus/share.js';
 import { buildZip } from '../services/nexus/exportZip.js';
-import { gitStatus, syncToGitHub } from '../services/nexus/gitAdapter.js';
+import { gitStatus, syncToGitHub, saveGitHubConnection, getGitHubConnection, deleteGitHubConnection, gitDiff, gitPull } from '../services/nexus/gitAdapter.js';
 import { getLdd, saveLdd, listLddMigrations, markLddStale, renderLdd, migrateProjectLdd } from '../services/nexus/ldd.js';
 import { resolveSectionComponents } from '../services/nexus/sectionComponents.js';
 import { projectLayers } from '../services/nexus/layerTree.js';
@@ -330,6 +330,57 @@ nexusRouter.post('/projects/:id/git/sync', requireRole('admin'), async (req, res
     const byok = req.headers['x-builder-token'] ? String(req.headers['x-builder-token']) : null;
     const out = await syncToGitHub({ orgId: req.user.orgId, userId: req.user.id, projectId: p.id, checkpointId: req.body?.checkpointId, repo: req.body?.repo, branch: req.body?.branch || 'main', byokToken: byok });
     res.json({ sync: out });
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+
+// ---- GitHub connection + loop (Phase 10) ------------------------------------------------------
+nexusRouter.post('/projects/:id/git/connect', requireRole('admin'), (req, res) => {
+  const p = getProject(req.user.orgId, req.params.id);
+  if (!p) return res.status(404).json({ error: 'project not found' });
+  try {
+    const out = saveGitHubConnection(req.user.orgId, req.user, { repo: req.body?.repo, branch: req.body?.branch || 'main', pat: req.body?.pat }, req.ip || '');
+    res.status(201).json({ connection: out });
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+nexusRouter.get('/projects/:id/git/connection', (req, res) => {
+  const p = getProject(req.user.orgId, req.params.id);
+  if (!p) return res.status(404).json({ error: 'project not found' });
+  res.json({ connection: getGitHubConnection(req.user.orgId) });
+});
+nexusRouter.delete('/projects/:id/git/connection', requireRole('admin'), (req, res) => {
+  const p = getProject(req.user.orgId, req.params.id);
+  if (!p) return res.status(404).json({ error: 'project not found' });
+  const removed = deleteGitHubConnection(req.user.orgId, req.user, req.ip || '');
+  res.json({ removed });
+});
+
+// Defaults repo/branch from the org-saved connection when the body omits them.
+function gitTarget(req) {
+  const saved = getGitHubConnection(req.user.orgId);
+  const repo = req.body?.repo || saved?.repo;
+  const branch = req.body?.branch || saved?.branch || 'main';
+  if (!repo) throw Object.assign(new Error('no repo configured — save a GitHub connection or pass repo in the body'), { status: 404 });
+  return { repo, branch, saved };
+}
+
+nexusRouter.post('/projects/:id/git/diff', async (req, res) => {
+  const p = getProject(req.user.orgId, req.params.id);
+  if (!p) return res.status(404).json({ error: 'project not found' });
+  try {
+    const { repo, branch } = gitTarget(req);
+    const byok = req.headers['x-builder-token'] ? String(req.headers['x-builder-token']) : null;
+    const out = await gitDiff({ orgId: req.user.orgId, projectId: p.id, checkpointId: req.body?.checkpointId || null, repo, branch, byokToken: byok });
+    res.json({ diff: out });
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+nexusRouter.post('/projects/:id/git/pull', requireRole('admin'), async (req, res) => {
+  const p = getProject(req.user.orgId, req.params.id);
+  if (!p) return res.status(404).json({ error: 'project not found' });
+  try {
+    const { repo, branch } = gitTarget(req);
+    const byok = req.headers['x-builder-token'] ? String(req.headers['x-builder-token']) : null;
+    const out = await gitPull({ orgId: req.user.orgId, userId: req.user.id, projectId: p.id, repo, branch, byokToken: byok });
+    res.json({ pull: out });
   } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 

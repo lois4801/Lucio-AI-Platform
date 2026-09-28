@@ -22,6 +22,16 @@ export default function NexusPage() {
   const [events, setEvents] = useState<Ev[]>([]);
   const [files, setFiles] = useState<FileRow[]>([]);
   const [openFile, setOpenFile] = useState<{ path: string; content: string } | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editContent, setEditContent] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
+  const [editStale, setEditStale] = useState(false);
+  const [gh, setGh] = useState<{ repo: string; branch: string; maskedPat: string; updatedAt: string } | null>(null);
+  const [ghRepo, setGhRepo] = useState('');
+  const [ghBranch, setGhBranch] = useState('main');
+  const [ghPat, setGhPat] = useState('');
+  const [ghDiff, setGhDiff] = useState<{ added: string[]; removed: string[]; changed: string[]; identical: number; repo: string; branch: string } | null>(null);
+  const [ghBusy, setGhBusy] = useState('');
   const [checkpoints, setCheckpoints] = useState<Cp[]>([]);
   const [evidence, setEvidence] = useState<EvRow[]>([]);
   const [competition, setCompetition] = useState(false);
@@ -49,6 +59,10 @@ export default function NexusPage() {
     if (r.runs[0]) loadEvents(r.runs[0].id, r.runs[0].status);
     const cmp = await api(`/nexus/projects/${p.id}/comparison`).catch(() => ({ comparison: [] }));
     setComparison(cmp.comparison || []);
+    const conn = await api(`/nexus/projects/${p.id}/git/connection`).catch(() => ({ connection: null }));
+    setGh(conn.connection);
+    if (conn.connection) { setGhRepo(conn.connection.repo); setGhBranch(conn.connection.branch); }
+    setGhDiff(null);
   };
 
   const loadEvents = async (runId: string, status?: string) => {
@@ -132,6 +146,67 @@ export default function NexusPage() {
       setMsg('Winner selected — working tree restored to that checkpoint.');
       await refreshFiles();
     } catch (err: any) { setMsg(err.message); }
+  };
+
+  // ---- file editor (Phase 10) ----------------------------------------------------------------
+  const openForEdit = async (path: string) => {
+    if (!active) return;
+    const f = (await api(`/nexus/projects/${active.id}/files/${path}`)).file;
+    setOpenFile(f); setEditContent(f.content); setEditing(true); setEditStale(false);
+  };
+  const saveFile = async () => {
+    if (!active || !openFile || editBusy) return;
+    setEditBusy(true); setMsg('');
+    try {
+      const r = await api(`/nexus/projects/${active.id}/files`, { method: 'PATCH', body: JSON.stringify({ ops: [{ op: 'update', path: openFile.path, content: editContent }] }) });
+      setEditStale(!!r.lddStale);
+      setOpenFile({ ...openFile, content: editContent });
+      setEditing(false);
+      await refreshFiles();
+    } catch (err: any) { setMsg(err.message); }
+    finally { setEditBusy(false); }
+  };
+
+  // ---- GitHub loop (Phase 10) ----------------------------------------------------------------
+  const ghConnect = async () => {
+    if (!active || ghBusy) return;
+    setGhBusy('connect'); setMsg('');
+    try {
+      const r = await api(`/nexus/projects/${active.id}/git/connect`, { method: 'POST', body: JSON.stringify({ repo: ghRepo.trim(), branch: ghBranch.trim() || 'main', pat: ghPat }) });
+      setGh(r.connection); setGhPat('');
+      setMsg(`GitHub connected: ${r.connection.repo}@${r.connection.branch}`);
+    } catch (err: any) { setMsg(err.message); }
+    finally { setGhBusy(''); }
+  };
+  const ghForget = async () => {
+    if (!active || ghBusy) return;
+    setGhBusy('forget'); setMsg('');
+    try {
+      await api(`/nexus/projects/${active.id}/git/connection`, { method: 'DELETE' });
+      setGh(null); setGhDiff(null);
+    } catch (err: any) { setMsg(err.message); }
+    finally { setGhBusy(''); }
+  };
+  const ghDo = async (action: 'diff' | 'pull' | 'sync') => {
+    if (!active || ghBusy) return;
+    setGhBusy(action); setMsg('');
+    try {
+      if (action === 'diff') {
+        const r = await api(`/nexus/projects/${active.id}/git/diff`, { method: 'POST', body: JSON.stringify({}) });
+        setGhDiff(r.diff);
+      } else if (action === 'pull') {
+        const r = await api(`/nexus/projects/${active.id}/git/pull`, { method: 'POST', body: JSON.stringify({}) });
+        setMsg(`Pulled ${r.pull.pulled.length} file(s) from ${r.pull.repo}@${r.pull.branch}${r.pull.checkpointId ? ` — checkpoint ${r.pull.checkpointId.slice(0, 8)}` : ''}.`);
+        setGhDiff(null);
+        await refreshFiles();
+      } else {
+        const cpId = active.active_checkpoint_id || checkpoints[0]?.id;
+        if (!cpId) { setMsg('No checkpoint yet — build or save one first.'); return; }
+        const r = await api(`/nexus/projects/${active.id}/git/sync`, { method: 'POST', body: JSON.stringify({ checkpointId: cpId }) });
+        setMsg(`Synced ${r.sync.synced.length} file(s) to ${r.sync.repo}@${r.sync.branch}.`);
+      }
+    } catch (err: any) { setMsg(err.message); }
+    finally { setGhBusy(''); }
   };
 
   return (
@@ -224,17 +299,81 @@ export default function NexusPage() {
             </Card>
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-3">
+          <div className="grid gap-6 lg:grid-cols-4">
             <Card>
-              <CardHeader><CardTitle>Files</CardTitle></CardHeader>
+              <CardHeader><CardTitle>Files</CardTitle>
+                <CardDescription>Click to view, then edit and save — saved edits are versioned and LDD divergence is tracked honestly.</CardDescription></CardHeader>
               <CardContent className="space-y-1 text-sm">
                 {files.map((f) => (
-                  <button key={f.path} className="block w-full text-left font-mono text-xs hover:text-accent" onClick={async () => setOpenFile((await api(`/nexus/projects/${active.id}/files/${f.path}`)).file)}>
+                  <button key={f.path} className="block w-full text-left font-mono text-xs hover:text-accent" onClick={() => openForEdit(f.path)}>
                     {f.path} <span className="text-muted-foreground">({(f.size / 1024).toFixed(1)} KB)</span>
                   </button>
                 ))}
                 {openFile && (
-                  <pre className="mt-2 max-h-56 overflow-auto rounded-md border p-2 text-xs bg-muted">{openFile.content.slice(0, 4000)}</pre>
+                  <div className="mt-2 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-semibold truncate">{openFile.path}</span>
+                      {!editing && <Button size="sm" variant="outline" onClick={() => { setEditContent(openFile.content); setEditing(true); setEditStale(false); }}>Edit</Button>}
+                    </div>
+                    {editing ? (
+                      <div className="flex rounded-md border bg-muted overflow-hidden">
+                        <pre className="text-xs text-muted-foreground px-2 py-2 text-right select-none overflow-hidden" aria-hidden>
+                          {Array.from({ length: editContent.split('\n').length }, (_, i) => i + 1).join('\n')}
+                        </pre>
+                        <textarea
+                          className="flex-1 min-w-0 bg-transparent font-mono text-xs p-2 outline-none resize-y"
+                          rows={Math.min(18, Math.max(6, editContent.split('\n').length))}
+                          value={editContent}
+                          onChange={(e) => setEditContent(e.target.value)}
+                          spellCheck={false}
+                        />
+                      </div>
+                    ) : (
+                      <pre className="max-h-56 overflow-auto rounded-md border p-2 text-xs bg-muted">{openFile.content.slice(0, 4000)}</pre>
+                    )}
+                    {editing && (
+                      <div className="flex gap-2 items-center">
+                        <Button size="sm" onClick={saveFile} disabled={editBusy || editContent === openFile.content}>{editBusy ? 'Saving…' : 'Save'}</Button>
+                        <Button size="sm" variant="outline" onClick={() => { setEditing(false); setEditContent(openFile.content); setEditStale(false); }}>Discard</Button>
+                      </div>
+                    )}
+                    {editStale && <p className="text-xs text-amber-600 dark:text-amber-400">Document marked stale — re-render from the LDD to reconcile canonical state.</p>}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader><CardTitle>GitHub</CardTitle>
+                <CardDescription>Connect a repo to diff, pull, and sync checkpoints. The PAT is encrypted with the AI vault and only ever returned masked.</CardDescription></CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                {gh ? (
+                  <div className="space-y-2">
+                    <p className="font-mono text-xs">{gh.repo}@{gh.branch}</p>
+                    <p className="text-xs text-muted-foreground">token: {gh.maskedPat} · saved {gh.updatedAt}</p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" disabled={!!ghBusy} onClick={() => ghDo('diff')}>{ghBusy === 'diff' ? 'Diffing…' : 'Diff'}</Button>
+                      <Button size="sm" variant="outline" disabled={!!ghBusy} onClick={() => ghDo('pull')}>{ghBusy === 'pull' ? 'Pulling…' : 'Pull'}</Button>
+                      <Button size="sm" variant="outline" disabled={!!ghBusy} onClick={() => ghDo('sync')}>{ghBusy === 'sync' ? 'Syncing…' : 'Sync checkpoint'}</Button>
+                      <Button size="sm" variant="destructive" disabled={!!ghBusy} onClick={ghForget}>Forget</Button>
+                    </div>
+                    {ghDiff && (
+                      <div className="text-xs space-y-1 rounded-md border p-2">
+                        <div className="font-semibold">vs {ghDiff.repo}@{ghDiff.branch}</div>
+                        <div className="text-green-600 dark:text-green-400">added: {ghDiff.added.length ? ghDiff.added.join(', ') : '—'}</div>
+                        <div className="text-amber-600 dark:text-amber-400">changed: {ghDiff.changed.length ? ghDiff.changed.join(', ') : '—'}</div>
+                        <div className="text-destructive">removed: {ghDiff.removed.length ? ghDiff.removed.join(', ') : '—'}</div>
+                        <div className="text-muted-foreground">identical: {ghDiff.identical}</div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Input placeholder="owner/repo" value={ghRepo} onChange={(e) => setGhRepo(e.target.value)} />
+                    <Input placeholder="branch (default main)" value={ghBranch} onChange={(e) => setGhBranch(e.target.value)} />
+                    <Input type="password" placeholder="GitHub PAT (fine-grained, contents:write)" value={ghPat} onChange={(e) => setGhPat(e.target.value)} />
+                    <Button size="sm" disabled={!!ghBusy || !ghRepo.trim() || ghPat.length < 8} onClick={ghConnect}>{ghBusy === 'connect' ? 'Saving…' : 'Save connection'}</Button>
+                  </div>
                 )}
               </CardContent>
             </Card>
