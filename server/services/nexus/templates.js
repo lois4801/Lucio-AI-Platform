@@ -23,6 +23,12 @@ function pickUniverse(brief) {
   const keys = Object.keys(TOKEN_SETS);
   return keys[n % keys.length];
 }
+// Exported for the LDD layer (spec §1): resolve the design block a brief will
+// render with, so the canonical document records the decision explicitly.
+export function resolveDesign(brief = {}) {
+  const universe = pickUniverse(brief);
+  return { universe, tokens: TOKEN_SETS[universe] };
+}
 export function factsFromBrief(brief) {
   // Distinguish verified facts from placeholders (manual §18): only fields the
   // brief explicitly marks verified are rendered as factual claims.
@@ -199,6 +205,23 @@ function renderToolHtml({ name, tokens }) {
 <section><h2>Records</h2><form id="add-form"><label for="t-title">Title</label><input id="t-title" required /><button type="submit">Add</button></form><ul id="record-list" aria-live="polite"></ul></section>
 </main><script src="app.js"></script></body></html>`;
 }
+// Responsive baseline (spec §7): the platform's mobile guarantee. Shared by
+// the sovereign renderer (interpolated into renderCss) and appended to
+// AI-authored stylesheets that lack mobile rules (generateFilesWithAi) — the
+// rules only apply below 720/460px, so they never override desktop design.
+export const RESPONSIVE_BASELINE_CSS = `@media (max-width: 720px) {
+  .nav { flex-wrap: wrap; gap: 0.6rem; padding: 0.8rem 1rem; }
+  main { padding: 1rem; }
+  .hero { padding: 2.25rem 0 1.5rem; }
+  .gallery { grid-template-columns: repeat(2, 1fr); }
+  .map-wrap iframe { height: 240px; }
+}
+@media (max-width: 460px) {
+  .gallery { grid-template-columns: 1fr; }
+  .cta, button { width: 100%; text-align: center; }
+}
+`;
+
 function renderCss(tokens) {
   const p = tokens.palette;
   return `:root {
@@ -230,6 +253,8 @@ footer { color: var(--muted); text-align: center; padding: 2rem 1rem; }
 .map-wrap iframe { display: block; width: 100%; height: 320px; border: 0; }
 .map-credit { font-size: 0.78rem; color: var(--muted); margin-top: 0.35rem; }
 .map-credit a { color: var(--accent); }
+/* Responsive baseline (spec §7): mobile cannot be an afterthought. */
+${RESPONSIVE_BASELINE_CSS}
 @media (prefers-reduced-motion: no-preference) {
   .hero .cta { transition: transform 150ms ease; }
   .hero .cta:hover { transform: translateY(-2px); }
@@ -362,6 +387,7 @@ HARD REQUIREMENTS (an automated evidence suite rejects anything that violates th
 6. README.md: 5–10 lines — what the app is, how to open it, the API contract (static demo), and the data model.
 7. data.json: valid JSON seed data for the app.
 8. Placeholders the owner must edit MUST be marked [EDIT: label].
+9. RESPONSIVE (mandatory): styles.css MUST contain @media (max-width: 720px) rules so the layout adapts on phones — fluid grids, no fixed pixel widths above 480px, touch-friendly tap targets.
 
 DESIGN DIRECTION for this build (unmistakably distinct from every other generated site):
 - Mood: ${v.mood} · corner radius ${v.radius}px · signature motion: ${v.motion}
@@ -435,6 +461,13 @@ export function generateFilesWithAi(brief, aiContent) {
   }
   if (!files['data.json']) {
     files['data.json'] = JSON.stringify({ name, industry: brief.industry || 'General', generated: 'lucio-nexus-ai', intent: String(brief.intent || '').slice(0, 200) }, null, 2);
+  }
+  // Platform responsive guarantee (spec §7): if the model shipped no mobile
+  // breakpoint rules, append the shared baseline. It only activates below
+  // 720/460px and uses class hooks (.nav/.hero/.gallery/main) every template
+  // carries, so it never overrides the model's desktop design.
+  if (typeof files['styles.css'] === 'string' && !/@media\s*\(\s*max-width:/.test(files['styles.css'])) {
+    files['styles.css'] = `${files['styles.css']}\n${RESPONSIVE_BASELINE_CSS}`;
   }
   return { files, meta: { fileCount: Object.keys(files).length, appType: buildPlan(brief).appType, tokenLabel: 'ai-authored', via: 'ai' } };
 }

@@ -11,6 +11,7 @@ import { createProject, getProject, listProjects, updateProject, deleteProject, 
 import { createShare, getSharePublic, shareState, revokeShare, listShares, shareSnapshot, addComment, listComments } from '../services/nexus/share.js';
 import { buildZip } from '../services/nexus/exportZip.js';
 import { gitStatus, syncToGitHub } from '../services/nexus/gitAdapter.js';
+import { getLdd, saveLdd, listLddMigrations } from '../services/nexus/ldd.js';
 import { deploy, listDeployments, rollbackDeployment, activeDeployment } from '../services/nexus/deploy.js';
 import { launchFromProspect } from '../services/nexus/prospectLaunch.js';
 
@@ -104,6 +105,19 @@ nexusRouter.patch('/projects/:id', requireRole('member'), (req, res) => {
 nexusRouter.delete('/projects/:id', requireRole('member'), (req, res) => {
   if (!deleteProject(req.user.orgId, req.params.id, req.user.id)) return res.status(404).json({ error: 'project not found' });
   res.json({ ok: true });
+});
+
+// Lucio Design Document (spec §1/§16) — canonical document read/write.
+nexusRouter.get('/projects/:id/ldd', (req, res) => {
+  const state = getLdd(req.user.orgId, req.params.id);
+  if (!state) return res.status(404).json({ error: 'project not found' });
+  res.json({ ldd: state.ldd, derived: state.derived, fingerprint: state.fingerprint, errors: state.errors, migrations: listLddMigrations(req.user.orgId, req.params.id) });
+});
+nexusRouter.put('/projects/:id/ldd', requireRole('member'), (req, res) => {
+  try {
+    const out = saveLdd(req.user.orgId, req.params.id, req.body?.ldd, req.user.id, 'api');
+    res.json({ ldd: out.ldd, fingerprint: out.fingerprint, appliedMigrations: out.appliedMigrations });
+  } catch (e) { res.status(e.status || 400).json({ error: String(e.message || e) }); }
 });
 
 // CRM launch (Phase 10)

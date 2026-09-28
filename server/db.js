@@ -791,6 +791,21 @@ CREATE TABLE IF NOT EXISTS _nexus_usage (
   purpose TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- LUCIO DESIGN DOCUMENT (spec §1/§16): audit trail of schema migrations applied
+-- to each project's canonical document. One row per saveLdd() call.
+CREATE TABLE IF NOT EXISTS ldd_migrations (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  project_id TEXT NOT NULL REFERENCES builder_projects(id) ON DELETE CASCADE,
+  from_version TEXT NOT NULL,
+  to_version TEXT NOT NULL,
+  applied TEXT NOT NULL DEFAULT '[]',
+  fingerprint TEXT NOT NULL DEFAULT '',
+  via TEXT NOT NULL DEFAULT 'api',
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ldd_migrations ON ldd_migrations(org_id, project_id);
 -- Real-time agent directory: vendored agent packs (MIT) ingested at boot by
 -- server/services/agentPacks.js. Global catalog; orgs enable agents per org.
 CREATE TABLE IF NOT EXISTS agent_directory (
@@ -970,6 +985,11 @@ CREATE TABLE IF NOT EXISTS osm_cache (
   const cols = db.prepare('PRAGMA table_info(site_imports)').all().map((c) => c.name);
   if (!cols.includes('assets_json')) db.exec(`ALTER TABLE site_imports ADD COLUMN assets_json TEXT NOT NULL DEFAULT '[]'`);
   if (!cols.includes('health_json')) db.exec("ALTER TABLE site_imports ADD COLUMN health_json TEXT NOT NULL DEFAULT ''")
+}
+{
+  // Phase 1 (spec §1): canonical Lucio Design Document stored on the project row.
+  const cols = db.prepare('PRAGMA table_info(builder_projects)').all().map((c) => c.name);
+  if (!cols.includes('ldd_json')) db.exec('ALTER TABLE builder_projects ADD COLUMN ldd_json TEXT');
 }
 
 // Seed provider registry: local-first, external disabled by default (manual §7, §14)

@@ -511,3 +511,10 @@ start of every new session to evolve instead of rediscovering.
 - Spec demands a 20-part audit before coding; full report in docs/phase0-audit.md. Key structural finding: Lucio's canonical state is builder_files selected by checkpoints — there is NO versioned Lucio Design Document IR yet (spec §1/§16), no drag canvas (§4/§5), no property inspector (§6), no React/Next.js codegen (§6 Phase 6). Everything else (generation, evidence gate, preview, checkpoints, publishing w/ validation, AI gateway, scanner, imports, QA suites) is WORKING with green hermetic suites.
 - Nothing in the repo is mock-only; publishing/verify/evidence all fail closed. The only "broken" item is the owner's invalid ck_ OpenAI key — credential, not code.
 - Migration strategy decision: additive-only DB changes (builder_projects.ldd_json + ldm migrations table), LDD read-path falls back to legacy recipe/files until Phase 2 cutover; rollback = byte-exact checkpoint restore.
+
+## 2026-09-28 — Phase 1 (LDD v1 + responsive gate)
+
+- LDD lesson: a canonical IR only deserves the name if the round-trip is proven — briefToLdd→lddToBrief→generateFiles must be byte-identical for every app type, or the document is decorative. 31-test suite locks it.
+- Evidence-gate lesson: adding a mandatory check broke the AI-authored path (its CSS legitimately lacked media queries). Fix at both layers: prompt requirement AND a deterministic platform guarantee (append shared RESPONSIVE_BASELINE_CSS only when the model omitted mobile rules — guarded <720/460px so it never overrides desktop design).
+- Tenant isolation caught a real bug: saveLdd recorded migration rows before verifying project ownership. Always ownership-check before any insert, even when an UPDATE already filtered by org_id.
+- libuv prints a benign "Assertion failed: UV_HANDLE_CLOSING" on quick test exit when better-sqlite3 handles are still open — cosmetic; suites still exit 0. Distinguish it from real failures by checking the RESULT line, not the last line.

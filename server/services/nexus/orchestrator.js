@@ -7,6 +7,7 @@ import { appendEvent, appendAndPublish, eventCount, listEvents } from './protoco
 import { applyOps, fileContents, createCheckpoint, snapshotContents, listCheckpoints, restoreCheckpoint } from './vfs.js';
 import { buildPlan, briefFromIntent, generateFiles, aiFilePrompt, generateFilesWithAi } from './templates.js';
 import { runEvidenceSuite, mandatoryFailures, evidenceSummary } from './evidence.js';
+import { briefToLdd, lddToBrief, saveLdd, getLdd } from './ldd.js';
 import { generate, getBudget, budgetUsed, AI_FIRST_POLICY } from './modelRouter.js';
 
 export const RUN_STATUSES = ['created', 'planning', 'building', 'testing', 'repairing', 'checkpointing', 'completed', 'blocked', 'failed', 'cancelled'];
@@ -31,12 +32,17 @@ export function createProject({ orgId, userId, name, appType = 'website', brief 
   db.prepare(`INSERT INTO builder_projects (id, org_id, name, app_type, status, source_prospect_id, brief_json, created_by) VALUES (?,?,?,?,?,?,?,?)`)
     .run(id, orgId, String(name).slice(0, 120), appType, 'draft', sourceProspectId, JSON.stringify(brief || {}), userId);
   audit(orgId, userId, 'builder.project.create', 'builder_project', id, { name, appType }, '');
+  // Canonical Lucio Design Document (spec §1): created with the project so the
+  // document — not the rendered files — is the source of truth from birth.
+  try { saveLdd(orgId, id, briefToLdd({ ...brief, appType, name }, { userId, source: 'create' }), userId, 'create'); }
+  catch (e) { console.error('[ldd persist failed]', e.message); }
   return getProject(orgId, id);
 }
 export function getProject(orgId, id) {
   const row = db.prepare(`SELECT * FROM builder_projects WHERE id = ? AND org_id = ?`).get(id, orgId);
   if (!row) return null;
-  return { ...row, brief: JSON.parse(row.brief_json || '{}') };
+  const lddState = getLdd(orgId, id);
+  return { ...row, brief: JSON.parse(row.brief_json || '{}'), ldd: lddState?.ldd || null, lddDerived: lddState?.derived ?? null, lddFingerprint: lddState?.fingerprint || null };
 }
 export function listProjects(orgId) {
   return db.prepare(`SELECT * FROM builder_projects WHERE org_id = ? ORDER BY updated_at DESC`).all(orgId)
@@ -47,6 +53,13 @@ export function updateProject(orgId, id, { name, status, brief }) {
   if (!p) return null;
   db.prepare(`UPDATE builder_projects SET name = ?, status = ?, brief_json = ?, updated_at = datetime('now') WHERE id = ?`)
     .run(name ?? p.name, status ?? p.status, JSON.stringify(brief ?? p.brief), id);
+  // Keep the canonical document in lock-step with brief/name changes.
+  if (brief || name) {
+    try {
+      const merged = { ...(brief ?? p.brief), appType: (brief ?? p.brief).appType || p.app_type, name: name ?? p.name };
+      saveLdd(orgId, id, briefToLdd(merged, { userId: null, source: 'update' }), null, 'update');
+    } catch (e) { console.error('[ldd persist failed]', e.message); }
+  }
   return getProject(orgId, id);
 }
 export function deleteProject(orgId, id, userId) {

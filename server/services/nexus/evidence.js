@@ -111,6 +111,38 @@ export const CHECKS = [
       return { pass: ratio >= 4.5, detail: `text/bg contrast ${ratio}:1 (AA needs 4.5:1)` };
     },
   },
+  {
+    category: 'responsive', name: 'mobile breakpoint rules present', mandatory: true,
+    run(files) {
+      const css = files.find((f) => f.path === 'styles.css');
+      if (!css) return { pass: false, detail: 'styles.css missing' };
+      const mobile = /@media\s*\(\s*max-width:\s*\d+px\s*\)/.test(css.content);
+      return { pass: mobile, detail: mobile ? 'max-width media queries found' : 'no mobile @media (max-width) rules — layouts will not adapt' };
+    },
+  },
+  {
+    category: 'responsive', name: 'reduced-motion preference respected', mandatory: false,
+    run(files) {
+      const css = files.find((f) => f.path === 'styles.css');
+      if (!css) return { pass: false, detail: 'styles.css missing' };
+      const ok = /@media\s*\(\s*prefers-reduced-motion/.test(css.content);
+      return { pass: ok, detail: ok ? 'prefers-reduced-motion media query present' : 'no prefers-reduced-motion handling' };
+    },
+  },
+  {
+    category: 'responsive', name: 'no fixed-width layout traps', mandatory: false,
+    run(files) {
+      const css = files.find((f) => f.path === 'styles.css');
+      if (!css) return { pass: false, detail: 'styles.css missing' };
+      // Fixed pixel widths/min-widths beyond a phone viewport force horizontal
+      // scrolling on mobile. max-width and fluid units are fine.
+      const traps = [];
+      for (const m of css.content.matchAll(/(?:^|[};]\s*)(?:min-width|width)\s*:\s*([5-9]\d{2}|\d{4,})px/g)) {
+        traps.push(`${m[1]}px`);
+      }
+      return { pass: traps.length === 0, detail: traps.length ? `fixed widths: ${traps.join(', ')}` : 'no fixed-width traps beyond 480px' };
+    },
+  },
 ];
 
 // Run the full deterministic suite against the project's working tree; persist rows.
