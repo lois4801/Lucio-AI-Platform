@@ -557,3 +557,8 @@ start of every new session to evolve instead of rediscovering.
 - Scroll-reveal hidden states must be .js-scoped (add the js flag in JS, hide only under .js) — otherwise no-JS or blocked-script users get a blank page. Progressive enhancement beats CSS-only hides.
 - IntersectionObserver runtimes must have two immediate-reveal escapes: prefers-reduced-motion AND missing IO support.
 - Per-level motion testing (each intensity its own project run) catches level-mapping regressions better than one generic motion test.
+
+## 2026-09-28 — Phase 9: structural evidence checks
+- A mandatory duplicate-id check is only honest once the renderer guarantees unique ids by construction — otherwise it fails every template build and gets demoted to noise.
+- Evidence checks that gate must be tested both ways: clean tree passes, deliberately-broken tree fails with the offending detail in the message.
+- test-autodata showed a rare flaky failure (live-source timing); reruns clean. Judge sweep results by rerunning before assuming a regression.

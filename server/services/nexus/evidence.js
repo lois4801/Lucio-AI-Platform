@@ -143,6 +143,41 @@ export const CHECKS = [
       return { pass: traps.length === 0, detail: traps.length ? `fixed widths: ${traps.join(', ')}` : 'no fixed-width traps beyond 480px' };
     },
   },
+  {
+    // Phase 9 — structural visual QA. Meaningful because the renderer now
+    // guarantees unique per-occurrence ids (Phase 4) — a duplicate means a
+    // real regression (canvas op, AI output, or hand edit), not template noise.
+    category: 'structure', name: 'no duplicate element ids', mandatory: true,
+    run(files) {
+      const html = files.find((f) => f.path === 'index.html');
+      if (!html) return { pass: false, detail: 'index.html missing' };
+      const ids = [...html.content.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]);
+      const seen = new Set(); const dupes = new Set();
+      for (const id of ids) { if (seen.has(id)) dupes.add(id); seen.add(id); }
+      return { pass: dupes.size === 0, detail: dupes.size ? `duplicate ids: ${[...dupes].join(', ')}` : `${ids.length} ids, all unique` };
+    },
+  },
+  {
+    category: 'structure', name: 'nav anchors resolve to real targets', mandatory: false,
+    run(files) {
+      const html = files.find((f) => f.path === 'index.html');
+      if (!html) return { pass: false, detail: 'index.html missing' };
+      const anchors = [...html.content.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]).filter(Boolean);
+      const ids = new Set([...html.content.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+      const broken = [...new Set(anchors.filter((a) => !ids.has(a)))];
+      return { pass: broken.length === 0, detail: broken.length ? `anchors with no target: ${broken.map((b) => `#${b}`).join(', ')}` : `${anchors.length} in-page anchors all resolve` };
+    },
+  },
+  {
+    category: 'accessibility', name: 'images have alt text', mandatory: false,
+    run(files) {
+      const html = files.find((f) => f.path === 'index.html');
+      if (!html) return { pass: false, detail: 'index.html missing' };
+      const imgs = [...html.content.matchAll(/<img\b[^>]*>/g)].map((m) => m[0]);
+      const missing = imgs.filter((tag) => !/\balt="[^"]*"/.test(tag));
+      return { pass: missing.length === 0, detail: imgs.length ? `${imgs.length} image(s), ${missing.length} missing alt` : 'no images' };
+    },
+  },
 ];
 
 // Run the full deterministic suite against the project's working tree; persist rows.
