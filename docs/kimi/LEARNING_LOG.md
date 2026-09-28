@@ -525,3 +525,9 @@ start of every new session to evolve instead of rediscovering.
 - Spec §16 custom-code rule implemented literally: render upserts only render-managed paths; anything else is preserved and reported. Never destroy owner code.
 - Migration-job pattern: restore-point checkpoint FIRST, then mutate, and prove restore works in the same test. Byte-exact snapshot machinery made this one assertion.
 - Legacy-derive bug: project name/appType live on the row, not in brief_json — derivation must merge row fields or migrated projects render "Untitled Project". Always derive from the full authoritative record, not the most convenient one.
+
+## 2026-09-28 — Phase 3 (tokens + registry keyed to LDD)
+
+- Token propagation must be real, not decorative: renderer must consume the document's token set (brief.designTokens) — a token edit that doesn't change output is a lie. Test both directions: untouched round-trip byte-identical, edited token lands in CSS.
+- Registry families must cover every generated section type or resolution returns honest notes — never fabricate a component match for an unmappable section.
+- expandDesignTokens derives shadows from the ink color via hexAlpha — derivations keep token sets deterministic and drift-free across renders.

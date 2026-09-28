@@ -29,6 +29,40 @@ export const LDD_APP_TYPES = Object.keys(APP_TYPE_SECTIONS);
 
 function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
 
+// ---- design tokens (spec §11) ----------------------------------------------------------------
+// Expand a universe token set (palette/fonts/radius) into the full token
+// scale the document carries: spacing, type scale, radius scale, shadows,
+// blur, motion, breakpoints. Deterministic — derived, never random — and
+// changing any token here propagates to renders (lddToBrief passes the set
+// through as the renderer's tokens).
+function hexAlpha(hex, a) {
+  const m = /^#([0-9a-f]{6})$/i.exec(String(hex || ''));
+  if (!m) return `rgba(0,0,0,${a})`;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+export function expandDesignTokens(tokens = {}) {
+  const p = tokens.palette || {};
+  const ink = p.text || '#111111';
+  return {
+    ...tokens,
+    spacing: { xs: '0.25rem', sm: '0.5rem', md: '1rem', lg: '1.5rem', xl: '2.5rem', xxl: '4rem' },
+    typeScale: {
+      displayXL: 'clamp(2.75rem, 6vw, 4.5rem)',
+      h1: 'clamp(2rem, 4vw, 3rem)',
+      h2: 'clamp(1.5rem, 3vw, 2.25rem)',
+      body: '1rem',
+      caption: '0.8rem',
+    },
+    radiusScale: { sm: 'max(2px, calc(var(--radius) * 0.5))', DEFAULT: tokens.radius || '8px', lg: 'calc(var(--radius) * 2)' },
+    shadow: { sm: `0 1px 2px ${hexAlpha(ink, 0.08)}`, md: `0 4px 16px ${hexAlpha(ink, 0.12)}`, lg: `0 12px 40px ${hexAlpha(ink, 0.18)}` },
+    blur: { glass: '12px', panel: '20px' },
+    motion: { fast: '150ms', base: '300ms', slow: '600ms', easing: 'cubic-bezier(0.22, 1, 0.36, 1)', cinematicReveal: '900ms cubic-bezier(0.22, 1, 0.36, 1)' },
+    breakpoints: { mobile: 460, tablet: 720, desktop: 1080, wide: 1440 },
+  };
+}
+
 // ---- validation ------------------------------------------------------------------------------
 export function validateLdd(ldd) {
   const errors = [];
@@ -93,10 +127,11 @@ export function briefToLdd(brief = {}, opts = {}) {
   const hasFaqs = !!(pack && Array.isArray(pack.faqs) && pack.faqs.length);
   const sections = APP_TYPE_SECTIONS[appType]({ hasFaqs });
   // Record the design decision explicitly (spec §11): same deterministic
-  // resolution the renderer uses, frozen into the document.
+  // resolution the renderer uses, frozen into the document — expanded to the
+  // full token scale so edits propagate.
   const design = opts.universe && opts.tokens
-    ? { universe: opts.universe, tokens: opts.tokens }
-    : resolveDesign({ ...brief, appType, name: brief.name || opts.name });
+    ? { universe: opts.universe, tokens: expandDesignTokens(opts.tokens) }
+    : (() => { const d = resolveDesign({ ...brief, appType, name: brief.name || opts.name }); return { universe: d.universe, tokens: expandDesignTokens(d.tokens) }; })();
   return {
     schemaVersion: LDD_VERSION,
     project: {
@@ -145,6 +180,8 @@ export function lddToBrief(ldd) {
     geo: clone(ldd.content?.geo) || null,
     contentPack: clone(ldd.content?.contentPackData) || null,
     universe: ldd.design?.universe || undefined,
+    // The document's token set IS the render input (spec §11 propagation).
+    designTokens: clone(ldd.design?.tokens) || undefined,
   };
 }
 

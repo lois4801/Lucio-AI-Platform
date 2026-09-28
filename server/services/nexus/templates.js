@@ -65,7 +65,9 @@ export function buildPlan(brief) {
 
 export function generateFiles(brief) {
   const { appType, universe } = buildPlan(brief);
-  const tokens = TOKEN_SETS[universe];
+  // The LDD's token set wins when present (spec §11: changing a token
+  // propagates); otherwise fall back to the universe's static set.
+  const tokens = brief.designTokens && brief.designTokens.palette ? brief.designTokens : TOKEN_SETS[universe];
   const facts = factsFromBrief(brief);
   const name = brief.name || 'Untitled Project';
   // Auto Data Engine content pack (when the industry is covered): real hero copy,

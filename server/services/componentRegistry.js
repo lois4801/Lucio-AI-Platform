@@ -17,7 +17,7 @@ const ldIdSet = new Set(LD_IDS);
 
 // Creation modes (ldStyles.CREATION_MODES ids) and §12 families — validated at load.
 const CREATION_MODE_IDS = ['CUSTOM_AI', 'COMPONENT_SYSTEM', 'HYBRID', 'CINEMATIC_UNIVERSE'];
-const FAMILY_IDS = ['navigation', 'heroes', 'trust', 'services', 'about', 'process', 'projects', 'gallery', 'testimonials', 'pricing', 'faq', 'contact', 'cta', 'footer', 'background', 'gradient', 'shader', 'motion', 'scroll', 'cinematic'];
+const FAMILY_IDS = ['navigation', 'heroes', 'trust', 'services', 'features', 'about', 'process', 'projects', 'gallery', 'testimonials', 'pricing', 'faq', 'contact', 'forms', 'data', 'commerce', 'cta', 'footer', 'background', 'gradient', 'shader', 'motion', 'scroll', 'cinematic'];
 const PERF_CLASSES = ['LIGHT', 'STANDARD', 'HEAVY', 'ULTRA'];
 const SHADER_CATEGORIES = ['aurora', 'fluid', 'noise', 'grain', 'liquid', 'iridescent', 'water', 'glass', 'fire', 'energy', 'neon', 'metallic', 'plasma', 'cloud', 'fog', 'light', 'refraction', 'distortion', 'gradient', 'holographic'];
 const GRADIENT_TYPES = ['linear', 'radial', 'conic', 'mesh', 'animated-mesh', 'aurora', 'multi-layer', 'noise', 'glass', 'lighting'];
@@ -677,6 +677,57 @@ export const LUCIO_COMPONENT_REGISTRY = [
     dependencies: ['motionEngine', 'cinematicEngine'],
     tags: ['cinematic', 'transition', 'page', 'morph'],
     variants: [V('fade-through', 'Fade through black', ['cinema-cut']), V('wipe', 'Iris wipe', ['radial-wipe', 'reduced-motion-instant'])] }),
+
+  // features (Phase 3 — LDD section coverage)
+  C({ component_id: 'FEATURES-GRID-01', component_name: 'Capability card grid', component_family: 'features', component_type: 'section',
+    content_requirements: ['3-6 capability cards: title, one-line description, optional icon'],
+    motion_capabilities: ['fade', 'stagger'],
+    responsive_behavior: 'auto-fit grid; single column below 640px',
+    fallback_behavior: 'static stacked cards, fully readable',
+    tags: ['features', 'capabilities', 'cards', 'grid'],
+    variants: [V('grid', 'Uniform grid', ['equal-cards']), V('bento', 'Bento mosaic', ['featured-tile', 'asymmetric']), V('list', 'Feature list', ['icon-rows', 'checkmarks'])] }),
+  C({ component_id: 'FEATURES-SPLIT-02', component_name: 'Alternating feature rows', component_family: 'features', component_type: 'section',
+    content_requirements: ['per row: title, description, supporting visual'],
+    image_requirements: ['row visual 4:3 or 1:1'],
+    motion_capabilities: ['fade', 'slide', 'reveal'],
+    responsive_behavior: 'media stacks above copy below 768px',
+    fallback_behavior: 'stacked media + copy, no animation',
+    tags: ['features', 'alternating', 'rows', 'showcase'],
+    variants: [V('alternate', 'Alternating sides', ['left-right-rhythm']), V('media-first', 'Media first', ['visual-led'])] }),
+
+  // commerce (Phase 3 — LDD section coverage)
+  C({ component_id: 'COMMERCE-GRID-01', component_name: 'Product card grid', component_family: 'commerce', component_type: 'section',
+    content_requirements: ['product cards: name, price, primary action'],
+    image_requirements: ['product shot 1:1 or 4:5'],
+    motion_capabilities: ['fade', 'stagger', 'hover-lift'],
+    responsive_behavior: '2 columns on mobile, up to 4 on desktop',
+    fallback_behavior: 'static product list with prices',
+    tags: ['commerce', 'products', 'grid', 'storefront'],
+    variants: [V('grid', 'Uniform grid', ['equal-cards', 'quick-add']), V('featured', 'Featured product', ['hero-product', 'supporting-grid']), V('compact', 'Compact rows', ['dense-list', 'buy-inline'])] }),
+  C({ component_id: 'COMMERCE-CART-02', component_name: 'Cart summary panel', component_family: 'commerce', component_type: 'section',
+    content_requirements: ['line items, quantities, running total, checkout CTA'],
+    motion_capabilities: ['fade', 'slide'],
+    responsive_behavior: 'full-width panel; sticky aside on wide screens',
+    fallback_behavior: 'static itemized list',
+    tags: ['commerce', 'cart', 'checkout', 'summary'],
+    variants: [V('panel', 'Side panel', ['sticky-aside']), V('inline', 'Inline section', ['below-products']), V('drawer', 'Drawer', ['overlay-trigger', 'esc-close'])] }),
+
+  // forms (Phase 3 — LDD section coverage)
+  C({ component_id: 'FORM-BOOKING-01', component_name: 'Booking request form', component_family: 'forms', component_type: 'section',
+    content_requirements: ['service select, date, time, name, phone; inline success message on submit'],
+    motion_capabilities: ['fade', 'stagger'],
+    responsive_behavior: 'single column; date/time inputs stack below 560px',
+    fallback_behavior: 'plain validated form, native controls',
+    dependencies: [],
+    tags: ['forms', 'booking', 'appointment', 'contact'],
+    variants: [V('standard', 'Standard booking', ['service-date-time']), V('split', 'Two-step', ['details-then-schedule']), V('inline', 'Inline strip', ['hero-embedded'])] }),
+  C({ component_id: 'DATA-TABLE-01', component_name: 'Records data table', component_family: 'data', component_type: 'section',
+    content_requirements: ['column headers, row data, empty state'],
+    motion_capabilities: ['fade'],
+    responsive_behavior: 'horizontal scroll on narrow screens; optional card transformation below 640px',
+    fallback_behavior: 'scrollable static table',
+    tags: ['data', 'table', 'records', 'dashboard'],
+    variants: [V('standard', 'Standard table', ['sortable-headers']), V('cards', 'Record cards', ['mobile-card-transform']), V('metric', 'Metric table', ['sparkline-cells'])] }),
 ];
 
 // ---- LUCIO_SHADER_REGISTRY (§24) -----------------------------------------------------

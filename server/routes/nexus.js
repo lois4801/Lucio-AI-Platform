@@ -12,6 +12,7 @@ import { createShare, getSharePublic, shareState, revokeShare, listShares, share
 import { buildZip } from '../services/nexus/exportZip.js';
 import { gitStatus, syncToGitHub } from '../services/nexus/gitAdapter.js';
 import { getLdd, saveLdd, listLddMigrations, markLddStale, renderLdd, migrateProjectLdd } from '../services/nexus/ldd.js';
+import { resolveSectionComponents } from '../services/nexus/sectionComponents.js';
 import { deploy, listDeployments, rollbackDeployment, activeDeployment } from '../services/nexus/deploy.js';
 import { launchFromProspect } from '../services/nexus/prospectLaunch.js';
 
@@ -134,6 +135,13 @@ nexusRouter.post('/projects/:id/ldd/render', requireRole('member'), (req, res) =
 nexusRouter.post('/projects/:id/ldd/migrate', requireRole('member'), (req, res) => {
   try { res.json(migrateProjectLdd({ orgId: req.user.orgId, projectId: req.params.id, userId: req.user.id })); }
   catch (e) { res.status(e.status || 400).json({ error: String(e.message || e) }); }
+});
+// Section → component resolution (spec §10): the LDD's section tree resolved
+// against the Lucio component registry, with the document's full token set.
+nexusRouter.get('/projects/:id/section-components', (req, res) => {
+  const state = getLdd(req.user.orgId, req.params.id);
+  if (!state) return res.status(404).json({ error: 'project not found' });
+  res.json({ sections: resolveSectionComponents(state.ldd), tokens: state.ldd.design?.tokens || null, fingerprint: state.fingerprint });
 });
 
 // CRM launch (Phase 10)
