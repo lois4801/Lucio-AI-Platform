@@ -36,6 +36,7 @@ export default function NexusPage() {
   const [scanProposal, setScanProposal] = useState<any>(null);
   const [scanBusy, setScanBusy] = useState(false);
   const [backend, setBackend] = useState<{ appId: string; token: string; endpoint: string; recordCount: number; fields: any[] } | null>(null);
+  const [metrics, setMetrics] = useState<{ roles: any[]; evidence: Record<string, { pass: number; fail: number }>; totals: any } | null>(null);
   const [checkpoints, setCheckpoints] = useState<Cp[]>([]);
   const [evidence, setEvidence] = useState<EvRow[]>([]);
   const [competition, setCompetition] = useState(false);
@@ -70,6 +71,8 @@ export default function NexusPage() {
     setScanProposal(null); setScanUrl('');
     const be = await api(`/nexus/projects/${p.id}/backend`).catch(() => ({ backend: null }));
     setBackend(be.backend);
+    const m = await api('/nexus/agent-metrics').catch(() => ({ metrics: null }));
+    setMetrics(m.metrics);
   };
 
   const loadEvents = async (runId: string, status?: string) => {
@@ -91,6 +94,8 @@ export default function NexusPage() {
     setFiles(r.files);
     const d = await api(`/nexus/projects/${active.id}`);
     setCheckpoints(d.checkpoints);
+    const m = await api('/nexus/agent-metrics').catch(() => ({ metrics: null }));
+    setMetrics(m.metrics);
   };
 
   const startRun = async () => {
@@ -464,6 +469,36 @@ export default function NexusPage() {
                     <p className="text-xs text-muted-foreground">Build the project first, then enable — the schema is captured from the forms in index.html.</p>
                     <Button size="sm" onClick={enableBackend}>Enable form backend</Button>
                   </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader><CardTitle>Team metrics</CardTitle>
+                <CardDescription>Measured per-role latency and evidence outcomes across your org's runs — optimization decisions from data, not vibes.</CardDescription></CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                {!metrics || metrics.roles.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Run a build to start collecting metrics.</p>
+                ) : (
+                  <>
+                    <div className="text-xs text-muted-foreground">{metrics.totals.steps} agent step(s) · {metrics.totals.total_ms} ms total</div>
+                    <div className="max-h-48 overflow-y-auto space-y-1">
+                      {metrics.roles.map((r) => (
+                        <div key={r.role} className="flex items-center gap-2 text-xs">
+                          <span className="font-mono w-40 truncate">{r.role}</span>
+                          <span className="text-muted-foreground">×{r.runs}</span>
+                          <span>avg {r.avg_ms} ms</span>
+                          <span className="text-muted-foreground">max {r.max_ms} ms</span>
+                          {r.errors > 0 && <Badge variant="destructive">{r.errors} err</Badge>}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {Object.entries(metrics.evidence).map(([cat, v]: any) => (
+                        <Badge key={cat} variant={v.fail ? 'destructive' : 'secondary'}>{cat}: {v.pass}p{v.fail ? `/${v.fail}f` : ''}</Badge>
+                      ))}
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>

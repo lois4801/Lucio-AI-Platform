@@ -580,3 +580,8 @@ start of every new session to evolve instead of rediscovering.
 - Capability-token public endpoints must mount BEFORE the feature-flag + auth middleware, or live client forms die when a toggle flips.
 - CSP change connect-src 'none' -> 'self' is a CONTRACT change — grep the test suite for the old string and update assertions in the same commit, or the sweep goes red.
 - Rate-limit counters increment even on 422 validation failures (limit check runs first) — tests must budget for the failed attempts before the flood loop.
+
+## 2026-09-28 — Phase 13 (multi-agent telemetry)
+- Telemetry belongs in a `finally` around each agent step — cancelled/failed steps must record as errors, and telemetry must never throw into the build (log-and-continue).
+- Not every named role takes a timed step on the happy path (evidence-collector acts via events) — assert only roles that actually call agentStep, or the test encodes fiction.
+- Role metrics table indexed (org_id, role, created_at) keeps the aggregation query trivial even as steps accumulate.

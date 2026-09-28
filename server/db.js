@@ -829,6 +829,21 @@ CREATE TABLE IF NOT EXISTS site_backends (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_site_backends_token ON site_backends(token);
+-- Agent role metrics (Phase 13): per-role latency of every agentStep across
+-- runs, with outcome. Powers the team-metrics aggregation — optimization
+-- decisions come from measured durations + evidence outcomes, never vibes.
+CREATE TABLE IF NOT EXISTS agent_role_metrics (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  task TEXT NOT NULL,
+  duration_ms INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'ok',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_agent_role_metrics ON agent_role_metrics(org_id, role, created_at);
 -- Real-time agent directory: vendored agent packs (MIT) ingested at boot by
 -- server/services/agentPacks.js. Global catalog; orgs enable agents per org.
 CREATE TABLE IF NOT EXISTS agent_directory (

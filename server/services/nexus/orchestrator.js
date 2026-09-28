@@ -134,13 +134,55 @@ export function cancelRun(orgId, runId, userId) {
 const isCancelled = (runId) => activeRuns.get(runId)?.cancelled === true;
 
 // ---- the build ----------------------------------------------------------------------------------
+// Phase 13 — every agent step is timed and its outcome recorded, so per-role
+// latency and evidence stats are measured facts the team-metrics view (and
+// future budget tuning) can rely on.
+function recordRoleMetric(run, role, task, durationMs, status) {
+  try {
+    db.prepare(
+      `INSERT INTO agent_role_metrics (id, org_id, run_id, project_id, role, task, duration_ms, status)
+       VALUES (?,?,?,?,?,?,?,?)`
+    ).run(crypto.randomUUID(), run.org_id, run.id, run.project_id, role, String(task).slice(0, 80), Math.max(0, Math.round(durationMs)), status);
+  } catch (e) { console.error('[role metric failed]', e.message); }
+}
+
 async function agentStep(run, role, task, produce) {
   if (isCancelled(run.id)) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
   const agentId = `${run.id}:${role}`;
   appendAndPublish(run.id, 'agent.started', 'orchestrator', { agentId, role, taskId: task });
-  const out = await produce();
-  for (const msg of out.messages || []) appendAndPublish(run.id, 'agent.message', role, { agentId, role, message: String(msg).slice(0, 600) });
-  return out;
+  const startedAt = Date.now();
+  let status = 'ok';
+  try {
+    const out = await produce();
+    for (const msg of out.messages || []) appendAndPublish(run.id, 'agent.message', role, { agentId, role, message: String(msg).slice(0, 600) });
+    return out;
+  } catch (err) {
+    status = 'error';
+    throw err;
+  } finally {
+    recordRoleMetric(run, role, task, Date.now() - startedAt, status);
+  }
+}
+
+// Per-role aggregates across the org's runs + evidence pass/fail per category.
+// Optimization input: which roles are slow, which evidence categories fail most.
+export function agentMetrics(orgId) {
+  const roles = db.prepare(
+    `SELECT role, COUNT(*) AS runs, ROUND(AVG(duration_ms)) AS avg_ms, MAX(duration_ms) AS max_ms,
+            SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors
+     FROM agent_role_metrics WHERE org_id = ? GROUP BY role ORDER BY avg_ms DESC`
+  ).all(orgId);
+  const evidence = db.prepare(
+    `SELECT e.category, e.status, COUNT(*) AS n
+     FROM builder_evidence e JOIN builder_runs r ON r.id = e.run_id
+     WHERE r.org_id = ? GROUP BY e.category, e.status`
+  ).all(orgId).reduce((acc, row) => {
+    acc[row.category] = acc[row.category] || { pass: 0, fail: 0 };
+    acc[row.category][row.status === 'pass' ? 'pass' : 'fail'] += row.n;
+    return acc;
+  }, {});
+  const totals = db.prepare(`SELECT COUNT(*) AS steps, COALESCE(SUM(duration_ms),0) AS total_ms FROM agent_role_metrics WHERE org_id = ?`).get(orgId);
+  return { roles, evidence, totals };
 }
 
 export async function executeRun(orgId, runId, userId) {

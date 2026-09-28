@@ -7,7 +7,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { listEvents, subscribe, hashContent, TagStreamParser, normalizeTokens } from '../services/nexus/protocol.js';
 import { getFile, listFiles, applyOps, createCheckpoint, getCheckpoint, listCheckpoints, restoreCheckpoint, manifestHash, fileContents, snapshotContents } from '../services/nexus/vfs.js';
 import { runEvidenceSuite, listEvidence } from '../services/nexus/evidence.js';
-import { createProject, getProject, listProjects, updateProject, deleteProject, createRun, getRun, listRuns, cancelRun, executeRun, isBuilderEnabled, runCompetition, comparison, selectWinner, mergeCandidate } from '../services/nexus/orchestrator.js';
+import { createProject, getProject, listProjects, updateProject, deleteProject, createRun, getRun, listRuns, cancelRun, executeRun, isBuilderEnabled, runCompetition, comparison, selectWinner, mergeCandidate, agentMetrics } from '../services/nexus/orchestrator.js';
 import { createShare, getSharePublic, shareState, revokeShare, listShares, shareSnapshot, addComment, listComments } from '../services/nexus/share.js';
 import { buildZip } from '../services/nexus/exportZip.js';
 import { gitStatus, syncToGitHub, saveGitHubConnection, getGitHubConnection, deleteGitHubConnection, gitDiff, gitPull } from '../services/nexus/gitAdapter.js';
@@ -366,7 +366,9 @@ nexusRouter.get('/checkpoints/:id/export', (req, res) => {
 
 // git
 nexusRouter.get('/git/status', (req, res) => res.json({ git: gitStatus() }));
-nexusRouter.post('/projects/:id/git/sync', requireRole('admin'), async (req, res) => {
+
+// Phase 13 — measured per-role latency + evidence outcomes across the org's runs.
+nexusRouter.get('/agent-metrics', (req, res) => res.json({ metrics: agentMetrics(req.user.orgId) }));nexusRouter.post('/projects/:id/git/sync', requireRole('admin'), async (req, res) => {
   const p = getProject(req.user.orgId, req.params.id);
   if (!p) return res.status(404).json({ error: 'project not found' });
   try {
