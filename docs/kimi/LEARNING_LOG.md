@@ -505,3 +505,9 @@ start of every new session to evolve instead of rediscovering.
 - Model dropdowns must never be hard-coded stale: persist discovered catalogs per tenant (`ai_models`) and merge discovered-over-manifest, tagging manifest entries so the UI can label them "(catalog)".
 - Verification UX: staged {ok, detail} rows (auth / discovery / selected model / inference + latency) beat a boolean. Probe the SELECTED model with 1 token first so stale model ids are caught; then check the selected id against the discovered catalog for model_unavailable.
 - Never put secrets in diagnostic strings — redact by replacing the key value in the detail before returning.
+
+## 2026-09-27 — Phase 0 audit (LUCIO BUILDER ARCHITECTURE V1 spec)
+
+- Spec demands a 20-part audit before coding; full report in docs/phase0-audit.md. Key structural finding: Lucio's canonical state is builder_files selected by checkpoints — there is NO versioned Lucio Design Document IR yet (spec §1/§16), no drag canvas (§4/§5), no property inspector (§6), no React/Next.js codegen (§6 Phase 6). Everything else (generation, evidence gate, preview, checkpoints, publishing w/ validation, AI gateway, scanner, imports, QA suites) is WORKING with green hermetic suites.
+- Nothing in the repo is mock-only; publishing/verify/evidence all fail closed. The only "broken" item is the owner's invalid ck_ OpenAI key — credential, not code.
+- Migration strategy decision: additive-only DB changes (builder_projects.ldd_json + ldm migrations table), LDD read-path falls back to legacy recipe/files until Phase 2 cutover; rollback = byte-exact checkpoint restore.
