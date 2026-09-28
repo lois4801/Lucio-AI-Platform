@@ -34,7 +34,7 @@ export default function ProjectsPage() {
   const [copiedTpl, setCopiedTpl] = useState('');
   const copyTplLink = async (id: string) => {
     try {
-      await navigator.clipboard.writeText(\`\${window.location.origin}/tpl/\${id}\`);
+      await navigator.clipboard.writeText(`${window.location.origin}/tpl/${id}`);
       setCopiedTpl(id);
       setTimeout(() => setCopiedTpl((c) => (c === id ? '' : c)), 1500);
     } catch { /* clipboard unavailable — the Live button still works */ }
@@ -226,7 +226,7 @@ export default function ProjectsPage() {
                         <Button size="sm" variant="outline" asChild title="Open the always-live template preview">
                           <a href={t.previewUrl} target="_blank" rel="noreferrer"><Globe className="h-3.5 w-3.5 mr-1" />Live</a>
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => copyTplLink(t.id)} title="Copy the live template link to share with a client" aria-label={\`Copy live link for \${t.name}\`}>
+                        <Button size="sm" variant="ghost" onClick={() => copyTplLink(t.id)} title="Copy the live template link to share with a client" aria-label={`Copy live link for ${t.name}`}>
                           {copiedTpl === t.id ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Link2 className="h-3.5 w-3.5" />}
                         </Button>
                       </>

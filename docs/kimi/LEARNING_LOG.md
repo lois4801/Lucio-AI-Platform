@@ -471,3 +471,7 @@ start of every new session to evolve instead of rediscovering.
 - Repair: repairTemplateDerivedProjects() runs at boot — projects with description 'From template: %' and no site_imports row get registered (matched by template name; falls back to the project's latest artifact). Idempotent, audited.
 - Always-live previews: GET /tpl/:id serves the template's self-contained HTML snapshot publicly (UUID = capability URL, rate-limited, no auth) — share with clients; animations/motions intact even if the origin dies. listTemplates exposes previewUrl; Projects page gets Live (open) + copy-link buttons.
 - Lesson: any feature that creates a project from another artifact must register the FULL persistence chain the editing surfaces expect (site_imports + original_path), not just the artifact row.
+
+## 2026-09-27 — Root tsconfig has references only; `tsc --noEmit` checks nothing
+- `npx tsc --noEmit` at repo root passed while `src/pages/ProjectsPage.tsx` contained syntax errors, because root tsconfig.json only holds project references. Always run `npx tsc -p tsconfig.app.json --noEmit` (and `-p tsconfig.node.json`) for a real frontend check.
+- ProjectsPage.tsx shipped with escaped template-literal backticks (`\`\${...}\``) on two lines — Vite overlay: "Expecting Unicode escape sequence". Corruption pattern to grep for: `\`` in tsx files.
