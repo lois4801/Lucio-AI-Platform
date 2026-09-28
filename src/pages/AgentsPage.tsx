@@ -84,7 +84,12 @@ export default function AgentsPage() {
       setBusy(false);
       es.close();
     });
-    es.addEventListener('error', () => { setBusy(false); es.close(); });
+    es.addEventListener('error', (ev) => {
+      let error = 'Agent connection failed. Please retry or check AI Providers.';
+      try { error = JSON.parse((ev as MessageEvent).data).error || error; } catch { /* transport error */ }
+      setThread(th => { const next = [...th]; next[next.length - 1] = { role: 'agent', text: error, streaming: false }; return next; });
+      setBusy(false); es.close();
+    });
   };
 
   const packs = ['agency-agents', '500-ai-agents-projects'];
@@ -149,7 +154,7 @@ export default function AgentsPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base">
-                {chatAgent ? <>{chatAgent.emoji} {chatAgent.name} <Badge variant="secondary" className="ml-1">on-device sovereign</Badge></> : 'Agent chat'}
+                {chatAgent ? <>{chatAgent.emoji} {chatAgent.name} <Badge variant="secondary" className="ml-1">AI provider chat</Badge></> : 'Agent chat'}
               </CardTitle>
               <CardDescription>
                 {chatAgent ? `${chatAgent.division} · ${chatAgent.license}` : 'Enable an agent and press Chat. Responses stream in real time, grounded in your workspace.'}

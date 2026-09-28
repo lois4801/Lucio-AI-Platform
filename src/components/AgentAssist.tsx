@@ -65,7 +65,12 @@ export default function AgentAssist({ context, industry = '', projectId = '', sc
       setBusy(false);
       es.close();
     });
-    es.addEventListener('error', () => { setBusy(false); es.close(); });
+    es.addEventListener('error', (ev) => {
+      let error = 'Agent connection failed. Please retry or check AI Providers.';
+      try { error = JSON.parse((ev as MessageEvent).data).error || error; } catch { /* transport error */ }
+      setThread(th => { const next = [...th]; next[next.length - 1] = { role: 'agent', text: error, streaming: false }; return next; });
+      setBusy(false); es.close();
+    });
   };
 
   if (!suggestions.length && !hint) return null;

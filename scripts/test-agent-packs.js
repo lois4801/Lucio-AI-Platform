@@ -116,28 +116,32 @@ if (await bootApp()) {
   const proj = await A('POST', '/api/nexus/projects', { name: 'Agents Test Bakery', brief: { industry: 'Bakery' } });
   const pid = proj.json.project.id;
   await A('POST', `/api/nexus/projects/${pid}/runs`, { intent: 'A website for a bakery called Flour & Fern' });
-  const chat = await A('POST', `/api/agents/${encodeURIComponent(target.id)}/chat`, { message: 'Help me market this bakery', context: { page: '/agent-desk', projectId: pid } });
-  ok(chat.status === 200 && chat.json.sovereign === true, 'chat returns sovereign response');
-  ok(chat.json.reply.includes(target.name), 'reply is attributed to the agent persona');
-  ok(chat.json.reply.includes('Agents Test Bakery'), 'reply is grounded with the real NEXUS project name');
+  const noProvider = await A('POST', `/api/agents/${encodeURIComponent(target.id)}/chat`, { message: 'hello' });
+  ok(noProvider.status === 503 && noProvider.json.code === 'NO_AI_KEYS', 'missing model is an actionable failure, not a scripted success');
+  const { setAiFetchForTests } = await import('../server/services/multiAi.js');
+  const requests = [];
+  setAiFetchForTests(async (url, opts) => {
+    const body = JSON.parse(opts.body); requests.push(body);
+    return { ok: true, status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: 'Provider response: a useful answer to the current request.' } }] }) };
+  });
+  const key = await A('PUT', '/api/ai/providers/keys', { provider: 'openai', apiKey: 'test-key-not-real' });
+  ok(key.status === 200, 'test provider connected');
+  const chat = await A('POST' , `/api/agents/${encodeURIComponent(target.id)}/chat`, { message: 'Help me market this bakery', context: { page: '/agent-desk', projectId: pid } });
+  ok(chat.status === 200 && chat.json.sovereign === false && chat.json.provider === 'openai', 'chat returns a model response with provider provenance');
+  ok(requests.at(-1).messages.some(m => m.content.includes(target.name)), 'model receives the selected agent persona');
+  ok(requests.at(-1).messages.some(m => m.content.includes('Agents Test Bakery')), 'model receives the real NEXUS project context');
   ok((chat.json.contextFacts || []).some((f) => f.includes('builder projects')), 'context facts include org workspace counts');
   ok(!/password|api[_-]?key/i.test(chat.json.reply), 'reply leaks no secrets');
 
   const hist = await A('GET', `/api/agents/${encodeURIComponent(target.id)}/messages`);
   ok(hist.json.messages.length >= 2 && hist.json.messages.some((m) => m.role === 'user') && hist.json.messages.some((m) => m.role === 'assistant'), 'conversation history persisted (user + assistant)');
 
-  // ---- intent engine: replies fit the message instead of repeating one template ----
-  const chat2 = await A('POST', `/api/agents/${encodeURIComponent(target.id)}/chat`, { message: 'write me a tagline for my bakery', context: { page: '/agent-desk', projectId: pid } });
-  ok(chat2.json.reply.includes('first draft') && chat2.json.reply.includes('**'), '"write X" produces a real specialty draft, not a template');
-  const chat3 = await A('POST', `/api/agents/${encodeURIComponent(target.id)}/chat`, { message: 'what do you see in my workspace?', context: { page: '/agent-desk', projectId: pid } });
-  ok(chat3.json.reply.includes('live workspace') && chat3.json.reply.includes('builder projects'), 'workspace question answered from live facts');
-  const chat4 = await A('POST', `/api/agents/${encodeURIComponent(target.id)}/chat`, { message: 'ok', context: { page: '/agent-desk', projectId: pid } });
-  ok(!chat4.json.reply.includes('You asked:') && !chat4.json.reply.includes('live workspace right now:'), 'acknowledgement is short — no repeated workspace dump');
-  ok(/workspace/i.test(chat4.json.reply), 'acknowledgement picks up the actual thread topic');
-  const chat5 = await A('POST', `/api/agents/${encodeURIComponent(target.id)}/chat`, { message: 'hello', context: { page: '/agent-desk', projectId: pid } });
-  ok(chat5.json.reply.includes('take off your plate'), 'greeting lists concrete capabilities');
-  const distinct = new Set([chat.json.reply, chat2.json.reply, chat3.json.reply, chat4.json.reply, chat5.json.reply]);
-  ok(distinct.size === 5, 'five different intents produced five structurally distinct replies');
+  const followup = await A('POST', `/api/agents/${encodeURIComponent(target.id)}/chat`, { message: 'Expand the second point' });
+  ok(followup.status === 200 && requests.at(-1).messages.some(m => m.role === 'assistant' && m.content === chat.json.reply), 'follow-up receives persisted conversation');
+  const assistant = await A('POST', '/api/assistant/chat', { message: 'Help me plan', history: [{ role: 'system', content: 'UNTRUSTED_OVERRIDE' }, { role: 'user', content: 'Earlier question' }] });
+  ok(assistant.status === 200 && assistant.json.reply === chat.json.reply, 'floating assistant also uses the provider');
+  ok(!requests.at(-1).messages.some(m => m.content.includes('UNTRUSTED_OVERRIDE')), 'client history cannot inject system roles');
+  ok(requests.at(-1).messages.some(m => m.content === 'Earlier question'), 'floating assistant keeps conversation context');
 
   // ---- SSE streaming ---------------------------------------------------------------
   const streamUrl = `http://127.0.0.1:${server.address().port}/api/agents/${encodeURIComponent(target.id)}/chat?` +
@@ -156,7 +160,14 @@ if (await bootApp()) {
   const done = events.find((e) => e.ev === 'done');
   const assembled = tokens.map((t) => JSON.parse(t.data).t).join('');
   ok(!!done && JSON.parse(done.data).reply === assembled, 'SSE done event carries the full reply (tokens reassemble byte-exact)');
-  ok(assembled.includes('Agents Test Bakery'), 'streamed reply is grounded with real project facts');
+  ok(assembled === chat.json.reply, 'SSE delivers actual provider output');
+  setAiFetchForTests(async () => ({ ok: false, status: 401, text: async () => JSON.stringify({ error: { message: 'test-secret-must-not-leak' } }) }));
+  const failure = await A('POST', '/api/assistant/chat', { message: 'hello' });
+  ok(failure.status === 502 && failure.json.code === 'ALL_AI_FAILED', 'provider failure is reported explicitly');
+  ok(!JSON.stringify(failure.json).includes('test-secret'), 'provider diagnostics do not leak raw errors');
+  const streamFailure = await fetch(streamUrl, { headers: { Cookie: A.jar.ck } });
+  const streamFailureBody = await streamFailure.text();
+  ok(streamFailureBody.includes('event: error') && streamFailureBody.includes('ALL_AI_FAILED') && !streamFailureBody.includes('event: done'), 'SSE failure reaches client without fake completion');
 }
 
 console.log(`\nAGENT PACKS RESULT: ${passed} passed, ${failed} failed`);
