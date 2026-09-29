@@ -41,7 +41,7 @@ export default function ClawPage() {
     else { setOutFiles([]); setPicked(new Set()); setApplyResult(null); }
   }, [activeJob?.id, activeJob?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const togglePick = (p: string) => setPicked((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; });
+  const togglePick = (p: string) => setPicked((s) => { const n = new Set(s); if (n.has(p)) { n.delete(p); } else { n.add(p); } return n; });
   const apply = async () => {
     if (!activeJob || applying) return;
     setApplying(true); setMsg('');

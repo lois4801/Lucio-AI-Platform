@@ -63,7 +63,7 @@ export default function ResearchPage() {
       </Card>
       {runs.map((r) => {
         let ev: Evidence[] = [];
-        try { ev = JSON.parse(r.evidence); } catch {}
+        try { ev = JSON.parse(r.evidence); } catch { /* evidence payload not JSON */ }
         return (
           <Card key={r.id}>
             <CardHeader className="pb-2">
