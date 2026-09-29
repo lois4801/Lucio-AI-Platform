@@ -1,33 +1,36 @@
-import { Component, type ReactNode, useEffect, useState } from 'react';
+import { Component, Suspense, lazy, type ReactNode, useEffect, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router';
 import { api, type User } from '@/lib/api';
 import AppShell from '@/components/AppShell';
 import AuthPage from '@/pages/AuthPage';
-import DashboardPage from '@/pages/DashboardPage';
-import BuilderPage from '@/pages/BuilderPage';
-import EditorPage from '@/pages/EditorPage';
-import ComponentLibraryPage from '@/pages/ComponentLibraryPage';
-import ProjectsPage from '@/pages/ProjectsPage';
-import ImportStudioPage from '@/pages/ImportStudioPage';
-import AiProvidersPage from '@/pages/AiProvidersPage';
-import ProspectsPage from '@/pages/ProspectsPage';
-import ResearchPage from '@/pages/ResearchPage';
-import FilesPage from '@/pages/FilesPage';
-import JobsPage from '@/pages/JobsPage';
-import AuditPage from '@/pages/AuditPage';
-import GatewayPage from '@/pages/GatewayPage';
-import MarketScanPage from '@/pages/MarketScanPage';
-import ClientsPage from '@/pages/ClientsPage';
-import AgentRunsPage from '@/pages/AgentRunsPage';
-import AppStudioPage from '@/pages/AppStudioPage';
-import BenchmarksPage from '@/pages/BenchmarksPage';
-import NexusPage from '@/pages/NexusPage';
-import CanvasPage from '@/pages/CanvasPage';
-import AgentsPage from '@/pages/AgentsPage';
-import ClawPage from '@/pages/ClawPage';
-import AutoFixPage from '@/pages/AutoFixPage';
-import AutoDataPage from '@/pages/AutoDataPage';
 import { Button } from '@/components/ui/button';
+
+// Route-level code splitting: the scanner, builder and NEXUS surfaces are heavy
+// (Leaflet, editors, charts) — lazy chunks keep first paint fast on any device.
+const DashboardPage = lazy(() => import('@/pages/DashboardPage'));
+const BuilderPage = lazy(() => import('@/pages/BuilderPage'));
+const EditorPage = lazy(() => import('@/pages/EditorPage'));
+const ComponentLibraryPage = lazy(() => import('@/pages/ComponentLibraryPage'));
+const ProjectsPage = lazy(() => import('@/pages/ProjectsPage'));
+const ImportStudioPage = lazy(() => import('@/pages/ImportStudioPage'));
+const AiProvidersPage = lazy(() => import('@/pages/AiProvidersPage'));
+const ProspectsPage = lazy(() => import('@/pages/ProspectsPage'));
+const ResearchPage = lazy(() => import('@/pages/ResearchPage'));
+const FilesPage = lazy(() => import('@/pages/FilesPage'));
+const JobsPage = lazy(() => import('@/pages/JobsPage'));
+const AuditPage = lazy(() => import('@/pages/AuditPage'));
+const GatewayPage = lazy(() => import('@/pages/GatewayPage'));
+const MarketScanPage = lazy(() => import('@/pages/MarketScanPage'));
+const ClientsPage = lazy(() => import('@/pages/ClientsPage'));
+const AgentRunsPage = lazy(() => import('@/pages/AgentRunsPage'));
+const AppStudioPage = lazy(() => import('@/pages/AppStudioPage'));
+const BenchmarksPage = lazy(() => import('@/pages/BenchmarksPage'));
+const NexusPage = lazy(() => import('@/pages/NexusPage'));
+const CanvasPage = lazy(() => import('@/pages/CanvasPage'));
+const AgentsPage = lazy(() => import('@/pages/AgentsPage'));
+const ClawPage = lazy(() => import('@/pages/ClawPage'));
+const AutoFixPage = lazy(() => import('@/pages/AutoFixPage'));
+const AutoDataPage = lazy(() => import('@/pages/AutoDataPage'));
 
 // A page crash must never leave the user staring at a blank screen — show the
 // error and a way back (previously a single render error unmounted the whole app).
@@ -56,6 +59,12 @@ class RouteErrorBoundary extends Component<{ children: ReactNode }, { message: s
   }
 }
 
+function PageLoading() {
+  return (
+    <div className="grid place-items-center py-24 text-sm text-muted-foreground">Loading…</div>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,7 +78,11 @@ export default function App() {
 
   if (loading) return <div className="min-h-screen grid place-items-center text-muted-foreground">Starting Lucio…</div>;
 
-  const page = (el: ReactNode) => <RouteErrorBoundary key={location.pathname}>{el}</RouteErrorBoundary>;
+  const page = (el: ReactNode) => (
+    <RouteErrorBoundary key={location.pathname}>
+      <Suspense fallback={<PageLoading />}>{el}</Suspense>
+    </RouteErrorBoundary>
+  );
 
   return (
     <Routes>
