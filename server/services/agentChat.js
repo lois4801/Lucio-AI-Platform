@@ -367,16 +367,35 @@ export async function chat({ orgId, userId, agentId, message, context = {} }) {
 
   const prior = history(orgId, agentId, userId);
   const contextFacts = appContext(orgId, context);
-  const result = await aiChat(orgId, { messages: [
-    { role: 'system', content: CHAT_BOUNDARY },
-    { role: 'system', content: `Specialist: ${agent.name}. Persona: ${agent.persona || agent.description || ''}. Workspace data: ${JSON.stringify(contextFacts)}.` },
-    ...prior.map(m => ({ role: m.role, content: m.content })),
-    { role: 'user', content: text },
-  ] });
-  const reply = result.text;
   saveMessage(orgId, agentId, userId, 'user', text, { page: context.page || '' });
-  const replyId = saveMessage(orgId, agentId, userId, 'assistant', reply, { sovereign: false, provider: result.provider, model: result.model });
-  return { agent: { id: agent.id, name: agent.name, emoji: agent.emoji, division: agent.division }, reply, replyId, contextFacts, sovereign: false, provider: result.provider, model: result.model };
+
+  // Sovereign by default: with no AI provider configured the on-device
+  // composer still answers — grounded in the agent persona and live workspace
+  // facts, and labeled sovereign — instead of failing with a 503. But when a
+  // provider IS configured and the call fails (ALL_AI_FAILED), the error is
+  // surfaced honestly: silently substituting a composed reply would hide a
+  // broken provider the user is paying for.
+  let result = null;
+  try {
+    result = await aiChat(orgId, { messages: [
+      { role: 'system', content: CHAT_BOUNDARY },
+      { role: 'system', content: `Specialist: ${agent.name}. Persona: ${agent.persona || agent.description || ''}. Workspace data: ${JSON.stringify(contextFacts)}.` },
+      ...prior.map(m => ({ role: m.role, content: m.content })),
+      { role: 'user', content: text },
+    ] });
+  } catch (e) {
+    if (e.code !== 'NO_AI_KEYS') throw e;
+  }
+
+  const sovereign = result === null;
+  const reply = sovereign ? composeReply({ agent, message: text, contextFacts, prior }) : result.text;
+  const replyId = saveMessage(orgId, agentId, userId, 'assistant', reply,
+    sovereign ? { sovereign: true } : { sovereign: false, provider: result.provider, model: result.model });
+  return {
+    agent: { id: agent.id, name: agent.name, emoji: agent.emoji, division: agent.division },
+    reply, replyId, contextFacts, sovereign,
+    ...(sovereign ? {} : { provider: result.provider, model: result.model }),
+  };
 }
 
 // Async word-by-word stream of a composed reply, for SSE endpoints.

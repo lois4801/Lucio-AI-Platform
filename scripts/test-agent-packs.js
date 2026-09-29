@@ -117,7 +117,8 @@ if (await bootApp()) {
   const pid = proj.json.project.id;
   await A('POST', `/api/nexus/projects/${pid}/runs`, { intent: 'A website for a bakery called Flour & Fern' });
   const noProvider = await A('POST', `/api/agents/${encodeURIComponent(target.id)}/chat`, { message: 'hello' });
-  ok(noProvider.status === 503 && noProvider.json.code === 'NO_AI_KEYS', 'missing model is an actionable failure, not a scripted success');
+  ok(noProvider.status === 200 && noProvider.json.sovereign === true && noProvider.json.reply.length > 50 && !noProvider.json.provider,
+    'missing model → labeled sovereign on-device reply (never fakes provider provenance)');
   const { setAiFetchForTests } = await import('../server/services/multiAi.js');
   const requests = [];
   setAiFetchForTests(async (url, opts) => {
