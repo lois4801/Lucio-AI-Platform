@@ -54,10 +54,11 @@ export default function AssistantPanel() {
 
   return (
     <>
-      {/* floating toggle */}
+      {/* floating toggle — kept clear of the mobile safe area */}
       <button
         onClick={() => setOpen((o) => !o)}
-        className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full bg-primary px-4 py-3 text-primary-foreground shadow-lg hover:scale-105 transition-transform"
+        className="fixed bottom-5 right-5 z-50 flex min-h-11 items-center gap-2 rounded-full bg-primary px-4 py-3 text-primary-foreground shadow-lg transition-transform hover:scale-105 active:scale-95"
+        style={{ bottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}
         title="Lucio Assistant — always on"
       >
         <Sparkles className="h-4 w-4" />
@@ -66,7 +67,7 @@ export default function AssistantPanel() {
       </button>
 
       {open && (
-        <div className="fixed bottom-20 right-5 z-50 w-[22rem] max-h-[70vh] flex flex-col rounded-2xl border bg-background shadow-2xl overflow-hidden">
+        <div className="fixed inset-x-3 bottom-20 z-50 flex max-h-[70vh] flex-col overflow-hidden rounded-2xl border bg-background shadow-2xl sm:inset-x-auto sm:right-5 sm:w-[22rem]">
           {/* header */}
           <div className="p-4 border-b bg-sidebar">
             <div className="flex items-start justify-between gap-2">

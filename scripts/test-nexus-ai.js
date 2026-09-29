@@ -9,6 +9,7 @@ import path from 'node:path';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lucio-nexusai-'));
 process.env.LUCIO_DATA_DIR = tmp;
+process.env.BUILDER_RUNTIME_ENABLED = 'true';
 
 let passed = 0, failed = 0;
 function ok(cond, name, extra = '') {

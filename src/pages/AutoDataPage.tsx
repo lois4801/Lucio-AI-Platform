@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
+import { notifyError } from '@/lib/notify';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -49,7 +50,7 @@ export default function AutoDataPage() {
     api('/autodata/catalog').then((r) => {
       setCatalog(r.catalog);
       setFamilies([...new Set(r.catalog.map((c: CatalogItem) => c.family))] as string[]);
-    }).catch(() => {});
+    }).catch((e) => notifyError(e, 'Loading industry catalog'));
   };
   useEffect(() => { load(); }, []);
 
@@ -58,14 +59,16 @@ export default function AutoDataPage() {
     api(`/autodata/snapshots?industry=${encodeURIComponent(snapIndustry)}&region=${encodeURIComponent(snapRegion)}`)
       .then((r) => setSnapshot(r.snapshots?.[0] || null)).catch((e) => setMsg(e.message));
   };
-  useEffect(() => { loadSnapshot(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Initial loads are deferred a tick so the reset-then-fetch setState never
+  // runs synchronously inside the effect (avoids cascading renders).
+  useEffect(() => { const t = setTimeout(loadSnapshot, 0); return () => clearTimeout(t); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadPack = (ind?: string) => {
     const target = ind ?? packIndustry;
     setPack(null);
     api(`/autodata/packs/${encodeURIComponent(target)}`).then((r) => setPack(r.pack)).catch((e) => setMsg(e.message));
   };
-  useEffect(() => { loadPack(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { const t = setTimeout(() => loadPack(), 0); return () => clearTimeout(t); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(() => catalog.filter((c) =>
     (!family || c.family === family) &&

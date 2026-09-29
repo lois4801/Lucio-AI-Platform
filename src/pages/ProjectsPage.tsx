@@ -3,6 +3,7 @@ import { useRef } from 'react';
 import { zipSync } from 'fflate';
 import { useNavigate } from 'react-router';
 import { api, type Project } from '@/lib/api';
+import { notifyError } from '@/lib/notify';
 import { publicUrl } from '@/lib/publicUrl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -66,9 +67,9 @@ export default function ProjectsPage() {
   const folderRef = useRef<HTMLInputElement>(null);
 
   const load = () => {
-    api<{ projects: Project[] }>('/projects').then((d) => setProjects(d.projects)).catch(() => {});
-    api<{ templates: Template[] }>('/imports/templates').then((d) => setTemplates(d.templates)).catch(() => {});
-    api<{ learnings: HostLearning[] }>('/imports/learnings').then((d) => setLearnings(d.learnings)).catch(() => {});
+    api<{ projects: Project[] }>('/projects').then((d) => setProjects(d.projects)).catch((e) => notifyError(e, 'Loading projects'));
+    api<{ templates: Template[] }>('/imports/templates').then((d) => setTemplates(d.templates)).catch(() => { /* templates panel is optional */ });
+    api<{ learnings: HostLearning[] }>('/imports/learnings').then((d) => setLearnings(d.learnings)).catch(() => { /* intelligence panel is optional */ });
   };
   useEffect(() => { load(); }, []);
 
@@ -124,7 +125,7 @@ export default function ProjectsPage() {
     } catch (err: any) { setError(err.message); } finally { setImporting(false); }
   };
 
-  const useTemplate = async (tpl: Template) => {
+  const spawnTemplate = async (tpl: Template) => {
     setError(''); setUsingTpl(tpl.id);
     try {
       const out = await api<{ projectId: string }>(`/imports/templates/${tpl.id}/use`, {
@@ -256,7 +257,7 @@ export default function ProjectsPage() {
                         </Button>
                       </>
                     )}
-                    <Button size="sm" onClick={() => useTemplate(t)} disabled={usingTpl !== ''}>
+                    <Button size="sm" onClick={() => spawnTemplate(t)} disabled={usingTpl !== ''}>
                       {usingTpl === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />}
                       Use
                     </Button>

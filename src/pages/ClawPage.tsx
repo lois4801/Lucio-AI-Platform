@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
+import { notifyError } from '@/lib/notify';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -41,7 +42,7 @@ export default function ClawPage() {
     else { setOutFiles([]); setPicked(new Set()); setApplyResult(null); }
   }, [activeJob?.id, activeJob?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const togglePick = (p: string) => setPicked((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; });
+  const togglePick = (p: string) => setPicked((s) => { const n = new Set(s); if (n.has(p)) { n.delete(p); } else { n.add(p); } return n; });
   const apply = async () => {
     if (!activeJob || applying) return;
     setApplying(true); setMsg('');
@@ -53,8 +54,8 @@ export default function ClawPage() {
   };
 
   const loadStatus = () => api('/claw/status').then((r) => setStatus(r.claw)).catch((e) => setMsg(e.message));
-  const loadJobs = () => api('/claw/jobs').then((r) => setJobs(r.jobs)).catch(() => {});
-  useEffect(() => { loadStatus(); loadJobs(); api('/nexus/projects').then((r) => setProjects(r.projects)).catch(() => {}); }, []);
+  const loadJobs = () => api('/claw/jobs').then((r) => setJobs(r.jobs)).catch((e) => notifyError(e, 'Loading Claw jobs'));
+  useEffect(() => { loadStatus(); loadJobs(); api('/nexus/projects').then((r) => setProjects(r.projects)).catch((e) => notifyError(e, 'Loading NEXUS projects')); }, []);
 
   const watch = (jobId: string) => {
     esRef.current?.close();
