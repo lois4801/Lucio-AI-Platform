@@ -142,7 +142,9 @@ app.use('/api/apps', appStudioRouter);
   return app;
 }
 
-const PORT = Number(process.env.LUCIO_API_PORT || 8787);
+// Hosting platforms (Render/Railway/Fly/containers) inject PORT — honor it first,
+// then the platform-specific LUCIO_API_PORT, then the local dev default.
+const PORT = Number(process.env.PORT || process.env.LUCIO_API_PORT || 8787);
 if (process.env.LUCIO_API_STANDALONE === '1' || !process.env.VITE_DEV) {
   createApp().listen(PORT, () => console.log(`[lucio-api] listening on http://localhost:${PORT}`));
 }
