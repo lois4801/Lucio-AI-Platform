@@ -6,20 +6,23 @@ import { createKeylessMap, geocodeQuery } from '../lib/keylessMap';
 // Nominatim proxy and renders it on the shared OSM tile layer. No API keys.
 // Degrades to a quiet note when offline or the place can't be resolved.
 export default function KeylessLocationMap({ query, label, dark = false, height = 'h-64' }: { query: string; label?: string; dark?: boolean; height?: string }) {
-  const idRef = useRef(`klm-${Math.random().toString(36).slice(2, 9)}`);
-  const mapRef = useRef<any>(null);
+  const [mapId] = useState(() => `klm-${Math.random().toString(36).slice(2, 9)}`);
+  const mapRef = useRef<{ remove: () => void } | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
   const [resolved, setResolved] = useState('');
 
   useEffect(() => {
     let cancelled = false;
-    setStatus('loading');
     (async () => {
+      // Yield first so the loading reset never runs synchronously in the effect.
+      await Promise.resolve();
+      if (cancelled) return;
+      setStatus('loading');
       const geo = await geocodeQuery(query).catch(() => null);
       if (cancelled) return;
       if (!geo) { setStatus('unavailable'); return; }
       setResolved(geo.displayName || query);
-      const map = await createKeylessMap(idRef.current, {
+      const map = await createKeylessMap(mapId, {
         center: [geo.lat, geo.lng],
         zoom: 13,
         dark,
@@ -35,7 +38,7 @@ export default function KeylessLocationMap({ query, label, dark = false, height 
 
   return (
     <div className={`relative w-full ${height} overflow-hidden rounded-xl border bg-muted/30`}>
-      <div id={idRef.current} className="h-full w-full" />
+      <div id={mapId} className="h-full w-full" />
       {status === 'loading' && (
         <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">Locating “{query}” on the live map…</div>
       )}
