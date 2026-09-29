@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
+import { notifyError } from '@/lib/notify';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -49,7 +50,7 @@ export default function AutoDataPage() {
     api('/autodata/catalog').then((r) => {
       setCatalog(r.catalog);
       setFamilies([...new Set(r.catalog.map((c: CatalogItem) => c.family))] as string[]);
-    }).catch(() => {});
+    }).catch((e) => notifyError(e, 'Loading industry catalog'));
   };
   useEffect(() => { load(); }, []);
 
