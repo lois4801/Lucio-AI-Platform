@@ -124,7 +124,7 @@ export default function ProjectsPage() {
     } catch (err: any) { setError(err.message); } finally { setImporting(false); }
   };
 
-  const useTemplate = async (tpl: Template) => {
+  const spawnTemplate = async (tpl: Template) => {
     setError(''); setUsingTpl(tpl.id);
     try {
       const out = await api<{ projectId: string }>(`/imports/templates/${tpl.id}/use`, {
@@ -256,7 +256,7 @@ export default function ProjectsPage() {
                         </Button>
                       </>
                     )}
-                    <Button size="sm" onClick={() => useTemplate(t)} disabled={usingTpl !== ''}>
+                    <Button size="sm" onClick={() => spawnTemplate(t)} disabled={usingTpl !== ''}>
                       {usingTpl === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />}
                       Use
                     </Button>

@@ -58,14 +58,16 @@ export default function AutoDataPage() {
     api(`/autodata/snapshots?industry=${encodeURIComponent(snapIndustry)}&region=${encodeURIComponent(snapRegion)}`)
       .then((r) => setSnapshot(r.snapshots?.[0] || null)).catch((e) => setMsg(e.message));
   };
-  useEffect(() => { loadSnapshot(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Initial loads are deferred a tick so the reset-then-fetch setState never
+  // runs synchronously inside the effect (avoids cascading renders).
+  useEffect(() => { const t = setTimeout(loadSnapshot, 0); return () => clearTimeout(t); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadPack = (ind?: string) => {
     const target = ind ?? packIndustry;
     setPack(null);
     api(`/autodata/packs/${encodeURIComponent(target)}`).then((r) => setPack(r.pack)).catch((e) => setMsg(e.message));
   };
-  useEffect(() => { loadPack(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { const t = setTimeout(() => loadPack(), 0); return () => clearTimeout(t); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(() => catalog.filter((c) =>
     (!family || c.family === family) &&
