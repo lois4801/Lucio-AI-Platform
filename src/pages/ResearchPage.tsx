@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { notifyError } from '@/lib/notify';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,7 +18,7 @@ export default function ResearchPage() {
   const [sourceClaim, setSourceClaim] = useState('');
   const [error, setError] = useState('');
 
-  const load = () => api<{ runs: Run[] }>('/research').then((d) => setRuns(d.runs)).catch(() => {});
+  const load = () => api<{ runs: Run[] }>('/research').then((d) => setRuns(d.runs)).catch((e) => notifyError(e, 'Loading research runs'));
   useEffect(() => { load(); }, []);
 
   const run = async (e: React.FormEvent) => {

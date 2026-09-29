@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useOutletContext } from 'react-router';
 import { api, type User } from '@/lib/api';
+import { notifyError } from '@/lib/notify';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,8 +35,8 @@ export default function DashboardPage() {
         projects: p.projects.length, files: f.files.length, jobs: j.jobs.length,
         prospects: pr.prospects.length, researchRuns: r.runs.length, auditEvents: a.events.length,
       });
-    }).catch(() => {});
-    api<Gateway>('/gateway/status').then(setGateway).catch(() => {});
+    }).catch((e) => notifyError(e, 'Loading workspace stats'));
+    api<Gateway>('/gateway/status').then(setGateway).catch((e) => notifyError(e, 'Loading gateway status'));
   }, []);
 
   const firstName = user.name.split(' ')[0];

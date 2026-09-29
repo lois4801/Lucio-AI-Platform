@@ -4,6 +4,7 @@ import { api, type User } from '@/lib/api';
 import AppShell from '@/components/AppShell';
 import AuthPage from '@/pages/AuthPage';
 import { Button } from '@/components/ui/button';
+import { Toaster } from '@/components/ui/sonner';
 
 // Route-level code splitting: the scanner, builder and NEXUS surfaces are heavy
 // (Leaflet, editors, charts) — lazy chunks keep first paint fast on any device.
@@ -85,6 +86,7 @@ export default function App() {
   );
 
   return (
+    <>
     <Routes>
       <Route path="/" element={user ? <Navigate to="/dashboard" replace /> : <AuthPage onAuth={setUser} />} />
       <Route element={user ? <AppShell user={user} onLogout={() => setUser(null)} /> : <Navigate to="/" replace />}>
@@ -116,5 +118,9 @@ export default function App() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    {/* Global toast feedback — failures and key confirmations surface here.
+        richColors off: the design system styles the toaster via CSS vars. */}
+    <Toaster position="bottom-right" closeButton toastOptions={{ className: 'max-w-[calc(100vw-2rem)]' }} />
+    </>
   );
 }
