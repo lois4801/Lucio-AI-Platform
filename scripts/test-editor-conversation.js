@@ -49,7 +49,7 @@ const styleResult = await editorConversation(ORG, USER, {
 ok(styleResult.applied.length === 1 && styleResult.applied[0].kind === 'style', 'named Lucio style applied conversationally');
 const recipe = JSON.parse(getLatestRecipe(PROJECT).recipe_json);
 ok(recipe.styleId === 'LD-09' || recipe.activeStyleId === 'LD-09', 'recipe now uses LD-09 Obsidian Gold');
-const overrideAudit = db.prepare(`SELECT COUNT(*) c FROM audit_log WHERE org_id = ? AND action = 'editor.lock_override' AND target_id = ?`).get(ORG, PROJECT)?.c || 0;
+const overrideAudit = db.prepare(`SELECT COUNT(*) c FROM audit_events WHERE org_id = ? AND action = 'editor.lock_override' AND entity_id = ?`).get(ORG, PROJECT)?.c || 0;
 ok(overrideAudit >= 1, 'locked style override was audited');
 
 console.log('== Safety boundary: unsupported commands do not mutate website ==');
