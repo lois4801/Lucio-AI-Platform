@@ -6,6 +6,7 @@ import AuthPage from '@/pages/AuthPage';
 import DashboardPage from '@/pages/DashboardPage';
 import BuilderPage from '@/pages/BuilderPage';
 import EditorPage from '@/pages/EditorPage';
+import VisualWebEnginePage from '@/pages/VisualWebEnginePage';
 import ComponentLibraryPage from '@/pages/ComponentLibraryPage';
 import ProjectsPage from '@/pages/ProjectsPage';
 import ImportStudioPage from '@/pages/ImportStudioPage';
@@ -88,6 +89,7 @@ export default function App() {
         <Route path="/autofix" element={page(<AutoFixPage />)} />
         <Route path="/autodata" element={page(<AutoDataPage />)} />
         <Route path="/editor" element={page(<EditorPage />)} />
+        <Route path="/visual-web-engine" element={page(<VisualWebEnginePage />)} />
         <Route path="/library" element={page(<ComponentLibraryPage />)} />
         <Route path="/scanner" element={page(<MarketScanPage />)} />
         <Route path="/projects" element={page(<ProjectsPage />)} />

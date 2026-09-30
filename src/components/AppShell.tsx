@@ -21,6 +21,7 @@ const NAV = [
   { to: '/autofix', label: 'Auto-Fix', icon: Wrench },
   { to: '/autodata', label: 'Auto Data', icon: Database },
   { to: '/editor', label: 'Website Editor', icon: PencilRuler },
+  { to: '/visual-web-engine', label: 'Visual Web Engine', icon: Sparkles },
   { to: '/library', label: 'Component Library', icon: Blocks },
   { to: '/scanner', label: 'Market Scanner', icon: ScanSearch },
   { to: '/projects', label: 'Projects', icon: FolderKanban },
