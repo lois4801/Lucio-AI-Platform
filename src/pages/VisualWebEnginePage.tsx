@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, type Project } from '@/lib/api';
+import WebsiteEditorChat from '@/components/WebsiteEditorChat';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -254,7 +255,7 @@ export default function VisualWebEnginePage() {
             <Badge className="gap-1"><Sparkles className="h-3 w-3" /> Beta</Badge>
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            Framer-style visual editing on top of Lucio’s existing builder, versioning and approval engine.
+            Framer-style visual editing plus natural conversation with your NEXUS website agents.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -301,6 +302,15 @@ export default function VisualWebEnginePage() {
           )}
         </div>
       </div>
+
+      {projectId && recipe && (
+        <WebsiteEditorChat
+          projectId={projectId}
+          selectedPath={selectedPath}
+          selectedLabel={selectedLabel}
+          onApplied={() => loadProject(projectId)}
+        />
+      )}
 
       <div className="grid gap-4 xl:grid-cols-[250px_minmax(0,1fr)_280px]">
         <Card className="h-fit xl:sticky xl:top-4">
@@ -395,7 +405,7 @@ export default function VisualWebEnginePage() {
                   <Button variant="outline" className="w-full gap-2" disabled={!imageKey.trim() || busy !== ''} onClick={saveImage}>
                     <WandSparkles className="h-4 w-4" /> Replace image
                   </Button>
-                  <p className="text-[11px] text-muted-foreground">Uses Lucio media-library keys today; upload/generative media can plug into this same slot next.</p>
+                  <p className="text-[11px] text-muted-foreground">Keys come from Lucio’s generated media library. The Media agent can guide supported replacements.</p>
                 </div>
               </>
             )}
@@ -412,7 +422,7 @@ export default function VisualWebEnginePage() {
                     <Palette className="h-4 w-4" /> Apply style
                   </Button>
                   {recipe?.locks?.style !== false && (
-                    <p className="text-[11px] text-muted-foreground">Lucio’s STYLE_LOCK may block style changes. Unlock it in Website Editor before applying a new style.</p>
+                    <p className="text-[11px] text-muted-foreground">Manual style changes respect STYLE_LOCK. A direct conversational instruction can override a locked layer with a recorded audit event.</p>
                   )}
                 </div>
 
@@ -448,9 +458,13 @@ export default function VisualWebEnginePage() {
                   <div className="font-medium">Portable export</div>
                   <code className="mt-1 block break-all text-[10px] text-muted-foreground">/api/builder/project/{projectId || ':projectId'}/export</code>
                 </div>
+                <div className="rounded-lg border p-3">
+                  <div className="font-medium">Conversational editor</div>
+                  <code className="mt-1 block break-all text-[10px] text-muted-foreground">POST /api/assistant/editor</code>
+                </div>
                 <div className="rounded-lg bg-primary/5 p-3 text-muted-foreground">
                   <div className="mb-1 flex items-center gap-2 font-medium text-foreground"><CheckCircle2 className="h-4 w-4 text-primary" /> Version-safe editing</div>
-                  Every Save uses Lucio’s existing proposal → approval → rebuild pipeline, so edits stay auditable and versioned.
+                  Manual and conversational saves both use Lucio’s existing proposal → approval → rebuild pipeline, so edits stay auditable and versioned.
                 </div>
               </div>
             )}
